@@ -232,6 +232,13 @@ Public entry points:
   sha256 comparison. Live sessions are lock-ineligible by construction (host
   mode anywhere in the graph, root or subagent, is refused by `compile`).
   Example wrapper: `examples/coding-agent/`;
+- `src/shell-tools.ts` — `shellTools({ workspace, executionBackend, tools,
+  outputCaps, commandSessions, onOutput })`, the coding agent's six
+  workspace tools as one builder any definition composes (moved out of
+  `code.ts`, which now consumes it; `CODING_TOOL_OUTPUT_CAPS`/`capOutput` stay
+  re-exported from `./code`). Selecting `read_tool_output` enables the
+  recovery store; the rest of the behavior, effects, and descriptions are
+  byte-identical to before. Example: `examples/investigator/`;
 - `src/cache-planner/` — in-SDK TS port of `public/cacheengine`'s deterministic
   planner core plus three provider wire bridges (Anthropic native, OpenAI
   chat + responses, Bedrock converse + invoke). The Go engine is the source of
@@ -390,7 +397,11 @@ Public entry points:
   `src/durable-limits.ts` (the shapes both halves must agree on).
   `tests/durable.runtime.mjs` covers crash-mid-call resume,
   lost-turn restart, idempotent replay, identity refusals, the lock, and
-  subagent settles landing path-tagged in the root journal;
+  subagent settles landing path-tagged in the root journal. Tool replay on
+  resume matches by position, name, effect, and `argsSha256`, never by the
+  provider-minted `toolCallId`, because a re-driven turn gets fresh ids from a
+  real provider; a settled call adopts its recorded identity so the settlement
+  pairs with its own intent (`tests/durable-replay-ids.runtime.mjs`);
 - `src/serve.ts` — the deployable target (`@caveman-ai/agent/serve`).
   `createAgentServer({ definition, token, store })` puts ONE agent behind
   `POST /runs` + `GET /runs/{runId}` + `/healthz` + `/readyz`, with every run
@@ -408,6 +419,32 @@ Public entry points:
   no unattended resume could reconstruct), 1 MiB body cap, and `durable` in
   caller `runOptions` is refused because the server owns it. A store that
   cannot enumerate reports `listable: false` rather than an empty sweep.
+
+  Multi-principal deployments pass `authenticate(request) => Principal` instead
+  of `token`. The SDK does not own identity — the host verifies a JWT, mTLS peer
+  or cookie however it already does — and owns only what follows: a session's
+  storage key is its caller-supplied id prefixed with a hash of `principal.id`,
+  so one principal cannot read, steer or delete another's, and that isolation is
+  structural rather than a side record, so it survives a restart (`run_started`
+  is frozen protocol and cannot carry an owner). A hook that returns undefined
+  OR THROWS is a 401: a verifier that cannot reach its JWKS must not fall open.
+  `/runs` addresses journals by raw run id with nothing binding a run to a
+  principal, so it returns 403 `cave_serve_runs_require_single_principal`
+  whenever `authenticate` is configured rather than spanning the boundary.
+  Sessions, replay buffers and deletion tombstones remain PROCESS-LOCAL, so two
+  instances against one store would drive a session blind to each other: the
+  server takes an instance lease (`caveman.instance.lock`, filtered from every
+  sweep) and refuses to start with `cave_serve_instance_already_active` unless
+  `singleInstance: false`. The lease expires, so active/standby fails over;
+  active/active is not supported until session ownership is itself durable.
+  Session messages and `POST /runs` accept `context` (JSON object/array,
+  64 KiB cap) which `withMessageContext` folds into the user message as one
+  `<cave-message-context>` block: untrusted like the text, journal-replayable,
+  outside the cached prefix. The `runOptions` factory receives `principal` for
+  runs an authenticated request started (absent on boot recovery, since the
+  journal carries no caller identity). `src/serve-events.ts` holds the SSE
+  replay buffer and response (moved out of `serve-session.ts` for size
+  headroom, re-exported from it).
   `caveman-agent serve [dir] [--port] [--host] [--locked]` is the CLI lane;
   `hosting/` ships the Dockerfile plus a complete Cloudflare Container +
   Durable-Object-journal recipe, because Workers has no `node:child_process`
@@ -490,6 +527,18 @@ Public entry points:
   `"stop"` or `{ release, reason }`, which tops up a tranche through the same
   `max`-bounded mechanism. Exactly one escalation per exhaustion. Pausing and
   resuming a run from a serializable handle is deliberately not built;
+- `src/tool-policy.ts` — `RunOptions.toolPolicy`, the host's per-call
+  authorization decision (Claude Agent SDK `canUseTool` shape) consumed on the
+  kernel's `beforeToolCall` admission path after every kernel check, and again
+  in `dispatchNestedTool`; subagents inherit it through the run options and
+  report `agentPath`. Deny-only with identifier codes (`cave_tool_denied:<code>`
+  reaches the model; receipts count `tools[].denied`); no argument rewriting,
+  because the journal binds calls to `argsSha256`. A throw, a hang past 10s, or
+  a malformed decision is `cave_tool_policy_failed`, run-fatal with receipt.
+  `RunResult.output` is the final message parsed against `output({ schema })`
+  (the schema is rendered into the system prompt); `run()` types it from the
+  definition. `src/run-controller.ts` holds `AgentRunController` (moved out of
+  `runtime.ts` for size headroom, re-exported from it);
 - `src/breakers.ts` — opt-in deterministic circuit breakers
   (`RunOptions.breakers`): repeated-tool-call loop detection (exact
   tool+normalized-args hash within a configurable assistant-turn window,

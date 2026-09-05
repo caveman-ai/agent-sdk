@@ -1,0 +1,26 @@
+{
+  "name": "@caveman-ai/example-investigator",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "cavemanSample": {
+    "workflow": "production-agent investigator: bash toolset operating a CLI, grant-driven tool policy, typed output, durable sessions with page context",
+    "minNodeMajor": 22
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "investigate": "node --env-file-if-exists=.env src/investigate.ts",
+    "serve": "node --env-file-if-exists=.env src/serve.ts",
+    "build": "tsc --noEmit",
+    "test": "node --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "@caveman-ai/agent": "file:../../packages/agent"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "typescript": "5.9.3"
+  }
+}

@@ -21,7 +21,7 @@ caveman-agent serve [dir] [--port N] [--host H] [--locked]
 ## HTTP contract
 
 ```text
-POST /runs          {"runId":"…","input":"…"}   → 202 accepted, 200 if already settled
+POST /runs          {"runId":"…","input":"…","context"?:{…}}   → 202 accepted, 200 if already settled
 GET  /runs/{runId}                              → the run's journaled status
 GET  /runs/{runId}/events                       → Pebble v1 frames over SSE
 DELETE /runs/{runId}                            → request durable cancellation
@@ -33,6 +33,76 @@ GET  /readyz                                    → 503 until the recovery sweep
 unauthenticated mode: the endpoint spends money and returns model output. A
 token shorter than 16 characters is refused at construction, and comparison is
 length-independent.
+
+### More than one tenant
+
+One token is one tenant. For a deployment that serves several, pass
+`authenticate` instead and let the SDK isolate what follows:
+
+```ts
+createAgentServer({
+  definition,
+  authenticate: async (request) => {
+    const claims = await verifyJwt(request.headers.get("authorization"));
+    return claims === undefined ? undefined : { id: claims.sub, tenant: claims.org };
+  },
+});
+```
+
+The SDK does not own identity. Verify a JWT, an mTLS peer, or a session cookie
+however the deployment already does, and return who the request belongs to;
+returning `undefined` is a `401`. So is **throwing** — a verifier that cannot
+reach its JWKS must not fall open.
+
+The principal is handed to the per-run options factory, which is where
+per-tenant budgets and tool authorization live:
+
+```ts
+createAgentServer({
+  definition,
+  authenticate,
+  runOptions: ({ sessionId, principal }) => ({
+    budget: { maxUsd: plans.for(principal?.tenant).perRunUsd },
+    toolPolicy: (call) => grants.decide(principal, call),
+  }),
+});
+```
+
+`principal` is present for runs an authenticated request started. It is absent
+for runs re-driven by boot recovery, because the journal deliberately carries
+no caller identity; a factory that needs one should fall back to its most
+conservative defaults rather than assume.
+
+What the SDK does own is isolation. A session's storage key is the id the caller
+asked for, prefixed with a hash of `principal.id`, so two principals can both
+hold `"inbox"` without either seeing the other's, and a principal asking for a
+session it does not own gets `404` rather than `403` — whether another tenant
+holds that id is not this caller's to learn. Because the prefix is part of the
+stored id rather than a separate owner record, isolation survives a restart:
+sessions are rebuilt from run ids, and a run id already carries its namespace.
+
+`/runs` is **not** principal-scoped. It addresses journals by raw run id with
+nothing binding a run to a caller, so with `authenticate` configured it returns
+`403 cave_serve_runs_require_single_principal` instead of quietly handing one
+principal another's runs. Multi-tenant deployments use `/sessions`.
+
+### One instance at a time
+
+Sessions, their replay buffers, and their deletion tombstones live in the
+serving process. Two instances against one store therefore do not share them:
+the same session could be driven from both, with neither seeing the other's
+messages. Run journals are individually leased and stay safe; session state is
+what diverges.
+
+So the server takes an instance lease at `listen()` and refuses to start with
+`cave_serve_instance_already_active` while another instance holds it. The lease
+expires, so a crashed instance is taken over by the next one — **active/standby
+works, active/active does not**. Set `singleInstance: false` only for a
+deployment where no session is ever addressed from two instances.
+
+Making active/active safe means moving session ownership into the store, which
+is not done yet. Until it is, this is a startup refusal rather than a split
+brain discovered in production.
 
 ### Status codes
 
@@ -108,7 +178,7 @@ messages start `${sessionId}.${n}` with the same conversation.
 
 ```text
 POST   /sessions                       {"sessionId":"…"} → 201 {sessionId}
-POST   /sessions/{id}/messages         {"text":"…","author"?:"…","mode"?:"followUp"|"steer"}
+POST   /sessions/{id}/messages         {"text":"…","author"?:"…","mode"?:"followUp"|"steer","context"?:{…}}
 GET    /sessions/{id}                  → {sessionId,runs,active?,queued,messages}
 GET    /sessions/{id}/events           → Pebble v1 frames over one multi-run SSE stream
 DELETE /sessions/{id}                  → cancel active run, drop Pi queues, delete process-local state
@@ -123,8 +193,20 @@ the token is never echoed. Browsers never hold the server token: `useSession`
 from `@caveman-ai/react` speaks to a same-origin proxy that adds the bearer
 (on the upgrade too), the same way `useAgent` does.
 
+A message may attach structured `context`: the resource ids, filters, windows,
+or versions a UI page was showing when the user asked ("Ask about this trace").
+It must be a JSON object or array under 64 KiB serialized, and it rides inside
+the user message as one fenced `<cave-message-context>` block, so it is exactly
+as trusted as the message text, replays byte-for-byte from the journal, and
+never enters the cached prefix. Nothing is escaped, so do not put
+server-derived facts the agent should trust in `context`; those belong in a
+`context()` segment on the definition or in the run options. Invalid context is `400
+cave_session_message_context_invalid` (or `_too_large`). `POST /runs` accepts
+the same field. The `text` recorded in `GET /sessions/{id}` `messages` is what
+the caller sent, without the context.
+
 Client WebSocket messages are either
-`{"type":"message","text":"…","author"?:"…","mode"?:"followUp"|"steer"}`
+`{"type":"message","text":"…","author"?:"…","mode"?:"followUp"|"steer","context"?:{…}}`
 or `{"type":"cancel"}`. Server messages are unchanged Pebble frames. SSE and
 WebSocket replay use the same bounded process-local buffer and gap reporting.
 Run journals remain authority.

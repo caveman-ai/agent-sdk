@@ -8,10 +8,10 @@ Declaration file: `packages/agent/dist/index.d.ts`.
 <details><summary>Symbol index</summary>
 
 - **Class**: `AgentRunController`, `BudgetController`, `CavemanRunError`, `ConnectRuntime`, `DiskDurableStore`, `HttpDurableStore`, `MemoryEngine`, `ProgrammaticSpeculationScope`
-- **Interface**: `AgentAudioInputPart`, `AgentDefinition`, `AgentDefinitionTransform`, `AgentDirConfig`, `AgentDirModules`, `AgentDirRunDefaults`, `AgentFileInputPart`, `AgentImageInputPart`, `AgentInputBase64Source`, `AgentInputEncoder`, `AgentInputURLSource`, `AgentOpaqueInputPart`, `AgentTextInputPart`, `ArtifactDefinition`, `BreakerEvent`, `BudgetExhaustionContext`, `BudgetTranche`, `CapturedModelBoundary`, `CapturedModelBoundaryCall`, `CompactionOptions`, `CompiledPipelineResult`, `CompileProfiledInput`, `CompileProfiledNativePiInput`, `CompileProfiledResult`, `CompilerTarget`, `CompleteModelUsage`, `CompletionMemorySidecarOptions`, `ConnectAction`, `ConnectConnection`, `ConnectEfficiencyComparison`, `ConnectEfficiencyRun`, `ConnectExecuteOptions`, `ConnectIntegration`, `ConnectMcpCallResult`, `ConnectMcpTool`, `ConnectMcpToolAnnotations`, `ConnectMcpToolExecution`, `ConnectMcpToolIcon`, `ConnectOptions`, `ConnectProcessResult`, `ConnectQualityPolicy`, `ConnectRuntimeOptions`, `ConnectSource`, `ConnectToolRuntimeDefinition`, `ContextAnchor`, `ContextCompactionFixture`, `ContextCompactionFixtureRound`, `ContextCompactionHarnessOptions`, `ContextCompactionHarnessResult`, `ContextCompactionHarnessRoundResult`, `ContextCompactionSummarizerRequest`, `ContextDefinition`, `ContextIR`, `ContextIRWire`, `ContextSegment`, `ContextSegmentWire`, `ContextSummary`, `ContextSummaryEvaluation`, `ContextSummaryEvaluationInput`, `ContextSummaryRound`, `ContextSummarySource`, `ContextSummaryStability`, `ContextSummaryValidation`, `CreateMemoryEngineOptions`, `DurableRunOptions`, `DurableStore`, `EvalDefinition`, `ExecRequest`, `ExecResult`, `ExecuteCompiledPipelineInput`, `ExecutionBackend`, `ExpectedContextAnchor`, `FileSource`, `HttpDurableStoreOptions`, `LoweredContext`, `MemoryAmbientOptions`, `MemoryCompletionRequest`, `MemoryConsolidationInput`, `MemoryDefinition`, `MemoryDraft`, `MemoryEdge`, `MemoryEmbeddingAdapter`, `MemoryExtractionInput`, `MemoryHit`, `MemoryRecall`, `MemoryRecord`, `MemoryRememberInput`, `MemoryReviewInput`, `MemoryReviewResult`, `MemoryRuntimeConfig`, `MemoryScope`, `MemorySearchOptions`, `MemorySessionHit`, `MemorySidecarAdapter`, `MemorySource`, `MemoryState`, `MemoryStorageAdapter`, `MemoryStoreConfig`, `MemoryTurn`, `MemoryTurnInput`, `MemoryVector`, `ModelBoundary`, `ModelBoundaryContext`, `ModelBoundaryFailed`, `ModelBoundaryMiddleware`, `ModelBoundaryPrepare`, `ModelBoundarySettled`, `ModelCallRouteDecision`, `ModelCallRouteInput`, `ModelUsage`, `NativePiCandidatePlanningInput`, `NestedToolDispatchOptions`, `NormalizedAgentInput`, `NormalizedCompaction`, `NormalizedConnectAction`, `NormalizedConnectQualityPolicy`, `NormalizedConnectSource`, `NormalizedToolActivity`, `NormalizedTrajectory`, `NormalizeTrajectoryOptions`, `OpenAICompatibleMemoryEmbeddingOptions`, `OutputDefinition`, `PreparedModelBoundaryCall`, `ProfileToolEffect`, `ProgrammaticSpeculationActivation`, `ProgrammaticSpeculationLaunch`, `ProgrammaticToolInstructionOptions`, `ProgrammaticToolRuntime`, `ProgrammaticToolStats`, `ReceiptCall`, `ReceiptCompaction`, `ReceiptLike`, `ReceiptPrintCall`, `ReceiptResume`, `ReceiptTool`, `ResolvedEgressPolicy`, `RoutineOutcomeCount`, `RunBreakers`, `RunBudget`, `RunOptions`, `RunReceipt`, `RunResult`, `RuntimeContextSegment`, `SandboxEgressPolicy`, `StandardInputOutputToolOptions`, `StandardJSONOutputToolOptions`, `StandardJSONToolOptions`, `StandardJSONTypeBoxOutputToolOptions`, `StandardOutputToolOptions`, `StandardToolOptions`, `StandardTypeBoxOutputToolOptions`, `SubagentRuntimeDefinition`, `ToolDefinition`, `ToolExecutionContext`, `ToolOptions`, `TypeBoxOutputToolOptions`, `WorkloadPartition`, `WorkloadProfile`
-- **Type alias**: `AgentDirContextValue`, `AgentInput`, `AgentInputPart`, `AgentInputSource`, `Auto`, `BudgetDenomination`, `BudgetExhaustionHandler`, `CacheRegion`, `CavemanRunEvent`, `ConnectActionBindValue`, `ConnectExecutor`, `ContextAnchorKind`, `ContextCompactionSummarizer`, `ContextKind`, `ContextPriority`, `ContextStability`, `ConversationState`, `DurableRunSummary`, `EvalGuardrail`, `EvalSplit`, `FiniteJSON`, `MemoryKind`, `MemoryRelation`, `ModelBoundaryRole`, `ModelCallRouter`, `ModelUsageAccountingStatus`, `ModelUsageCost`, `ModelUsageTokenCount`, `PrivacyClass`, `ProfiledCompileStatus`, `ProgrammaticSpeculationDispatch`, `QualityGrader`, `RecoveryKind`, `RoutineOutcome`, `RunStopReason`, `SafetyClass`, `SandboxEgress`, `StandardToolSchema`, `ToolEffect`, `ToolResultPolicy`, `ToolRuntimeDefinition`, `TrajectorySource`, `WorkloadSplit`
-- **Function**: `agent`, `appendRuntimeContextSegment`, `applyAgentDefinitionTransforms`, `artifact`, `assertProfiledBuildTarget`, `assertQualityGrader`, `auto`, `capabilityManifestFor`, `captureModelBoundary`, `compareConnectEfficiency`, `compileProfiled`, `compileProfiledNativePi`, `completionMemorySidecar`, `composeAgentDir`, `connectEnvironment`, `context`, `contextBill`, `contextIRFromWire`, `contextIRToWire`, `contextSummarySources`, `cosine`, `createBudgetController`, `createCompilerWorkloadProfile`, `createConnect`, `createConversation`, `createFileMemoryAdapter`, `createInMemoryMemoryStorage`, `createMemoryEngine`, `createMemoryWorkflow`, `createModelBoundary`, `createProgrammaticToolErrorWrapper`, `createProgrammaticToolRuntime`, `createSparseEmbeddingAdapter`, `createWorkloadProfile`, `defineAgentInputEncoder`, `defineModelUsage`, `defineRunReceipt`, `durableInputIsReplayable`, `durableRunSummary`, `egressAllowed`, `emptyMemoryState`, `encodeAgentInput`, `eval`, `evalFixture`, `evaluateContextSummary`, `evaluateContextSummaryStability`, `executeCompiledPipeline`, `executeConnectTool`, `file`, `httpExecutionBackend`, `latestContextSummary`, `loadAgentDir`, `localExecutionBackend`, `lowerContext`, `memory`, `memoryTTLMilliseconds`, `modelUsageAccountingStatus`, `nativePiCompilerTarget`, `normalizeAgentInput`, `normalizeCompaction`, `normalizeTrajectory`, `opaquePayload`, `openAICompatibleMemoryEmbedding`, `output`, `packVector`, `parseContextSummary`, `parseNormalizedTrajectory`, `parseWorkloadProfile`, `planNativePiCandidates`, `programmaticToolInstructions`, `programmaticToolMetadata`, `renderReceipt`, `renderSummary`, `requireCompleteModelUsage`, `resolveConnectBinary`, `resolveEgressPolicy`, `routine`, `routineOutcomes`, `run`, `runContextCompactionHarness`, `runLocked`, `sha256`, `stableStringify`, `stream`, `subagent`, `summarizationInstruction`, `tool`, `validateContextSummaryTransition`, `verifySandboxConformance`, `workloadSplitSHA256`
-- **Variable**: `AGENT_DIR_ENTRY`, `AGENT_INPUT_MAX_BASE64_BYTES_PER_PART`, `AGENT_INPUT_MAX_BASE64_BYTES_TOTAL`, `AGENT_INPUT_MAX_FILE_NAME_LENGTH`, `AGENT_INPUT_MAX_MIME_LENGTH`, `AGENT_INPUT_MAX_PARTS`, `AGENT_INPUT_MAX_TEXT_BYTES`, `AGENT_INPUT_MAX_URL_LENGTH`, `AGENT_RUN_RECEIPT_SCHEMA`, `AUTO`, `MODEL_BOUNDARY_MAX_CONTEXT_STRING_LENGTH`, `MODEL_BOUNDARY_MAX_ID_LENGTH`, `MODEL_BOUNDARY_MAX_MIDDLEWARE`, `OUTPUT_CLAMP_FLOOR_TOKENS`, `PROFILED_COMPILER_SHA256`, `PROFILED_COMPILER_VERSION`, `PROGRAMMATIC_TOOL_NAME`, `schema`, `SUMMARY_SCHEMA_VERSION`, `TARGET_CAPABILITY_LATTICE`, `TRAJECTORY_IR_SCHEMA_VERSION`, `validateRunReceipt`, `WORKLOAD_PROFILE_SCHEMA_VERSION`
+- **Interface**: `AgentAudioInputPart`, `AgentDefinition`, `AgentDefinitionTransform`, `AgentDirConfig`, `AgentDirModules`, `AgentDirRunDefaults`, `AgentFileInputPart`, `AgentImageInputPart`, `AgentInputBase64Source`, `AgentInputEncoder`, `AgentInputURLSource`, `AgentOpaqueInputPart`, `AgentStaticContextDiagnostics`, `AgentTextInputPart`, `ArtifactDefinition`, `BreakerEvent`, `BudgetExhaustionContext`, `BudgetTranche`, `CapturedModelBoundary`, `CapturedModelBoundaryCall`, `CompactionOptions`, `CompiledPipelineResult`, `CompileProfiledInput`, `CompileProfiledNativePiInput`, `CompileProfiledResult`, `CompilerTarget`, `CompleteModelUsage`, `CompletionMemorySidecarOptions`, `ConnectAction`, `ConnectConnection`, `ConnectEfficiencyComparison`, `ConnectEfficiencyRun`, `ConnectExecuteOptions`, `ConnectIntegration`, `ConnectMcpCallResult`, `ConnectMcpTool`, `ConnectMcpToolAnnotations`, `ConnectMcpToolExecution`, `ConnectMcpToolIcon`, `ConnectOptions`, `ConnectProcessResult`, `ConnectQualityPolicy`, `ConnectRuntimeOptions`, `ConnectSource`, `ConnectToolRuntimeDefinition`, `ContextAnchor`, `ContextCompactionFixture`, `ContextCompactionFixtureRound`, `ContextCompactionHarnessOptions`, `ContextCompactionHarnessResult`, `ContextCompactionHarnessRoundResult`, `ContextCompactionSummarizerRequest`, `ContextDefinition`, `ContextIR`, `ContextIRWire`, `ContextSegment`, `ContextSegmentWire`, `ContextSummary`, `ContextSummaryEvaluation`, `ContextSummaryEvaluationInput`, `ContextSummaryRound`, `ContextSummarySource`, `ContextSummaryStability`, `ContextSummaryValidation`, `CreateMemoryEngineOptions`, `DurableRunOptions`, `DurableStore`, `EvalDefinition`, `ExecRequest`, `ExecResult`, `ExecuteCompiledPipelineInput`, `ExecutionBackend`, `ExpectedContextAnchor`, `FileSource`, `HttpDurableStoreOptions`, `LoweredContext`, `MemoryAmbientOptions`, `MemoryCompletionRequest`, `MemoryConsolidationInput`, `MemoryDefinition`, `MemoryDraft`, `MemoryEdge`, `MemoryEmbeddingAdapter`, `MemoryExtractionInput`, `MemoryHit`, `MemoryRecall`, `MemoryRecord`, `MemoryRememberInput`, `MemoryReviewInput`, `MemoryReviewResult`, `MemoryRuntimeConfig`, `MemoryScope`, `MemorySearchOptions`, `MemorySessionHit`, `MemorySidecarAdapter`, `MemorySource`, `MemoryState`, `MemoryStorageAdapter`, `MemoryStoreConfig`, `MemoryTurn`, `MemoryTurnInput`, `MemoryVector`, `ModelBoundary`, `ModelBoundaryContext`, `ModelBoundaryFailed`, `ModelBoundaryMiddleware`, `ModelBoundaryPrepare`, `ModelBoundarySettled`, `ModelCallRouteDecision`, `ModelCallRouteInput`, `ModelUsage`, `NativePiCandidatePlanningInput`, `NestedToolDispatchOptions`, `NormalizedAgentInput`, `NormalizedCompaction`, `NormalizedConnectAction`, `NormalizedConnectQualityPolicy`, `NormalizedConnectSource`, `NormalizedToolActivity`, `NormalizedTrajectory`, `NormalizeTrajectoryOptions`, `OpenAICompatibleMemoryEmbeddingOptions`, `OutputDefinition`, `PreparedModelBoundaryCall`, `ProfileToolEffect`, `ProgrammaticSpeculationActivation`, `ProgrammaticSpeculationLaunch`, `ProgrammaticToolInstructionOptions`, `ProgrammaticToolRuntime`, `ProgrammaticToolStats`, `ReceiptCall`, `ReceiptCompaction`, `ReceiptLike`, `ReceiptPrintCall`, `ReceiptResume`, `ReceiptTool`, `ResolvedEgressPolicy`, `RoutineOutcomeCount`, `RunBreakers`, `RunBudget`, `RunOptions`, `RunReceipt`, `RunResult`, `RuntimeContextSegment`, `SandboxEgressPolicy`, `ShellToolsOptions`, `StandardInputOutputToolOptions`, `StandardJSONOutputToolOptions`, `StandardJSONToolOptions`, `StandardJSONTypeBoxOutputToolOptions`, `StandardOutputToolOptions`, `StandardToolOptions`, `StandardTypeBoxOutputToolOptions`, `SubagentRuntimeDefinition`, `ToolCallDenial`, `ToolCallPolicyInput`, `ToolDefinition`, `ToolExecutionContext`, `ToolOptions`, `TypeBoxOutputToolOptions`, `WorkloadPartition`, `WorkloadProfile`
+- **Type alias**: `AgentDirContextValue`, `AgentInput`, `AgentInputPart`, `AgentInputSource`, `AgentOutput`, `Auto`, `BudgetDenomination`, `BudgetExhaustionHandler`, `CacheRegion`, `CavemanRunEvent`, `ConnectActionBindValue`, `ConnectExecutor`, `ContextAnchorKind`, `ContextCompactionSummarizer`, `ContextKind`, `ContextPriority`, `ContextStability`, `ConversationState`, `DurableRunSummary`, `EvalGuardrail`, `EvalSplit`, `FiniteJSON`, `MemoryKind`, `MemoryRelation`, `ModelBoundaryRole`, `ModelCallRouter`, `ModelUsageAccountingStatus`, `ModelUsageCost`, `ModelUsageTokenCount`, `PrivacyClass`, `ProfiledCompileStatus`, `ProgrammaticSpeculationDispatch`, `QualityGrader`, `RecoveryKind`, `RoutineOutcome`, `RunStopReason`, `SafetyClass`, `SandboxEgress`, `ShellToolName`, `StandardToolSchema`, `ToolCallDecision`, `ToolCallPolicy`, `ToolEffect`, `ToolResultPolicy`, `ToolRuntimeDefinition`, `TrajectorySource`, `WorkloadSplit`
+- **Function**: `agent`, `agentStaticContextDiagnostics`, `appendRuntimeContextSegment`, `applyAgentDefinitionTransforms`, `artifact`, `assertProfiledBuildTarget`, `assertQualityGrader`, `auto`, `capabilityManifestFor`, `captureModelBoundary`, `compareConnectEfficiency`, `compileProfiled`, `compileProfiledNativePi`, `completionMemorySidecar`, `composeAgentDir`, `connectEnvironment`, `context`, `contextBill`, `contextIRFromWire`, `contextIRToWire`, `contextSummarySources`, `cosine`, `createBudgetController`, `createCompilerWorkloadProfile`, `createConnect`, `createConversation`, `createFileMemoryAdapter`, `createInMemoryMemoryStorage`, `createMemoryEngine`, `createMemoryWorkflow`, `createModelBoundary`, `createProgrammaticToolErrorWrapper`, `createProgrammaticToolRuntime`, `createSparseEmbeddingAdapter`, `createWorkloadProfile`, `decideToolCall`, `defineAgentInputEncoder`, `defineModelUsage`, `defineRunReceipt`, `durableInputIsReplayable`, `durableRunSummary`, `egressAllowed`, `emptyMemoryState`, `encodeAgentInput`, `eval`, `evalFixture`, `evaluateContextSummary`, `evaluateContextSummaryStability`, `executeCompiledPipeline`, `executeConnectTool`, `file`, `httpExecutionBackend`, `latestContextSummary`, `loadAgentDir`, `localExecutionBackend`, `lowerContext`, `memory`, `memoryTTLMilliseconds`, `modelUsageAccountingStatus`, `nativePiCompilerTarget`, `normalizeAgentInput`, `normalizeCompaction`, `normalizeTrajectory`, `opaquePayload`, `openAICompatibleMemoryEmbedding`, `output`, `packVector`, `parseContextSummary`, `parseNormalizedTrajectory`, `parseWorkloadProfile`, `planNativePiCandidates`, `programmaticToolInstructions`, `programmaticToolMetadata`, `renderReceipt`, `renderSummary`, `requireCompleteModelUsage`, `resolveConnectBinary`, `resolveEgressPolicy`, `routine`, `routineOutcomes`, `run`, `runContextCompactionHarness`, `runLocked`, `sha256`, `shellTools`, `stableStringify`, `stream`, `subagent`, `summarizationInstruction`, `tool`, `validateContextSummaryTransition`, `verifySandboxConformance`, `workloadSplitSHA256`
+- **Variable**: `AGENT_DIR_ENTRY`, `AGENT_INPUT_MAX_BASE64_BYTES_PER_PART`, `AGENT_INPUT_MAX_BASE64_BYTES_TOTAL`, `AGENT_INPUT_MAX_FILE_NAME_LENGTH`, `AGENT_INPUT_MAX_MIME_LENGTH`, `AGENT_INPUT_MAX_PARTS`, `AGENT_INPUT_MAX_TEXT_BYTES`, `AGENT_INPUT_MAX_URL_LENGTH`, `AGENT_RUN_RECEIPT_SCHEMA`, `AUTO`, `MODEL_BOUNDARY_MAX_CONTEXT_STRING_LENGTH`, `MODEL_BOUNDARY_MAX_ID_LENGTH`, `MODEL_BOUNDARY_MAX_MIDDLEWARE`, `OUTPUT_CLAMP_FLOOR_TOKENS`, `PROFILED_COMPILER_SHA256`, `PROFILED_COMPILER_VERSION`, `PROGRAMMATIC_TOOL_NAME`, `schema`, `SUMMARY_SCHEMA_VERSION`, `TARGET_CAPABILITY_LATTICE`, `TOOL_POLICY_TIMEOUT_MS`, `TRAJECTORY_IR_SCHEMA_VERSION`, `validateRunReceipt`, `WORKLOAD_PROFILE_SCHEMA_VERSION`
 
 </details>
 
@@ -52,7 +52,7 @@ export declare class AgentRunController {
 }
 ```
 
-Declared in `packages/agent/dist/runtime.d.ts`.
+Declared in `packages/agent/dist/run-controller.d.ts`.
 
 ### `BudgetController`
 
@@ -310,7 +310,7 @@ Declared in `packages/agent/dist/input.d.ts`.
 ### `AgentDefinition`
 
 ```ts
-export interface AgentDefinition {
+export interface AgentDefinition<TOutput extends TSchema | undefined = TSchema | undefined> {
     readonly kind: "agent";
     readonly id: string;
     readonly instructions: string | FileSource;
@@ -319,7 +319,8 @@ export interface AgentDefinition {
     readonly tools: readonly ToolDefinition[];
     readonly contexts: readonly ContextDefinition[];
     readonly memory?: MemoryDefinition;
-    readonly output?: OutputDefinition;
+    /** Declared output contract; its schema types `RunResult.output`. */
+    readonly output?: OutputDefinition<TOutput>;
     /**
      * Tool containment posture.
      *
@@ -486,6 +487,19 @@ export interface AgentOpaqueInputPart {
 ```
 
 Declared in `packages/agent/dist/input.d.ts`.
+
+### `AgentStaticContextDiagnostics`
+
+```ts
+export interface AgentStaticContextDiagnostics {
+    /** UTF-8 JSON bytes for provider-visible system prompt plus active tool schemas. */
+    readonly staticContextBytes: number;
+    readonly availableToolCount: number;
+    readonly basis: "system_prompt_plus_active_tool_definitions_json_utf8";
+}
+```
+
+Declared in `packages/agent/dist/runtime.d.ts`.
 
 ### `AgentTextInputPart`
 
@@ -2594,6 +2608,8 @@ export interface ReceiptTool {
     readonly name: string;
     readonly calls: number;
     readonly errors: number;
+    /** Calls refused by `RunOptions.toolPolicy`; absent when zero, and counted under `errors` too. */
+    readonly denied?: number;
 }
 ```
 
@@ -2904,6 +2920,22 @@ export interface RunOptions {
      * evidence shares its journal. Breaker windows restart on resume.
      */
     durable?: DurableRunOptions;
+    /**
+     * Host-owned authorization for every declared tool call, decided outside
+     * model output (the Claude Agent SDK `canUseTool` shape). Runs after the
+     * kernel's own admission (deadline, budget, caps, breakers, sandbox posture,
+     * argument shape) for root, subagent, and nested composite calls alike;
+     * framework `cave_*` tools are not gated. `{ deny: code }` blocks the call:
+     * the model reads `cave_tool_denied:<code>` as the tool result, the receipt
+     * counts it under `denied`, and the run continues. A policy that throws,
+     * hangs past 10s, or returns a malformed decision ends the run with
+     * `cave_tool_policy_failed`: unknown authorization state never executes a
+     * tool. Evaluated again on durable resume, before replay: denying a call the
+     * crashed attempt already settled ends the resume fail-closed
+     * (`cave_durable_tool_replay_incomplete`), never as a quiet skip. A policy
+     * cannot rewrite arguments.
+     */
+    toolPolicy?: ToolCallPolicy;
     model?: Model<Api>;
     models?: Models;
     streamFn?: StreamFn;
@@ -3000,10 +3032,16 @@ Declared in `packages/agent/dist/budget.d.ts`.
 ### `RunResult`
 
 ```ts
-export interface RunResult {
+export interface RunResult<TOutput = unknown> {
     runId: string;
     agentId: string;
     text: string;
+    /**
+     * The final message parsed against `definition.output.schema`. Present only
+     * when a schema is declared and the text validated against it; absent when
+     * the run stopped before a final message.
+     */
+    output?: TOutput;
     contextIR: ContextIR;
     contextBill: Record<string, number>;
     cachePrefixSHA256: string;
@@ -3124,6 +3162,27 @@ export interface SandboxEgressPolicy {
 
 Declared in `packages/agent/dist/sandbox/policy.d.ts`.
 
+### `ShellToolsOptions`
+
+```ts
+export interface ShellToolsOptions {
+    /** Workspace root; tools refuse paths outside it (realpath-based on the local backend). */
+    workspace: string;
+    /** Where processes run and files live. Default `localExecutionBackend()` — host execution, not isolation. */
+    executionBackend?: ExecutionBackend;
+    /** Which tools to build, in this order. Default: all six. */
+    tools?: readonly ShellToolName[];
+    /** Per-tool raw output caps in bytes, applied before any transform. */
+    outputCaps?: Partial<Record<ShellToolName, number>>;
+    /** Interactive bash sessions (local backend only). Omit for one-shot bounded bash. */
+    commandSessions?: CommandSessionRuntime;
+    /** Observes every capped tool output. */
+    onOutput?: (label: string, text: string) => void;
+}
+```
+
+Declared in `packages/agent/dist/shell-tools.d.ts`.
+
 ### `StandardInputOutputToolOptions`
 
 ```ts
@@ -3241,6 +3300,37 @@ export interface SubagentRuntimeDefinition {
 ```
 
 Declared in `packages/agent/dist/primitives.d.ts`.
+
+### `ToolCallDenial`
+
+```ts
+export interface ToolCallDenial {
+    readonly block: true;
+    readonly reason: string;
+}
+```
+
+Declared in `packages/agent/dist/tool-policy.d.ts`.
+
+### `ToolCallPolicyInput`
+
+```ts
+export interface ToolCallPolicyInput {
+    readonly runId: string;
+    readonly agentId: string;
+    /** `[]` for the root agent; the subagent tool names leading here otherwise. */
+    readonly agentPath: readonly string[];
+    readonly toolCallId: string;
+    /** Present only for a nested call dispatched by a composite/programmatic tool. */
+    readonly parentToolCallId?: string;
+    readonly name: string;
+    readonly effect: ToolEffect;
+    /** Validated arguments, exactly what the tool would receive. Read-only. */
+    readonly args: unknown;
+}
+```
+
+Declared in `packages/agent/dist/tool-policy.d.ts`.
 
 ### `ToolDefinition`
 
@@ -3430,6 +3520,16 @@ export type AgentInputSource = AgentInputURLSource | AgentInputBase64Source;
 ```
 
 Declared in `packages/agent/dist/input.d.ts`.
+
+### `AgentOutput`
+
+The parsed `RunResult.output` type for a definition whose `output()` declares a schema.
+
+```ts
+export type AgentOutput<D> = D extends AgentDefinition<infer S> ? S extends TSchema ? Static<S> : never : never;
+```
+
+Declared in `packages/agent/dist/index.d.ts`.
 
 ### `Auto`
 
@@ -3858,6 +3958,14 @@ export type SandboxEgress = "none" | SandboxEgressPolicy;
 
 Declared in `packages/agent/dist/sandbox/policy.d.ts`.
 
+### `ShellToolName`
+
+```ts
+export type ShellToolName = "bash" | "read_file" | "grep" | "write_file" | "edit_file" | "read_tool_output";
+```
+
+Declared in `packages/agent/dist/shell-tools.d.ts`.
+
 ### `StandardToolSchema`
 
 ```ts
@@ -3865,6 +3973,31 @@ export type StandardToolSchema<Input = unknown, Output = Input> = StandardSchema
 ```
 
 Declared in `packages/agent/dist/primitives.d.ts`.
+
+### `ToolCallDecision`
+
+`undefined` or `{ allow: true }` admits the call. `{ deny: code }` blocks it:
+the model reads `cave_tool_denied:<code>` as the tool result and the receipt
+counts the call under `denied`. `code` is a short identifier, never tenant
+text, so receipts and journals stay content-blind.
+
+```ts
+export type ToolCallDecision = undefined | void | {
+    readonly allow: true;
+} | {
+    readonly deny: string;
+};
+```
+
+Declared in `packages/agent/dist/tool-policy.d.ts`.
+
+### `ToolCallPolicy`
+
+```ts
+export type ToolCallPolicy = (call: ToolCallPolicyInput) => ToolCallDecision | Promise<ToolCallDecision>;
+```
+
+Declared in `packages/agent/dist/tool-policy.d.ts`.
 
 ### `ToolEffect`
 
@@ -3911,7 +4044,7 @@ Declared in `packages/agent/dist/trajectory-ir.d.ts`.
 ### `agent`
 
 ```ts
-export declare function agent(options: {
+export declare function agent<TOutput extends TSchema | undefined = undefined>(options: {
     id: string;
     instructions: string | FileSource;
     model: Auto | string | Model<Api>;
@@ -3919,12 +4052,23 @@ export declare function agent(options: {
     tools?: ToolDefinition[];
     contexts?: ContextDefinition[];
     memory?: MemoryDefinition;
-    output?: OutputDefinition;
+    output?: OutputDefinition<TOutput>;
     sandbox?: AgentDefinition["sandbox"];
-}): AgentDefinition;
+}): AgentDefinition<TOutput>;
 ```
 
 Declared in `packages/agent/dist/definition.d.ts`.
+
+### `agentStaticContextDiagnostics`
+
+Inspect provider-visible static context without starting a model call.
+Uses the same canonical context lowering and system-prompt assembly as runtime.
+
+```ts
+export declare function agentStaticContextDiagnostics(definition: AgentDefinition, rootDir?: string): Promise<AgentStaticContextDiagnostics>;
+```
+
+Declared in `packages/agent/dist/runtime.d.ts`.
 
 ### `appendRuntimeContextSegment`
 
@@ -4267,6 +4411,21 @@ export declare function createWorkloadProfile(input: readonly NormalizedTrajecto
 ```
 
 Declared in `packages/agent/dist/profile.d.ts`.
+
+### `decideToolCall`
+
+Evaluate a policy for one call. Returns the block result for a denial,
+`undefined` to admit. Throws `cave_tool_policy_failed` when the policy
+throws or hangs past {@link TOOL_POLICY_TIMEOUT_MS},
+`cave_tool_policy_decision_invalid` for a malformed decision, and
+`cave_tool_policy_reason_invalid` for a deny code outside `[a-z][a-z0-9_]*`.
+Every throw is run-fatal to the caller: unknown authorization never executes.
+
+```ts
+export declare function decideToolCall(policy: ToolCallPolicy, input: ToolCallPolicyInput): Promise<ToolCallDenial | undefined>;
+```
+
+Declared in `packages/agent/dist/tool-policy.d.ts`.
 
 ### `defineAgentInputEncoder`
 
@@ -4786,7 +4945,7 @@ Declared in `packages/agent/dist/routine.d.ts`.
 ### `run`
 
 ```ts
-export declare function run(definition: AgentDefinition, input: AgentInput, options?: RunOptions): Promise<import("./runtime.js").RunResult>;
+export declare function run<D extends AgentDefinition>(definition: D, input: AgentInput, options?: RunOptions): Promise<RunResult<AgentOutput<D>>>;
 ```
 
 Declared in `packages/agent/dist/index.d.ts`.
@@ -4807,7 +4966,7 @@ Declared in `packages/agent/dist/compaction-harness.d.ts`.
 Execute a validated Pi Cave Build from an embedded application.
 
 ```ts
-export declare function runLocked(definition: AgentDefinition, input: AgentInput, build: import("./build.js").AnyCaveBuildLock, options?: RunOptions): Promise<import("./runtime.js").RunResult>;
+export declare function runLocked<D extends AgentDefinition>(definition: D, input: AgentInput, build: import("./build.js").AnyCaveBuildLock, options?: RunOptions): Promise<RunResult<AgentOutput<D>>>;
 ```
 
 Declared in `packages/agent/dist/index.d.ts`.
@@ -4819,6 +4978,20 @@ export declare function sha256(value: Uint8Array | string): string;
 ```
 
 Declared in `packages/agent/dist/context-ir.d.ts`.
+
+### `shellTools`
+
+Build the workspace shell/file tools for any agent definition.
+
+`read_tool_output` is what makes a capped result recoverable: select it and
+over-long output is stored behind an opaque handle, leave it out and a capped
+result says so and stops there.
+
+```ts
+export declare function shellTools(options: ShellToolsOptions): ToolDefinition[];
+```
+
+Declared in `packages/agent/dist/shell-tools.d.ts`.
 
 ### `stableStringify`
 
@@ -5100,6 +5273,16 @@ export declare const TARGET_CAPABILITY_LATTICE: Readonly<Record<BuildHarnessID, 
 ```
 
 Declared in `packages/agent/dist/compiler.d.ts`.
+
+### `TOOL_POLICY_TIMEOUT_MS`
+
+A policy that cannot answer is an unknown authorization state: fail closed.
+
+```ts
+export declare const TOOL_POLICY_TIMEOUT_MS = 10000;
+```
+
+Declared in `packages/agent/dist/tool-policy.d.ts`.
 
 ### `TRAJECTORY_IR_SCHEMA_VERSION`
 

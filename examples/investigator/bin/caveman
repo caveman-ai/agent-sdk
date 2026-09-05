@@ -1,0 +1,85 @@
+#!/usr/bin/env node
+// A stand-in for the real `caveman cloud` CLI, answering from data/traces.json
+// with the same envelope, exit codes, and discoverability the real one has.
+// Nothing here is a Caveman Cloud client; it exists so the example runs with
+// no account, and so its tests are deterministic.
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const traces = JSON.parse(readFileSync(resolve(root, "data/traces.json"), "utf8"));
+const [group, resource, verb, ...rest] = process.argv.slice(2);
+const flags = {};
+for (let i = 0; i < rest.length; i++) {
+  if (rest[i].startsWith("--")) flags[rest[i].slice(2)] = rest[i + 1]?.startsWith("--") || rest[i + 1] === undefined ? true : rest[++i];
+  else (flags._ ??= []).push(rest[i]);
+}
+const digest = (value) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
+const requestId = `req_${digest(process.argv).slice(0, 12)}`;
+
+function reply(operation, data, extra = {}) {
+  process.stdout.write(`${JSON.stringify({ schema_version: 1, operation, ok: true, status: "completed", request_id: requestId, data, resources: [], warnings: [], ...extra })}\n`);
+  process.exit(0);
+}
+function fail(operation, code, message, exit) {
+  process.stdout.write(`${JSON.stringify({ schema_version: 1, operation, ok: false, status: "failed", request_id: requestId, error: { code, message, retryable: false } })}\n`);
+  process.exit(exit);
+}
+
+const OPS = {
+  "tools.list": "List operations.",
+  "tools.describe": "Describe one operation: caveman cloud tools describe <operation>",
+  "traces.search": "Search trace metadata: --from <iso> --to <iso> [--status ok|error] [--deployment <id>] [--limit n]. Metadata only, never payloads.",
+  "traces.transcript": "Redacted transcript for one trace: caveman cloud traces transcript <trace_id>",
+  "evaluators.create": "Create an evaluator draft: --file <json>. Returns its id; it is not active.",
+  "evaluators.activate": "Activate an evaluator version for observation-only scoring: --id <evaluator_id>. Requires the write_resource grant.",
+};
+
+if (group !== "cloud") fail("cli", "usage", "usage: caveman cloud <resource> <verb> [flags]", 2);
+const operation = `${resource}.${verb}`;
+switch (operation) {
+  case "tools.list":
+    reply(operation, { operations: Object.entries(OPS).map(([id, description]) => ({ id, version: 1, description })) });
+  case "tools.describe": {
+    const id = flags._?.[0];
+    if (!OPS[id]) fail(operation, "unknown_operation", `no operation ${id}`, 2);
+    reply(operation, { id, version: 1, description: OPS[id], examples: [`caveman cloud ${id.replace(".", " ")} --format json`] });
+  }
+  case "traces.search": {
+    if (!flags.from || !flags.to) fail(operation, "usage", "--from and --to are required (UTC ISO timestamps)", 2);
+    const from = Date.parse(flags.from), to = Date.parse(flags.to);
+    if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from) fail(operation, "invalid_window", "window must be a non-empty UTC range", 2);
+    const rows = traces.filter((t) => { const at = Date.parse(t.at); return at >= from && at < to && (!flags.status || t.status === flags.status) && (!flags.deployment || t.deployment === flags.deployment); });
+    const limit = Number(flags.limit ?? 50);
+    const query = { from: flags.from, to: flags.to, status: flags.status ?? null, deployment: flags.deployment ?? null };
+    reply(operation, { query_digest: digest(query), window: { from: flags.from, to: flags.to }, count: rows.length, rows: rows.slice(0, limit), cost_basis: "telemetry_list_price", coverage: "bounded_query_page" },
+      { resources: rows.slice(0, limit).map((t) => ({ type: "trace", id: t.trace_id, link: `https://cloud.example/traces/${t.trace_id}` })) });
+  }
+  case "traces.transcript": {
+    const id = flags._?.[0];
+    const trace = traces.find((t) => t.trace_id === id);
+    if (!trace) fail(operation, "not_found", `no trace ${id}`, 1);
+    reply(operation, { trace_id: id, query_digest: digest({ transcript: id }), turns: trace.tool_calls.map((name, i) => ({ turn: i + 1, tool: name, args: { orderId: "NB-1042" }, result: name === "lookup_order" ? "[redacted order record]" : "[redacted]" })), coverage: "single_captured_request" });
+  }
+  case "evaluators.create": {
+    if (!flags.file) fail(operation, "usage", "--file <json> is required", 2);
+    const draft = JSON.parse(readFileSync(resolve(flags.file), "utf8"));
+    if (typeof draft.name !== "string" || typeof draft.rule !== "string") fail(operation, "invalid_document", "evaluator needs name and rule", 2);
+    const id = `ev_${digest(draft).slice(0, 8)}`;
+    mkdirSync(resolve(root, ".caveman"), { recursive: true });
+    writeFileSync(resolve(root, ".caveman", `${id}.json`), JSON.stringify({ ...draft, id, version: 1, active: false }, null, 2));
+    reply(operation, { evaluator_id: id, version: 1, active: false }, { resources: [{ type: "evaluator", id, version: 1, link: `https://cloud.example/evaluators/${id}` }] });
+  }
+  case "evaluators.activate": {
+    const id = flags.id;
+    const path = resolve(root, ".caveman", `${id ?? "missing"}.json`);
+    if (!id || !existsSync(path)) fail(operation, "not_found", `no evaluator ${id}`, 1);
+    const stored = JSON.parse(readFileSync(path, "utf8"));
+    writeFileSync(path, JSON.stringify({ ...stored, active: true, mode: "observe_only" }, null, 2));
+    reply(operation, { evaluator_id: id, version: stored.version, active: true, mode: "observe_only", scoring: "awaiting_traffic" }, { resources: [{ type: "evaluator", id, version: stored.version, link: `https://cloud.example/evaluators/${id}` }] });
+  }
+  default:
+    fail(operation, "unknown_operation", `no operation ${operation}; run: caveman cloud tools list`, 2);
+}

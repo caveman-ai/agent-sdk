@@ -116,6 +116,84 @@ execute(input, signal, context) {
 - No-progress and fan-out breakers apply on coding turns by default. See
   [Budgets, receipts, and breakers](09-budgets-receipts-breakers.md).
 
+## Shell and file tools
+
+The coding agent's `bash`, `read_file`, `grep`, `write_file`, `edit_file`, and
+`read_tool_output` are one builder any agent can compose with its own tools:
+
+```ts
+import { agent, auto, httpExecutionBackend, shellTools } from "@caveman-ai/agent";
+
+const investigator = agent({
+  id: "investigator",
+  instructions,
+  model: auto(),
+  tools: [
+    ...shellTools({
+      workspace: "/srv/checkout",
+      executionBackend: httpExecutionBackend({ url, token }),   // default: this host
+      tools: ["bash", "read_file", "grep"],                        // default: all six
+    }),
+    searchTraces,
+  ],
+  sandbox: "host",
+});
+```
+
+| Option | Default | Notes |
+| --- | --- | --- |
+| `workspace` | required | Paths are contained to it (realpath-based on the local backend) |
+| `executionBackend` | `localExecutionBackend()` | Where processes run and files live. Host execution is not isolation |
+| `tools` | all six | Which tools, in order. Selecting `read_tool_output` turns on the recovery store, so capped output gets a handle instead of a dead end |
+| `outputCaps` | per tool | Raw byte caps applied before any transform |
+| `commandSessions` | none | Interactive bash sessions; local backend only |
+| `onOutput` | none | Observes every capped output (label, text) |
+
+`bash` is `effect: "external"` and uncontained by design: its subprocess
+environment is a fixed shell/locale allowlist rather than `process.env`, so a
+model-driven command cannot read the framework's credentials, but it runs with
+the user's privileges. The one-line move to a container is the execution
+backend. Pair it with a `toolPolicy` (below) to decide *which* commands may
+start; `examples/investigator` does both.
+
+## Authorizing tool calls
+
+Authorization is a decision the host makes outside model output. The kernel
+already admits every call through Pi's `beforeToolCall` hook (deadline,
+budget, call caps, breakers, sandbox posture, argument shape);
+`RunOptions.toolPolicy` is your decision, run after those checks, for every
+declared tool call in the run: root, subagent, and nested composite dispatch.
+It is the `canUseTool` shape from the Claude Agent SDK on the kernel's own
+admission path.
+
+```ts
+const result = await run(investigator, task, {
+  toolPolicy: ({ name, effect, args, agentPath }) => {
+    if (effect === "write" && !grant.allows("write_code")) return { deny: "grant_scope" };
+    if (name === "bash" && /\brm\b/.test(String(args.command))) return { deny: "destructive" };
+    return undefined;                                   // or { allow: true }
+  },
+});
+```
+
+| Decision | Effect |
+| --- | --- |
+| `undefined` / `{ allow: true }` | The call executes |
+| `{ deny: code }` | The call never executes. The model reads `cave_tool_denied:<code>` as the tool result and the run continues; the receipt counts the call under `tools[].denied` (and `errors`) |
+| throw, hang past 10s, malformed decision | The run ends with `cave_tool_policy_failed` (or `cave_tool_policy_decision_invalid` / `cave_tool_policy_reason_invalid`), carrying its receipt. Unknown authorization state never executes a tool |
+
+The policy receives `runId`, `agentId`, `agentPath` (`[]` at the root, the
+subagent tool names below it), `toolCallId`, `parentToolCallId` for nested
+calls, `name`, `effect`, and the validated `args`. `code` must match
+`[a-z][a-z0-9_]*`: it is an identifier that reaches the model, the receipt, and
+the journal, never tenant text. A policy cannot rewrite arguments, because a
+durable journal binds each call to its argument digest; it is re-evaluated on
+every durable resume. Framework `cave_*` tools are not gated. Subagents
+inherit the policy with the rest of the run options.
+
+Which tools exist at all is still decided at definition time (`tools: […]`);
+the policy narrows a fixed set per call, it does not widen one.
+
 ## Where tool code actually runs
 
 Under `sandbox: "required"` the closure does **not** run in your process. Before

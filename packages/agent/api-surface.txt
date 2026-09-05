@@ -24,7 +24,9 @@
 .	AgentInputSource
 .	AgentInputURLSource
 .	AgentOpaqueInputPart
+.	AgentOutput
 .	AgentRunController
+.	AgentStaticContextDiagnostics
 .	AgentTextInputPart
 .	ArtifactDefinition
 .	Auto
@@ -205,6 +207,8 @@
 .	SafetyClass
 .	SandboxEgress
 .	SandboxEgressPolicy
+.	ShellToolName
+.	ShellToolsOptions
 .	StandardInputOutputToolOptions
 .	StandardJSONOutputToolOptions
 .	StandardJSONToolOptions
@@ -215,7 +219,12 @@
 .	StandardTypeBoxOutputToolOptions
 .	SubagentRuntimeDefinition
 .	TARGET_CAPABILITY_LATTICE
+.	TOOL_POLICY_TIMEOUT_MS
 .	TRAJECTORY_IR_SCHEMA_VERSION
+.	ToolCallDecision
+.	ToolCallDenial
+.	ToolCallPolicy
+.	ToolCallPolicyInput
 .	ToolDefinition
 .	ToolEffect
 .	ToolExecutionContext
@@ -229,6 +238,7 @@
 .	WorkloadProfile
 .	WorkloadSplit
 .	agent
+.	agentStaticContextDiagnostics
 .	appendRuntimeContextSegment
 .	applyAgentDefinitionTransforms
 .	artifact
@@ -262,6 +272,7 @@
 .	createProgrammaticToolRuntime
 .	createSparseEmbeddingAdapter
 .	createWorkloadProfile
+.	decideToolCall
 .	defineAgentInputEncoder
 .	defineModelUsage
 .	defineRunReceipt
@@ -311,6 +322,7 @@
 .	runLocked
 .	schema
 .	sha256
+.	shellTools
 .	stableStringify
 .	stream
 .	subagent
@@ -823,6 +835,8 @@
 ./serve	createAgentServer
 ./serve-handler	AgentHandler
 ./serve-handler	AgentHandlerOptions
+./serve-handler	INSTANCE_LOCK_RUN_ID
+./serve-handler	Principal
 ./serve-handler	RecoveryReport
 ./serve-handler	WebSocketLike
 ./serve-handler	createAgentHandler

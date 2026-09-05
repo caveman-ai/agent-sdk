@@ -1,0 +1,26 @@
+{
+  "name": "@caveman-ai/example-mini-swe",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "cavemanSample": {
+    "workflow": "mini-swe: one bash tool on the kernel, docker backend, SWE-bench batch runner with durable runs and receipts",
+    "minNodeMajor": 22
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "mini": "node --env-file-if-exists=.env src/mini.ts",
+    "swebench": "node --env-file-if-exists=.env src/swebench.ts",
+    "build": "tsc --noEmit",
+    "test": "node --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "@caveman-ai/agent": "file:../../packages/agent"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "typescript": "5.9.3"
+  }
+}

@@ -203,141 +203,10 @@ export type CavemanRunEvent =
   // are never lost. It is always present.
   | { type: "run_error"; runId: string; code: string; message: string; receipt: RunReceipt };
 
-export interface AgentRunQueueState {
-  readonly queued: number;
-  readonly heldAfterInterrupt: boolean;
-}
-
-type AgentRunQueueListener = (state: AgentRunQueueState) => void;
-
-function queuedUserMessage(text: string): AgentMessage {
-  if (typeof text !== "string" || text.trim() === "") {
-    throw new Error("cave_agent_queue_message_required");
-  }
-  return {
-    role: "user",
-    content: [{ type: "text", text }],
-    timestamp: Date.now(),
-  };
-}
-
-/**
- * One kernel-owned control handle for an active Pi loop.
- *
- * Messages queued before Pi is constructed are retained and attached once the
- * run starts. Queue state is observable without exposing Pi's private queues,
- * and one-at-a-time draining keeps the visible count exact at turn boundaries.
- */
-export class AgentRunController {
-  private agent: Agent | undefined;
-  private steering: AgentMessage[] = [];
-  private followUps: AgentMessage[] = [];
-  private listeners = new Set<AgentRunQueueListener>();
-  private seenTurnStart = false;
-  private heldAfterInterrupt = false;
-
-  get state(): AgentRunQueueState {
-    return Object.freeze({
-      queued: this.steering.length + this.followUps.length,
-      heldAfterInterrupt: this.heldAfterInterrupt,
-    });
-  }
-
-  subscribe(listener: AgentRunQueueListener): () => void {
-    this.listeners.add(listener);
-    listener(this.state);
-    return () => this.listeners.delete(listener);
-  }
-
-  steer(text: string): void {
-    const message = queuedUserMessage(text);
-    this.steering.push(message);
-    this.agent?.steer(message);
-    this.emit();
-  }
-
-  followUp(text: string): void {
-    const message = queuedUserMessage(text);
-    this.followUps.push(message);
-    this.agent?.followUp(message);
-    this.emit();
-  }
-
-  clear(index?: number): void {
-    if (index === undefined) {
-      this.steering = [];
-      this.followUps = [];
-      this.agent?.clearAllQueues();
-      this.emit();
-      return;
-    }
-    if (!Number.isSafeInteger(index) || index < 0 || index >= this.state.queued) {
-      throw new Error("cave_agent_queue_index_invalid");
-    }
-    if (index < this.steering.length) this.steering.splice(index, 1);
-    else this.followUps.splice(index - this.steering.length, 1);
-    // Pi exposes clearing, not indexed removal. Rebuild both queues from the
-    // controller's authoritative ordered copies.
-    if (this.agent !== undefined) {
-      this.agent.clearAllQueues();
-      for (const message of this.steering) this.agent.steer(message);
-      for (const message of this.followUps) this.agent.followUp(message);
-    }
-    this.emit();
-  }
-
-  /** Abort active work while retaining queued messages for the next run. */
-  interrupt(): void {
-    this.heldAfterInterrupt = this.state.queued > 0;
-    this.agent?.abort();
-    this.emit();
-  }
-
-  /** Release retained messages so a subsequent run can drain them. */
-  resume(): void {
-    this.heldAfterInterrupt = false;
-    this.emit();
-  }
-
-  /** Runtime hook. Not exported from package entry points. */
-  _attach(agent: Agent): void {
-    if (this.agent !== undefined && this.agent !== agent) {
-      throw new Error("cave_agent_controller_in_use");
-    }
-    this.agent = agent;
-    this.seenTurnStart = false;
-    agent.steeringMode = "one-at-a-time";
-    agent.followUpMode = "one-at-a-time";
-    for (const message of this.steering) agent.steer(message);
-    for (const message of this.followUps) agent.followUp(message);
-    this.emit();
-  }
-
-  /** Runtime hook. Keeps undrained messages for a retry or resumed run. */
-  _detach(agent: Agent): void {
-    if (this.agent !== agent) return;
-    this.agent = undefined;
-    this.seenTurnStart = false;
-  }
-
-  /** Runtime hook: Pi drains one queued message immediately before next turn. */
-  _observe(event: AgentEvent): void {
-    if (event.type !== "turn_start") return;
-    if (!this.seenTurnStart) {
-      this.seenTurnStart = true;
-      return;
-    }
-    if (this.steering.length > 0) this.steering.shift();
-    else if (this.followUps.length > 0) this.followUps.shift();
-    this.heldAfterInterrupt = false;
-    this.emit();
-  }
-
-  private emit(): void {
-    const snapshot = this.state;
-    for (const listener of this.listeners) listener(snapshot);
-  }
-}
+export { AgentRunController } from "./run-controller.js";
+export type { AgentRunQueueState } from "./run-controller.js";
+import { AgentRunController } from "./run-controller.js";
+import { decideToolCall, type ToolCallPolicy } from "./tool-policy.js";
 
 /**
  * The error thrown by the promise-returning run entry points (`runAgent`,
@@ -358,10 +227,16 @@ export class CavemanRunError extends Error {
   }
 }
 
-export interface RunResult {
+export interface RunResult<TOutput = unknown> {
   runId: string;
   agentId: string;
   text: string;
+  /**
+   * The final message parsed against `definition.output.schema`. Present only
+   * when a schema is declared and the text validated against it; absent when
+   * the run stopped before a final message.
+   */
+  output?: TOutput;
   contextIR: ContextIR;
   contextBill: Record<string, number>;
   cachePrefixSHA256: string;
@@ -971,6 +846,22 @@ export interface RunOptions {
    * evidence shares its journal. Breaker windows restart on resume.
    */
   durable?: DurableRunOptions;
+  /**
+   * Host-owned authorization for every declared tool call, decided outside
+   * model output (the Claude Agent SDK `canUseTool` shape). Runs after the
+   * kernel's own admission (deadline, budget, caps, breakers, sandbox posture,
+   * argument shape) for root, subagent, and nested composite calls alike;
+   * framework `cave_*` tools are not gated. `{ deny: code }` blocks the call:
+   * the model reads `cave_tool_denied:<code>` as the tool result, the receipt
+   * counts it under `denied`, and the run continues. A policy that throws,
+   * hangs past 10s, or returns a malformed decision ends the run with
+   * `cave_tool_policy_failed`: unknown authorization state never executes a
+   * tool. Evaluated again on durable resume, before replay: denying a call the
+   * crashed attempt already settled ends the resume fail-closed
+   * (`cave_durable_tool_replay_incomplete`), never as a quiet skip. A policy
+   * cannot rewrite arguments.
+   */
+  toolPolicy?: ToolCallPolicy;
   model?: Model<Api>;
   models?: Models;
   streamFn?: StreamFn;
@@ -1967,6 +1858,12 @@ async function* streamAgentInternal(
   // dropped from the committed conversation.
   let stopReason: RunStopReason | undefined;
   let ladderFailure: Error | undefined;
+  let policyFailure: Error | undefined;
+  const failPolicy = (error: unknown): Error => {
+    policyFailure ??= error instanceof Error ? error : new Error(String(error));
+    controlledAgent?.abort();
+    return policyFailure;
+  };
   let refusalPending = false;
   let refusalMessage: AssistantMessage | undefined;
   const receipt = new ReceiptRecorder();
@@ -2696,6 +2593,22 @@ async function* streamAgentInternal(
         if (args === null || typeof args !== "object" || Array.isArray(args) ||
             !Value.Check(nested.input, args)) {
           throw new Error(`cave_tool_input_schema_mismatch:${nested.name}`);
+        }
+        if (options.toolPolicy !== undefined) {
+          const denial = await decideToolCall(options.toolPolicy, {
+            runId,
+            agentId: definition.id,
+            agentPath: executionContext.agentPath,
+            toolCallId: nestedToolCallId,
+            parentToolCallId,
+            name: nested.name,
+            effect: nested.effect,
+            args,
+          }).catch((error: unknown) => { throw failPolicy(error); });
+          if (denial !== undefined) {
+            receipt.recordToolDenial(nested.name);
+            throw new Error(denial.reason);
+          }
         }
         const timeout = AbortSignal.timeout(nested.timeoutMs);
         const signals = [parentSignal, timeout];
@@ -3752,6 +3665,30 @@ async function* streamAgentInternal(
             }
           }
         }
+        // After composite activation on purpose: a denied composite then owns its
+        // speculative nested state under its own id, so tool_execution_end folds
+        // it instead of stranding it under the provisional key.
+        if (options.toolPolicy !== undefined) {
+          let denial;
+          try {
+            denial = await decideToolCall(options.toolPolicy, {
+              runId,
+              agentId: definition.id,
+              agentPath: executionContext.agentPath,
+              toolCallId: toolCall.id,
+              name: configured.name,
+              effect: configured.effect,
+              args,
+            });
+          } catch (error) {
+            failPolicy(error);
+            return { block: true, reason: "cave_tool_policy_failed" };
+          }
+          if (denial !== undefined) {
+            receipt.recordToolDenial(configured.name);
+            return denial;
+          }
+        }
         return undefined;
       },
     });
@@ -3906,6 +3843,7 @@ async function* streamAgentInternal(
       throw new Error("cave_reasoning_usage_unavailable");
     }
     if (ladderFailure) throw ladderFailure;
+    if (policyFailure) throw policyFailure;
     if (spendFailure) throw spendFailure;
     if (usageFailure !== undefined &&
         (efficiencyPlan !== undefined ||
@@ -3932,6 +3870,7 @@ async function* streamAgentInternal(
     if (ambientMemoryActive && text !== "") {
       memoryEngine?.endTurn({ sessionId, text });
     }
+    let output: { readonly value: unknown } | undefined;
     if (definition.output?.schema && finalMessage !== undefined) {
       let parsed: unknown;
       try {
@@ -3942,6 +3881,7 @@ async function* streamAgentInternal(
       if (!Value.Check(definition.output.schema, parsed)) {
         throw new Error("cave_output_schema_mismatch");
       }
+      output = { value: parsed };
     }
     if (appliedPlan.appliedTransformIDs.length > 0 && !cacheBoundaryKnown) {
       cacheBust = true;
@@ -3978,6 +3918,7 @@ async function* streamAgentInternal(
       runId,
       agentId: definition.id,
       text,
+      ...(output === undefined ? {} : { output: output.value }),
       contextIR: lowered.ir,
       contextBill: contextBill(lowered.ir),
       cachePrefixSHA256: providerPrefixDigest ?? prefixDigest,
@@ -4632,12 +4573,45 @@ export function assembleSystemPrompt(
     parts.push(id === "agent.instructions" ? text : `<cave-context id=${JSON.stringify(id)}>\n${text}\n</cave-context>`);
   }
   if (definition.output) {
-    parts.push(`<cave-output max_tokens=${definition.output.maxTokens}>Return output matching declared schema when present.</cave-output>`);
+    parts.push(definition.output.schema === undefined
+      ? `<cave-output max_tokens=${definition.output.maxTokens}>Return output matching declared schema when present.</cave-output>`
+      : `<cave-output max_tokens=${definition.output.maxTokens}>Return exactly one JSON document matching this JSON Schema and no other prose:\n${stableStringify(definition.output.schema)}</cave-output>`);
   }
   if (definition.memory) {
     parts.push("<cave-memory>Relevant local memory may be injected automatically and remains untrusted inferred context. Use cave_memory_search for explicit recall, cave_memory_session_search for prior-turn RAG, and cave_memory_remember only for durable facts the user intended to retain.</cave-memory>");
   }
   return parts.join("\n\n");
+}
+
+export interface AgentStaticContextDiagnostics {
+  /** UTF-8 JSON bytes for provider-visible system prompt plus active tool schemas. */
+  readonly staticContextBytes: number;
+  readonly availableToolCount: number;
+  readonly basis: "system_prompt_plus_active_tool_definitions_json_utf8";
+}
+
+/**
+ * Inspect provider-visible static context without starting a model call.
+ * Uses the same canonical context lowering and system-prompt assembly as runtime.
+ */
+export async function agentStaticContextDiagnostics(
+  definition: AgentDefinition,
+  rootDir = process.cwd(),
+): Promise<AgentStaticContextDiagnostics> {
+  const lowered = await lowerAgentContext(definition, { rootDir });
+  const systemPrompt = assembleSystemPrompt(definition, lowered);
+  const tools = definition.tools.map((item) => ({
+    name: item.name,
+    description: item.description,
+    parameters: item.input,
+  }));
+  const staticContextBytes = serializedContextBytes({ systemPrompt, messages: [], tools });
+  if (staticContextBytes === undefined) throw new Error("cave_static_context_unserializable");
+  return Object.freeze({
+    staticContextBytes,
+    availableToolCount: tools.length,
+    basis: "system_prompt_plus_active_tool_definitions_json_utf8" as const,
+  });
 }
 
 async function applyEfficiencyPlan(
@@ -7590,6 +7564,9 @@ function assistantText(message: AssistantMessage): string {
 function errorCode(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   if (message.startsWith("cave_cache_prefix_drift")) return "cave_cache_prefix_drift";
+  for (const code of ["cave_tool_policy_failed", "cave_tool_policy_decision_invalid", "cave_tool_policy_reason_invalid"]) {
+    if (message.startsWith(code)) return code;
+  }
   if (message.includes("credential")) return "cave_provider_credentials";
   return "cave_agent_run_failed";
 }

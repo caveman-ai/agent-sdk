@@ -59,6 +59,16 @@ The budget is the real bound.
 
 An abort is the deliberate twin of a crash and stays resumable.
 
+When a re-driven turn calls tools, the provider mints fresh tool-call ids, so
+the journal's replay is matched by position, tool name, effect, and argument
+digest, never by the provider's id: a call the crashed attempt already settled
+replays its journaled result without running again, and a re-driven turn that
+asks for a different call fails closed with `cave_durable_tool_replay_mismatch`.
+A `toolPolicy` is evaluated again on every resume, before replay: a policy
+that now denies a call the crashed attempt already settled ends the resume
+fail-closed with `cave_durable_tool_replay_incomplete` rather than skipping
+the journaled result. Keep grants stable across a resume, or start a new run.
+
 ## Fail-closed identity
 
 The journal must match the run being resumed:

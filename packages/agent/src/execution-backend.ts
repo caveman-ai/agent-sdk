@@ -4,17 +4,19 @@
  * Every request is POST with `Authorization: Bearer <token>` and
  * `Content-Type: application/json`.
  *
- * - `/exec`: request `{ command, args, cwd, env, timeoutMs, maxOutputBytes }`;
+ * - `/exec`: request `{ execId, command, args, cwd, env, timeoutMs, maxOutputBytes }`;
  *   response `{ stdout, stderr, code, timedOut, truncated, startFailed? }`.
  * - `/read`: request `{ path, maxBytes? }`; response `{ data }`, where `data`
  *   is base64. A missing path returns HTTP 404.
  * - `/write`: request `{ path, data }`, where `data` is base64; response `{}`.
+ * - Optional `/cancel`: request `{ execId }`; response `{}`. Best effort.
  * - Optional `/prepare`: request `{}`; response `{}`.
  * - Optional `/snapshot`: request `{}`; response `{ snapshotId }`.
  * - Optional `/restore`: request `{ snapshotId }`; response `{}`.
  *
  * Non-2xx responses fail closed. `AbortSignal` is transport-local and is not
- * serialized; the HTTP client passes it to fetch for `/exec` cancellation.
+ * serialized; the HTTP client passes it to fetch for `/exec` cancellation and
+ * then posts `/cancel` with the same `execId` so the server can kill the tree.
  * Server enforces its workspace root for paths, including symlink targets.
  */
 import { spawn } from "node:child_process";
@@ -64,6 +66,14 @@ export interface ExecutionBackend {
  * case instead of hanging on it.
  */
 const EXIT_FLUSH_GRACE_MS = 100;
+
+/** Bound on the best-effort /cancel that follows an aborted /exec. */
+const CANCEL_TIMEOUT_MS = 5_000;
+
+function randomExecId(): string {
+  return globalThis.crypto?.randomUUID?.() ??
+    `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
 
 export function localExecutionBackend(): ExecutionBackend {
   const workspaceRoots = new Map<string, Promise<string>>();
@@ -136,8 +146,10 @@ export function httpExecutionBackend(opts: {
   return {
     id: "http",
     async exec(request) {
+      const execId = randomExecId();
       try {
         const response = await post("exec", {
+          execId,
           command: request.command,
           args: request.args,
           cwd: request.cwd,
@@ -148,7 +160,11 @@ export function httpExecutionBackend(opts: {
         return validateExecResult(response, request.maxOutputBytes);
       } catch (error) {
         if ((error as Error).name !== "AbortError") throw error;
-        // ponytail: No /cancel yet; aborted transport may leave remote process running.
+        // Best effort: the aborted /exec carried execId, so ask the server to kill
+        // that process tree. A provider without /cancel answers 404 and the remote
+        // process still dies on its own timeoutMs; nothing here can guarantee it.
+        await post("cancel", { execId }, AbortSignal.timeout(CANCEL_TIMEOUT_MS), 4_096)
+          .catch(() => undefined);
         return {
           stdout: "", stderr: "cave_execution_backend_aborted", code: null,
           timedOut: false, truncated: false,

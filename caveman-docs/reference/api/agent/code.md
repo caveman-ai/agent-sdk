@@ -52,7 +52,7 @@ export declare class AgentRunController {
 }
 ```
 
-Declared in `packages/agent/dist/runtime.d.ts`.
+Declared in `packages/agent/dist/run-controller.d.ts`.
 
 ## Interfaces
 
@@ -639,7 +639,7 @@ Declared in `packages/agent/dist/code.d.ts`.
 export declare function capOutput(text: string, maxBytes: number): string;
 ```
 
-Declared in `packages/agent/dist/code.d.ts`.
+Declared in `packages/agent/dist/shell-tools.d.ts`.
 
 ### `classifyTurnFailure`
 
@@ -864,7 +864,7 @@ export declare const CODING_TOOL_OUTPUT_CAPS: Readonly<{
 }>;
 ```
 
-Declared in `packages/agent/dist/code.d.ts`.
+Declared in `packages/agent/dist/shell-tools.d.ts`.
 
 ### `OBSERVE_ONLY_BANNER`
 

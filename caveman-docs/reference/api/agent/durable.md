@@ -221,6 +221,17 @@ export declare class SqlDurableStore implements DurableStore {
      */
     append(runId: string, data: string): Promise<void>;
     /**
+     * `SELECT COALESCE(MAX(seq), 0) + 1` inside the INSERT is only atomic on an
+     * engine that serializes the statement. SQLite does; Postgres at READ
+     * COMMITTED does not, and concurrent appends to one run collided on the
+     * primary key (9 of 12 writers lost, against a real server). Losing an append
+     * silently is not an option for a journal, so a collision is retried: the
+     * PRIMARY KEY is the arbiter, and the loser re-reads MAX and tries the next
+     * sequence. Retries are bounded, and exhausting them throws rather than
+     * dropping the line.
+     */
+    private insertLine;
+    /**
      * An append by a process that holds this run's lease must still be able to
      * prove it holds it, at append time rather than only on the renewal tick. A
      * store with no lease for this run is a deliberately lock-free writer

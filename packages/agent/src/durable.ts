@@ -699,7 +699,13 @@ export class DurableToolCoordinator {
 
     const replay = this.#replay[this.#cursor];
     if (replay !== undefined) {
-      if (!sameToolIdentity(replay.intent, identity)) {
+      // A resumed run re-drives its lost turn through the provider, which
+      // mints fresh tool-call ids, so the recorded id can only match a faux
+      // stream that replays the same literal ids. The journal's authority is
+      // the call's position, tool, effect, and argument digest; when those
+      // agree the recorded identity is adopted for the rest of the call so
+      // the settlement pairs with its own intent.
+      if (!sameToolCall(replay.intent, identity)) {
         throw this.#fail(new Error(
           `cave_durable_tool_replay_mismatch:${replay.intent.name}:${replay.intent.toolCallId}`,
         ));
@@ -710,7 +716,8 @@ export class DurableToolCoordinator {
       }
       // Only read/idempotent unmatched intents reach here; assertResumeSafe
       // rejects effects whose outcome cannot be known.
-      return this.#drive(identity, true, work);
+      const { v: _v, at: _at, type: _type, ...recorded } = replay.intent;
+      return this.#drive(recorded, true, work);
     }
     return this.#drive(identity, false, work);
   }
@@ -831,6 +838,14 @@ function validToolPath(value: unknown): value is string {
 function validToolCallId(value: unknown): value is string {
   return typeof value === "string" && value.length > 0 &&
     utf8Bytes(value) <= MAX_TOOL_CALL_ID_BYTES && !CONTROL_CHARACTER_PATTERN.test(value);
+}
+
+/** Positional replay match: everything but the provider-minted call id. */
+function sameToolCall(recorded: ToolIntentEvent, current: ToolInvocationIdentity): boolean {
+  return recorded.path === current.path &&
+    recorded.name === current.name &&
+    recorded.effect === current.effect &&
+    recorded.argsSha256 === current.argsSha256;
 }
 
 function sameToolIdentity(

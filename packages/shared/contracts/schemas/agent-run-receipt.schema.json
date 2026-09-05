@@ -92,7 +92,8 @@
       "properties": {
         "name": { "type": "string", "minLength": 1 },
         "calls": { "$ref": "#/$defs/nonNegativeInteger" },
-        "errors": { "$ref": "#/$defs/nonNegativeInteger" }
+        "errors": { "$ref": "#/$defs/nonNegativeInteger" },
+        "denied": { "$ref": "#/$defs/nonNegativeInteger" }
       }
     },
     "tranche": {

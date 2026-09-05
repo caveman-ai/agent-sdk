@@ -171,7 +171,7 @@ Declared in `packages/agent/dist/agent-environment.d.ts`.
 ### `applyAgentEnvironment`
 
 ```ts
-export declare function applyAgentEnvironment(definition: AgentDefinition, environment: AgentEnvironment, options?: ApplyAgentEnvironmentOptions): AgentDefinition;
+export declare function applyAgentEnvironment<D extends AgentDefinition>(definition: D, environment: AgentEnvironment, options?: ApplyAgentEnvironmentOptions): D;
 ```
 
 Declared in `packages/agent/dist/agent-environment.d.ts`.

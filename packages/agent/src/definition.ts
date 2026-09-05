@@ -1,4 +1,4 @@
-import type { Api, Model } from "@earendil-works/pi-ai";
+import type { Api, Model, TSchema } from "@earendil-works/pi-ai";
 import type {
   Auto,
   ContextDefinition,
@@ -8,7 +8,7 @@ import type {
   ToolDefinition,
 } from "./primitives.js";
 
-export interface AgentDefinition {
+export interface AgentDefinition<TOutput extends TSchema | undefined = TSchema | undefined> {
   readonly kind: "agent";
   readonly id: string;
   readonly instructions: string | FileSource;
@@ -17,7 +17,8 @@ export interface AgentDefinition {
   readonly tools: readonly ToolDefinition[];
   readonly contexts: readonly ContextDefinition[];
   readonly memory?: MemoryDefinition;
-  readonly output?: OutputDefinition;
+  /** Declared output contract; its schema types `RunResult.output`. */
+  readonly output?: OutputDefinition<TOutput>;
   /**
    * Tool containment posture.
    *
@@ -59,7 +60,7 @@ const SANDBOX_MODES: readonly AgentDefinition["sandbox"][] = [
   "host",
 ];
 
-export function agent(options: {
+export function agent<TOutput extends TSchema | undefined = undefined>(options: {
   id: string;
   instructions: string | FileSource;
   model: Auto | string | Model<Api>;
@@ -67,9 +68,9 @@ export function agent(options: {
   tools?: ToolDefinition[];
   contexts?: ContextDefinition[];
   memory?: MemoryDefinition;
-  output?: OutputDefinition;
+  output?: OutputDefinition<TOutput>;
   sandbox?: AgentDefinition["sandbox"];
-}): AgentDefinition {
+}): AgentDefinition<TOutput> {
   if (!/^[a-z0-9][a-z0-9_-]{0,95}$/.test(options.id)) {
     throw new Error(`caveman agent: invalid agent id ${JSON.stringify(options.id)}`);
   }

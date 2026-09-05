@@ -1,4 +1,3 @@
-import type { TurnEvent } from "@pebble-agent/protocol";
 import {
   durableConversationCheckpoint,
   durableRunSummary,
@@ -9,12 +8,9 @@ import {
 } from "./durable.js";
 import type { AgentRunController, Conversation } from "./runtime.js";
 import { PebbleEventEncoder } from "./pebble-stream.js";
+import { EventBroadcast, eventStreamResponse, gapFrame, resumeSequence, type WebSocketPeer } from "./serve-events.js";
+export { EventBroadcast, eventStreamResponse, type WebSocketPeer } from "./serve-events.js";
 
-// ponytail: 2048 process-local frames bound replay memory; move replay to a
-// durable indexed event store before widening this window.
-const MAX_BUFFERED_EVENTS = 2048;
-const SSE_HEARTBEAT_MS = 15_000;
-const SSE_MAX_BUFFERED_BYTES = 4 * 1024 * 1024;
 const SETTLED_RETENTION_MS = 5 * 60_000;
 // ponytail: 1024 process-local sessions is enough for the built-in host; move
 // session ownership to a durable indexed coordinator before raising this.
@@ -26,153 +22,6 @@ const MAX_SESSION_MESSAGES = 256;
 // 4096-entry tombstone window with durable deletion when deletion must persist.
 const MAX_DELETED_SESSIONS = 4096;
 
-export interface WebSocketPeer {
-  send(data: string): void;
-  close(code?: number, reason?: string): void;
-  addEventListener(
-    type: "message" | "close" | "error",
-    fn: (event: { data?: unknown }) => void,
-  ): void;
-}
-
-/** Process-local replay window. Durable authority remains run journals. */
-export class EventBroadcast {
-  private readonly buffered: TurnEvent[] = [];
-  private readonly listeners = new Set<(event: TurnEvent) => void>();
-  private readonly closeListeners = new Set<() => void>();
-  private floor = 0;
-  settled = false;
-  settledAt = 0;
-
-  get subscriberCount(): number {
-    return this.listeners.size;
-  }
-
-  push(event: TurnEvent): void {
-    this.buffered.push(event);
-    while (this.buffered.length > MAX_BUFFERED_EVENTS) {
-      this.buffered.shift();
-      this.floor += 1;
-    }
-    for (const listener of this.listeners) listener(event);
-  }
-
-  since(seq: number, gapAhead = false): {
-    readonly events: readonly TurnEvent[];
-    readonly gap: boolean;
-    readonly earliest: number;
-  } {
-    const next = this.floor + this.buffered.length;
-    const gap = seq < this.floor || (gapAhead && seq > next);
-    return {
-      events: gap ? [...this.buffered] : this.buffered.slice(seq - this.floor),
-      gap,
-      earliest: this.floor,
-    };
-  }
-
-  subscribe(listener: (event: TurnEvent) => void, onClose?: () => void): () => void {
-    this.listeners.add(listener);
-    if (onClose !== undefined) this.closeListeners.add(onClose);
-    return () => {
-      this.listeners.delete(listener);
-      if (onClose !== undefined) this.closeListeners.delete(onClose);
-    };
-  }
-
-  settle(): void {
-    this.settled = true;
-    this.settledAt = Date.now();
-  }
-
-  close(): void {
-    this.settle();
-    for (const listener of this.closeListeners) listener();
-    this.listeners.clear();
-    this.closeListeners.clear();
-  }
-}
-
-function resumeSequence(request: Request): number {
-  const parsed = Number.parseInt(
-    request.headers.get("last-event-id") ?? new URL(request.url).searchParams.get("lastEventId") ?? "",
-    10,
-  );
-  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed + 1 : 0;
-}
-
-function gapFrame(requestedSeq: number, earliestSeq: number): Record<string, unknown> {
-  return { error: "cave_serve_events_gap", requestedSeq, earliestSeq };
-}
-
-/** Web-standard SSE response with existing replay/gap semantics. */
-export function eventStreamResponse(
-  broadcast: EventBroadcast,
-  request: Request,
-  endOnTurnEnd: boolean,
-): Response {
-  const requested = resumeSequence(request);
-  let cleanup = (): void => {};
-  const body = new ReadableStream<Uint8Array>({
-    start(controller) {
-      const encoder = new TextEncoder();
-      let closed = false;
-      let lastWritten = requested - 1;
-      let unsubscribe = (): void => {};
-      let heartbeat: ReturnType<typeof setInterval> | undefined;
-      const close = (): void => {
-        if (closed) return;
-        closed = true;
-        if (heartbeat !== undefined) clearInterval(heartbeat);
-        unsubscribe();
-        try { controller.close(); } catch { /* already cancelled */ }
-      };
-      cleanup = close;
-      const write = (text: string): void => {
-        if (closed) return;
-        if ((controller.desiredSize ?? 1) <= 0) { close(); return; }
-        try { controller.enqueue(encoder.encode(text)); } catch { close(); }
-      };
-      const writeEvent = (event: TurnEvent): void => {
-        if (event.seq <= lastWritten) return;
-        lastWritten = event.seq;
-        write(`id: ${event.seq}\ndata: ${JSON.stringify(event)}\n\n`);
-        if (endOnTurnEnd && event.kind === "turn.end") close();
-      };
-      const pending: TurnEvent[] = [];
-      let replaying = true;
-      unsubscribe = broadcast.subscribe((event) => {
-        if (replaying) pending.push(event);
-        else writeEvent(event);
-      }, close);
-      heartbeat = setInterval(() => { write(": keepalive\n\n"); }, SSE_HEARTBEAT_MS);
-      heartbeat.unref?.();
-      request.signal.addEventListener("abort", close, { once: true });
-      const replay = broadcast.since(requested, !endOnTurnEnd);
-      if (replay.gap) {
-        write(`event: gap\ndata: ${JSON.stringify(gapFrame(requested, replay.earliest))}\n\n`);
-        lastWritten = replay.earliest - 1;
-      }
-      for (const event of replay.events) writeEvent(event);
-      replaying = false;
-      for (const event of pending) writeEvent(event);
-      if (endOnTurnEnd && broadcast.settled) close();
-    },
-    cancel() { cleanup(); },
-  }, {
-    highWaterMark: SSE_MAX_BUFFERED_BYTES,
-    size: (chunk) => chunk.byteLength,
-  });
-  return new Response(body, {
-    status: 200,
-    headers: {
-      "content-type": "text/event-stream",
-      "cache-control": "no-cache, no-transform",
-      connection: "keep-alive",
-      "x-accel-buffering": "no",
-    },
-  });
-}
 
 export interface SessionRun {
   readonly runId: string;
@@ -185,6 +34,8 @@ export interface SessionRun {
   readonly onAdmitted: () => void;
   readonly onRejected: (error: unknown) => void;
   readonly onSettled: () => void;
+  /** The authenticated caller that started this run; absent for boot-recovered runs. */
+  readonly principal?: Principal;
 }
 
 export interface SessionDriver {
@@ -193,9 +44,45 @@ export interface SessionDriver {
   summary(runId: string): Promise<DurableRunSummary>;
 }
 
+/** Who a request belongs to. `id` is the isolation boundary. */
+export interface Principal {
+  readonly id: string;
+  /** Carried for host logging and policy; the SDK isolates on `id` alone. */
+  readonly tenant?: string;
+}
+
+/** Upper bound on the serialized `context` a message may attach. */
+export const SESSION_MESSAGE_CONTEXT_MAX_BYTES = 64 * 1024;
+
+/**
+ * Fold caller-supplied structured context into the text the model receives.
+ *
+ * The context rides inside the user message as one fenced JSON block, so it is
+ * exactly as trusted as the message (untrusted), replays byte-for-byte from the
+ * journal, and never enters the cached prefix. `context` must be a JSON object
+ * or array under {@link SESSION_MESSAGE_CONTEXT_MAX_BYTES} once serialized.
+ */
+export function withMessageContext(text: string, context: unknown): string {
+  if (context === undefined) return text;
+  if (context === null || typeof context !== "object") {
+    throw new Error("cave_session_message_context_invalid");
+  }
+  let rendered: string | undefined;
+  try { rendered = JSON.stringify(context); } catch { rendered = undefined; }
+  if (typeof rendered !== "string") throw new Error("cave_session_message_context_invalid");
+  if (new TextEncoder().encode(rendered).byteLength > SESSION_MESSAGE_CONTEXT_MAX_BYTES) {
+    throw new Error("cave_session_message_context_too_large");
+  }
+  return `${text}\n\n<cave-message-context>\n${rendered}\n</cave-message-context>`;
+}
+
 interface SessionMessage {
   readonly runId: string;
   readonly text: string;
+  /** What the model receives: `text` plus any attached context. */
+  readonly input: string;
+  /** Who sent it; carried so a queued message restarted later keeps its caller's authority. */
+  readonly principal?: Principal;
   readonly author?: string;
   readonly mode: "followUp" | "steer";
   readonly queued: boolean;
@@ -203,7 +90,10 @@ interface SessionMessage {
 }
 
 interface SessionState {
+  /** Namespaced storage key: what run ids and journals are built from. */
   readonly sessionId: string;
+  /** What the caller asked for. Echoed back so a principal never sees its tag. */
+  publicId: string;
   readonly checkpoint: DurableConversationCheckpoint;
   readonly encoder: PebbleEventEncoder;
   readonly broadcast: EventBroadcast;
@@ -274,6 +164,11 @@ function sessionRunIdentity(runId: string): { readonly sessionId: string; readon
   if (match?.[1] === undefined || match[2] === undefined) return undefined;
   const n = Number(match[2]);
   return Number.isSafeInteger(n) ? { sessionId: match[1], n } : undefined;
+}
+
+/** `""` for a single-principal server, which keeps existing ids byte-identical. */
+function sessionKey(namespace: string, publicId: string): string {
+  return namespace === "" ? publicId : `${namespace}-${publicId}`;
 }
 
 function validateSessionId(value: unknown): string {
@@ -354,11 +249,16 @@ function lockReason(error: unknown): string {
   return message.startsWith("cave_durable_run_locked") ? "cave_durable_run_locked" : message;
 }
 
-function initialSession(sessionId: string, checkpoint?: DurableConversationCheckpoint): SessionState {
+function initialSession(
+  sessionId: string,
+  publicId: string,
+  checkpoint?: DurableConversationCheckpoint,
+): SessionState {
   const base = checkpoint ?? durableConversationCheckpoint(sessionId, []);
   const now = Date.now();
   return {
     sessionId,
+    publicId,
     checkpoint: base,
     encoder: new PebbleEventEncoder(sessionId),
     broadcast: new EventBroadcast(),
@@ -436,8 +336,8 @@ export class AgentSessions {
       const last = rows.at(-1)!;
       const checkpoint = checkpointForRun(last.summary, last.checkpoints);
       const state = checkpoint === undefined
-        ? { ...initialSession(sessionId), error: "cave_session_conversation_unrecoverable" }
-        : initialSession(sessionId, checkpoint);
+        ? { ...initialSession(sessionId, sessionId), error: "cave_session_conversation_unrecoverable" }
+        : initialSession(sessionId, sessionId, checkpoint);
       state.runs.push(...rows.map((row) => row.runId));
       state.nextRun = (namespaceMax.get(sessionId) ?? last.n) + 1;
       this.sessions.set(sessionId, state);
@@ -494,27 +394,40 @@ export class AgentSessions {
     return { claimed, resumed, skipped, declined };
   }
 
-  async route(request: Request, path: string): Promise<Response | undefined> {
-    if (path === "/sessions" && request.method === "POST") return this.create(request);
+  async route(
+    request: Request,
+    path: string,
+    namespace = "",
+    principal?: Principal,
+  ): Promise<Response | undefined> {
+    if (path === "/sessions" && request.method === "POST") return this.create(request, namespace);
     const messages = /^\/sessions\/([^/]+)\/messages$/.exec(path);
     if (messages?.[1] !== undefined && request.method === "POST") {
-      return this.message(messages[1], request);
+      return this.message(messages[1], request, namespace, principal);
     }
     const events = /^\/sessions\/([^/]+)\/events$/.exec(path);
     if (events?.[1] !== undefined && request.method === "GET") {
-      const state = await this.loadDecoded(events[1]);
+      const state = await this.loadDecoded(events[1], namespace);
       return state instanceof Response ? state : eventStreamResponse(state.broadcast, request, false);
     }
     const websocket = /^\/sessions\/([^/]+)\/ws$/.exec(path);
     if (websocket?.[1] !== undefined && request.method === "GET") return undefined;
     const session = /^\/sessions\/([^/]+)$/.exec(path);
-    if (session?.[1] !== undefined && request.method === "GET") return this.status(session[1]);
-    if (session?.[1] !== undefined && request.method === "DELETE") return this.remove(session[1]);
+    if (session?.[1] !== undefined && request.method === "GET") return this.status(session[1], namespace);
+    if (session?.[1] !== undefined && request.method === "DELETE") {
+      return this.remove(session[1], namespace);
+    }
     return undefined;
   }
 
-  async webSocket(rawId: string, request: Request, socket: WebSocketPeer): Promise<Response> {
-    const loaded = await this.loadDecoded(rawId);
+  async webSocket(
+    rawId: string,
+    request: Request,
+    socket: WebSocketPeer,
+    namespace = "",
+    principal?: Principal,
+  ): Promise<Response> {
+    const loaded = await this.loadDecoded(rawId, namespace);
     if (loaded instanceof Response) return loaded;
     const state = loaded;
     let closed = false;
@@ -531,15 +444,15 @@ export class AgentSessions {
     socket.addEventListener("close", close);
     socket.addEventListener("error", close);
     socket.addEventListener("message", (event) => {
-      void this.socketMessage(state, event.data).catch((error: unknown) => {
+      void this.socketMessage(state, event.data, principal).catch((error: unknown) => {
         socket.close(1008, error instanceof Error ? error.message : "cave_serve_websocket_message_invalid");
       });
     });
     return new Response(null, { status: 200 });
   }
 
-  async webSocketPreflight(rawId: string): Promise<Response | undefined> {
-    const loaded = await this.loadDecoded(rawId);
+  async webSocketPreflight(rawId: string, namespace = ""): Promise<Response | undefined> {
+    const loaded = await this.loadDecoded(rawId, namespace);
     return loaded instanceof Response ? loaded : undefined;
   }
 
@@ -547,7 +460,7 @@ export class AgentSessions {
     for (const state of this.sessions.values()) state.broadcast.close();
   }
 
-  private async create(request: Request): Promise<Response> {
+  private async create(request: Request, namespace = ""): Promise<Response> {
     let payload: unknown;
     try { payload = await requestJson(request, this.maxBodyBytes); }
     catch (error) {
@@ -559,28 +472,38 @@ export class AgentSessions {
     if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
       return json(400, { error: "cave_serve_body_invalid" });
     }
-    let sessionId: string;
-    try { sessionId = validateSessionId((payload as { sessionId?: unknown }).sessionId); }
-    catch (error) {
+    let publicId: string;
+    let key: string;
+    try {
+      publicId = validateSessionId((payload as { sessionId?: unknown }).sessionId);
+      // The namespaced key must itself be a legal id, so a long session id under
+      // a tag fails here with 400 rather than producing an unaddressable run id.
+      key = validateSessionId(sessionKey(namespace, publicId));
+    } catch (error) {
       return json(400, {
         error: error instanceof Error && error.message === "cave_session_id_required"
           ? error.message
           : "cave_durable_run_id_invalid",
       });
     }
-    this.deleted.delete(sessionId);
-    const existing = await this.load(sessionId);
+    this.deleted.delete(key);
+    const existing = await this.load(key, publicId);
     if (existing === undefined) {
-      const state = initialSession(sessionId);
-      state.nextRun = await this.nextRunNumber(sessionId);
-      this.sessions.set(sessionId, state);
+      const state = initialSession(key, publicId);
+      state.nextRun = await this.nextRunNumber(key);
+      this.sessions.set(key, state);
     }
     this.evictSessions();
-    return json(201, { sessionId });
+    return json(201, { sessionId: publicId });
   }
 
-  private async message(rawId: string, request: Request): Promise<Response> {
-    const loaded = await this.loadDecoded(rawId);
+  private async message(
+    rawId: string,
+    request: Request,
+    namespace = "",
+    principal?: Principal,
+  ): Promise<Response> {
+    const loaded = await this.loadDecoded(rawId, namespace);
     if (loaded instanceof Response) return loaded;
     let payload: unknown;
     try { payload = await requestJson(request, this.maxBodyBytes); }
@@ -590,18 +513,22 @@ export class AgentSessions {
         error: message === "cave_serve_body_too_large" ? message : "cave_serve_body_invalid_json",
       });
     }
-    return this.acceptMessage(loaded, payload);
+    return this.acceptMessage(loaded, payload, principal);
   }
 
-  private async acceptMessage(state: SessionState, payload: unknown): Promise<Response> {
+  private async acceptMessage(
+    state: SessionState,
+    payload: unknown,
+    principal?: Principal,
+  ): Promise<Response> {
     await state.settling;
     this.touch(state);
     if (state.error !== undefined) return json(409, { error: state.error });
     if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
       return json(400, { error: "cave_serve_body_invalid" });
     }
-    const { text, author, mode = "followUp" } = payload as {
-      text?: unknown; author?: unknown; mode?: unknown;
+    const { text, author, mode = "followUp", context } = payload as {
+      text?: unknown; author?: unknown; mode?: unknown; context?: unknown;
     };
     if (typeof text !== "string" || text === "") {
       return json(400, { error: "cave_session_message_text_required" });
@@ -612,6 +539,11 @@ export class AgentSessions {
     if (mode !== "followUp" && mode !== "steer") {
       return json(400, { error: "cave_session_message_mode_invalid" });
     }
+    let input: string;
+    try { input = withMessageContext(text, context); }
+    catch (error) {
+      return json(400, { error: error instanceof Error ? error.message : "cave_session_message_context_invalid" });
+    }
     await this.ensureKernel(state);
     const queued = state.active !== undefined;
     if (!queued) {
@@ -620,7 +552,7 @@ export class AgentSessions {
       const pending = stored.pending;
       if (pending !== undefined) {
         state.admitting = pending.runId;
-        const admission = await this.launchRun(state, pending.runId, pending.input, false);
+        const admission = await this.launchRun(state, pending.runId, pending.input, false, principal);
         if (!admission.admitted) {
           return json(409, {
             error: admission.reason === "cave_durable_run_locked"
@@ -631,13 +563,15 @@ export class AgentSessions {
         const message = this.recordMessage(state, {
           runId: pending.runId,
           text,
+          input,
+          ...(principal === undefined ? {} : { principal }),
           ...(author === undefined ? {} : { author }),
           mode,
           queued: true,
           at: new Date().toISOString(),
         });
-        if (message.mode === "steer") state.controller!.steer(message.text);
-        else state.controller!.followUp(message.text);
+        if (message.mode === "steer") state.controller!.steer(message.input);
+        else state.controller!.followUp(message.input);
         return json(202, { runId: pending.runId, queued: true });
       }
     }
@@ -645,48 +579,56 @@ export class AgentSessions {
     this.recordMessage(state, {
       runId,
       text,
+      input,
+      ...(principal === undefined ? {} : { principal }),
       ...(author === undefined ? {} : { author }),
       mode,
       queued,
       at: new Date().toISOString(),
     });
     if (queued) {
-      if (mode === "steer") state.controller!.steer(text);
-      else state.controller!.followUp(text);
+      if (mode === "steer") state.controller!.steer(input);
+      else state.controller!.followUp(input);
     } else {
       state.active = runId;
       state.runs.push(runId);
-      void this.launchRun(state, runId, text, true);
+      void this.launchRun(state, runId, input, true, principal);
     }
     return json(202, { runId, queued });
   }
 
-  private async status(rawId: string): Promise<Response> {
-    const loaded = await this.loadDecoded(rawId);
+  private async status(rawId: string, namespace = ""): Promise<Response> {
+    const loaded = await this.loadDecoded(rawId, namespace);
     if (loaded instanceof Response) return loaded;
     if (loaded.error !== undefined) return json(409, { error: loaded.error });
     const runs = await Promise.all(loaded.runs.map((runId) => this.driver.summary(runId)));
     return json(200, {
-      sessionId: loaded.sessionId,
+      sessionId: loaded.publicId,
       runs,
       ...(loaded.active === undefined ? {} : { active: loaded.active }),
       queued: loaded.controller?.state.queued ?? 0,
-      messages: loaded.messages,
+      // Status shows what the caller sent. The composed input and the caller's
+      // principal are run-internal and stay off the wire.
+      messages: loaded.messages.map(({ input: _input, principal: _principal, ...message }) => message),
     });
   }
 
-  private async remove(rawId: string): Promise<Response> {
-    const loaded = await this.loadDecoded(rawId);
+  private async remove(rawId: string, namespace = ""): Promise<Response> {
+    const loaded = await this.loadDecoded(rawId, namespace);
     if (loaded instanceof Response) return loaded;
     loaded.controller?.clear();
     if (loaded.active !== undefined) await this.driver.cancel(loaded.active);
     loaded.broadcast.close();
     this.sessions.delete(loaded.sessionId);
     this.rememberDeleted(loaded.sessionId);
-    return json(202, { sessionId: loaded.sessionId, status: "deleted" });
+    return json(202, { sessionId: loaded.publicId, status: "deleted" });
   }
 
-  private async socketMessage(state: SessionState, raw: unknown): Promise<void> {
+  private async socketMessage(
+    state: SessionState,
+    raw: unknown,
+    principal?: Principal,
+  ): Promise<void> {
     const text = typeof raw === "string"
       ? raw
       : raw instanceof ArrayBuffer
@@ -707,23 +649,33 @@ export class AgentSessions {
         (payload as { type?: unknown }).type !== "message") {
       throw new Error("cave_serve_websocket_message_invalid");
     }
-    const response = await this.acceptMessage(state, payload);
+    const response = await this.acceptMessage(state, payload, principal);
     if (!response.ok) throw new Error((await response.json() as { error?: string }).error ??
       "cave_serve_websocket_message_invalid");
   }
 
-  private async loadDecoded(rawId: string): Promise<SessionState | Response> {
-    let sessionId: string;
-    try { sessionId = validateSessionId(decodeURIComponent(rawId)); }
-    catch { return json(400, { error: "cave_durable_run_id_invalid" }); }
-    const state = await this.load(sessionId);
+  private async loadDecoded(rawId: string, namespace = ""): Promise<SessionState | Response> {
+    let publicId: string;
+    let key: string;
+    try {
+      publicId = validateSessionId(decodeURIComponent(rawId));
+      key = validateSessionId(sessionKey(namespace, publicId));
+    } catch { return json(400, { error: "cave_durable_run_id_invalid" }); }
+    // A session outside this principal's namespace is not addressable here, so
+    // it reads as absent rather than forbidden: whether another tenant happens
+    // to hold this id is not this caller's to learn.
+    const state = await this.load(key, publicId);
     return state ?? json(404, { error: "cave_serve_not_found" });
   }
 
-  private async load(sessionId: string): Promise<SessionState | undefined> {
+  private async load(sessionId: string, publicId?: string): Promise<SessionState | undefined> {
     if (this.deleted.has(sessionId)) return undefined;
     const existing = this.sessions.get(sessionId);
     if (existing !== undefined) {
+      // A session adopted by recovery only knows its storage key. The first
+      // request that addresses it supplies the caller's id, so responses stop
+      // echoing the namespace tag back.
+      if (publicId !== undefined) existing.publicId = publicId;
       this.touch(existing);
       return existing;
     }
@@ -734,8 +686,8 @@ export class AgentSessions {
     if (last === undefined) return undefined;
     const checkpoint = checkpointForRun(last.summary, last.checkpoints);
     const state = checkpoint === undefined
-      ? { ...initialSession(sessionId), error: "cave_session_conversation_unrecoverable" }
-      : initialSession(sessionId, checkpoint);
+      ? { ...initialSession(sessionId, publicId ?? sessionId), error: "cave_session_conversation_unrecoverable" }
+      : initialSession(sessionId, publicId ?? sessionId, checkpoint);
     state.runs.push(...rows.map((row) => row.runId));
     state.nextRun = inspected.nextRun;
     this.sessions.set(sessionId, state);
@@ -811,6 +763,7 @@ export class AgentSessions {
     runId: string,
     input: string,
     activeBeforeAdmission: boolean,
+    principal?: Principal,
   ): Promise<{ readonly admitted: boolean; readonly reason?: string }> {
     return new Promise((resolveAdmission) => {
       let admitted = false;
@@ -825,6 +778,7 @@ export class AgentSessions {
         runId,
         input,
         sessionId: state.sessionId,
+        ...(principal === undefined ? {} : { principal }),
         conversation: state.conversation!,
         controller: state.controller!,
         encoder: state.encoder,
@@ -896,8 +850,8 @@ export class AgentSessions {
     }
     state.active = runId;
     state.runs.push(runId);
-    for (const message of queued.slice(1)) state.controller!.followUp(message.text);
-    void this.launchRun(state, runId, queued[0]!.text, true);
+    for (const message of queued.slice(1)) state.controller!.followUp(message.input);
+    void this.launchRun(state, runId, queued[0]!.input, true, queued[0]!.principal);
   }
 
   private recordMessage(state: SessionState, message: SessionMessage): SessionMessage {

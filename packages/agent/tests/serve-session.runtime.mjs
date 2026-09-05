@@ -649,6 +649,30 @@ test("Node upgrade fails closed when optional ws import is unavailable", async (
   ]);
 });
 
+test("Node flushes SSE response headers before the first event", async (t) => {
+  // Node buffers the head until the first body write; without an explicit
+  // flush a fetch() client attached to an idle session saw nothing until the
+  // 15s keepalive, so its headers promise stalled that long.
+  const { dir, store } = await scratchStore();
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const server = createAgentServer({
+    definition: definition("sse-flush"), token: TOKEN, store, rootDir: dir,
+    runOptions: { ensureRuntime: false, model: fauxModel() },
+  });
+  t.after(() => server.close(1_000));
+  const port = await server.listen(0, "127.0.0.1");
+  const base = `http://127.0.0.1:${port}`;
+  const headers = { authorization: `Bearer ${TOKEN}`, "content-type": "application/json" };
+  await fetch(`${base}/sessions`, { method: "POST", headers, body: JSON.stringify({ sessionId: "idle" }) });
+  const response = await fetch(`${base}/sessions/idle/events`, {
+    headers,
+    signal: AbortSignal.timeout(2_000),
+  });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("content-type"), "text/event-stream");
+  await response.body.cancel();
+});
+
 test("Node rejects upgrades outside the session WebSocket path without reading SSE", async (t) => {
   const { dir, store } = await scratchStore();
   t.after(() => rm(dir, { recursive: true, force: true }));

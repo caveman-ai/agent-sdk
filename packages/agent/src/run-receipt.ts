@@ -47,6 +47,7 @@ const CALL_REQUIRED_KEYS = Object.freeze(CALL_KEYS.filter(
   (key) => key !== "clampedOutputTokens",
 ));
 const TOOL_KEYS = Object.freeze(["name", "calls", "errors"]);
+const TOOL_ALLOWED_KEYS = Object.freeze([...TOOL_KEYS, "denied"]);
 const TRANCHE_KEYS = Object.freeze(["amount", "reason", "atCall"]);
 const BREAKER_KEYS = Object.freeze([
   "kind", "tool", "count", "signature", "reservedSpend", "measuredSpend",
@@ -409,11 +410,14 @@ function normalizeCall(value: unknown): ReceiptCall {
 function normalizeTools(value: unknown): readonly ReceiptTool[] {
   const seen = new Set<string>();
   return normalizeArray(value, "tools", (entry) => {
-    const source = record(entry, TOOL_KEYS, TOOL_KEYS, "tool");
+    const source = record(entry, TOOL_ALLOWED_KEYS, TOOL_KEYS, "tool");
     requireText(source["name"], "tool_name");
     requireNonNegativeInteger(source["calls"], "tool_calls");
     requireNonNegativeInteger(source["errors"], "tool_errors");
+    if (source["denied"] !== undefined) requireNonNegativeInteger(source["denied"], "tool_denied");
+    const denied = (source["denied"] as number | undefined) ?? 0;
     if ((source["errors"] as number) > (source["calls"] as number) ||
+        denied > (source["errors"] as number) ||
         seen.has(source["name"] as string)) {
       fail("tool_counts");
     }
@@ -422,6 +426,7 @@ function normalizeTools(value: unknown): readonly ReceiptTool[] {
       name: source["name"] as string,
       calls: source["calls"] as number,
       errors: source["errors"] as number,
+      ...(denied === 0 ? {} : { denied }),
     });
   });
 }

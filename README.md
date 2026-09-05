@@ -116,6 +116,8 @@ const coding = createCodingAgent({
 ```
 
 Every tool that shells out or touches the workspace goes through the backend.
+The same six tools compose into any agent as `shellTools({ workspace,
+executionBackend, tools: ["bash", "read_file"] })`, next to your own tools.
 The default is the local host, which is uncontained host execution and not
 isolation. The remote contract is a bearer token and three JSON endpoints
 (`/exec`, `/read`, `/write`), so any container, microVM, or sandbox provider
@@ -135,6 +137,34 @@ public-catalog cost after. A model the catalog cannot price cannot be capped:
 under a USD budget such a call fails closed rather than consuming an imaginary
 `$0`. Token budgets use the same ledger. These are local controls, not provider
 invoices or platform quotas.
+
+## Authorize tools and type the output
+
+```ts
+import { agent, auto, output, run, schema } from "@caveman-ai/agent";
+
+const finding = schema.object({ severity: schema.string(), evidence: schema.array(schema.string()) });
+const investigator = agent({
+  id: "investigator",
+  instructions: "Find the failure mechanism. Cite the evidence you actually read.",
+  model: auto(),
+  tools: [searchTraces, readTrace, openPr],
+  output: output({ maxTokens: 800, schema: finding }),
+});
+
+const result = await run(investigator, question, {
+  toolPolicy: ({ name, effect }) =>
+    effect === "write" && !grant.allows(name) ? { deny: "grant_scope" } : undefined,
+});
+result.output;        // { severity: string; evidence: string[] } — validated, typed from the schema
+```
+
+`toolPolicy` is the host's authorization decision, made outside model output
+for every tool call in the run, subagents and nested calls included. A denied
+call never executes: the model reads `cave_tool_denied:grant_scope`, the
+receipt counts it, and the run continues. A policy that cannot answer ends the
+run, because unknown authorization never executes a tool. The declared output
+schema is rendered into the prompt and the final message is parsed against it.
 
 ## Modes
 

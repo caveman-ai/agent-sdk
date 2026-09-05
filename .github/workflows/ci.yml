@@ -32,6 +32,40 @@ jobs:
       - run: npm run license:check
       - run: npm run pack:check
 
+  postgres:
+    # Service containers are Linux-only, and the durability suite is the only
+    # thing here that needs a real server, so it gets its own job rather than
+    # slowing the whole matrix down.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: caveman
+          POSTGRES_DB: caveman
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm --prefix packages/pebble-protocol run build
+      - run: npm --prefix packages/agent run build
+      # Fails rather than skips if the server is unreachable: "postgres is
+      # covered" must not be able to go quietly untrue.
+      - run: node --test packages/agent/tests/durable-postgres.runtime.mjs
+        env:
+          CAVEMAN_TEST_POSTGRES_URL: postgres://postgres:caveman@127.0.0.1:5432/caveman
+
   clean-room:
     runs-on: ubuntu-latest
     steps:

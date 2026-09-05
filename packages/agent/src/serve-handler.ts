@@ -24,14 +24,33 @@ import {
   AgentSessions,
   EventBroadcast,
   eventStreamResponse,
+  withMessageContext,
+  type Principal,
   type SessionRun,
 } from "./serve-session.js";
+export type { Principal } from "./serve-session.js";
 import type { CavemanRunEvent, RunOptions } from "./runtime.js";
 import type { AgentServerOptions } from "./serve.js";
 
 export interface AgentHandlerOptions extends Omit<AgentServerOptions, "runOptions"> {
+  /**
+   * Resolve a request to the principal making it, or `undefined` to reject it.
+   *
+   * The SDK does not own identity: verify a JWT, an mTLS peer, or a session
+   * cookie however the deployment already does, and return who it belongs to.
+   * What the SDK does own is what follows — sessions are namespaced per
+   * principal, so one principal cannot read, steer, or delete another's.
+   *
+   * Supplying this replaces `token`, which is the single-principal shorthand.
+   */
+  authenticate?: (request: Request) => Promise<Principal | undefined> | Principal | undefined;
   /** Per-run options; controllers, signals, conversations, and durability are handler-owned. */
-  runOptions?: (context: { sessionId: string; runId: string }) =>
+  /**
+   * Per-run options. `principal` is the authenticated caller that started the
+   * run (only under `authenticate`); it is absent for runs re-driven by boot
+   * recovery, whose caller identity the journal does not carry.
+   */
+  runOptions?: (context: { sessionId: string; runId: string; principal?: Principal }) =>
     Omit<RunOptions, "durable" | "controller" | "signal" | "conversation">;
   /** Host-owned WebSocket upgrade (Cloudflare WebSocketPair, Deno, Bun, or Node ws wrapper). */
   upgrade?: (request: Request) => { response: Response; socket: WebSocketLike } | undefined;
@@ -69,6 +88,27 @@ interface Job {
   readonly session?: SessionRun;
 }
 
+/**
+ * Run id reserved for the instance lease in `serve.ts`. It is a lock, not a
+ * journal, so it is filtered out of every sweep rather than being reported as a
+ * corrupt run.
+ */
+export const INSTANCE_LOCK_RUN_ID = "caveman.instance.lock";
+/**
+ * Run ids the sweep has already seen settle.
+ *
+ * The 60s sweep used to load every journal in the store on every pass, so a
+ * deployment's recurring cost grew with everything it had ever run rather than
+ * with what is still in flight. A journal is append-only and
+ * {@link durableRunSummary} searches all of it for a terminal event, so a run
+ * that has settled can never read as pending again: remembering it is sound,
+ * and it takes the steady-state sweep down to the runs that are actually
+ * pending plus whatever is new since the last pass.
+ *
+ * Bounded, because a long-lived instance would otherwise hold every run id it
+ * has ever swept. Eviction costs a re-read, never correctness.
+ */
+const MAX_SETTLED_MEMO = 50_000;
 const DEFAULT_MAX_BODY_BYTES = 1024 * 1024;
 const SETTLED_RETENTION_MS = 5 * 60_000;
 const MAX_RETAINED_BROADCASTS = 256;
@@ -79,6 +119,29 @@ function processRoot(): string {
 
 function joinPath(root: string, path: string): string {
   return `${root.replace(/[\\/]$/u, "")}/${path}`;
+}
+
+/**
+ * A session belongs to whoever created it, and that has to survive a restart.
+ * The journal cannot say so — `run_started` is frozen protocol — so ownership is
+ * structural instead: the storage key is the caller's id prefixed with a tag
+ * derived from its principal. A principal can only address sessions under its
+ * own tag, and a recovered session lands back under the tag it was written with,
+ * so no separate owner record can drift from the journal.
+ *
+ * The tag is a hash, not the principal id: principal ids are arbitrary strings
+ * (a JWT `sub` may hold characters run ids forbid), tenant identity should not
+ * be readable off a run id, and a fixed 16 chars keeps the 128-char id budget
+ * predictable.
+ */
+async function principalTag(principalId: string): Promise<string> {
+  const digest = await globalThis.crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(principalId),
+  );
+  return [...new Uint8Array(digest).slice(0, 8)]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 /** Length-independent comparison without importing a host crypto module. */
@@ -142,9 +205,11 @@ async function textBody(request: Request, maxBytes: number): Promise<string> {
 }
 
 export function createAgentHandler(options: AgentHandlerOptions): AgentHandler {
-  if (typeof options.token !== "string" || options.token.length < 16) {
+  const authenticate = options.authenticate;
+  const token = options.token ?? "";
+  if (authenticate === undefined && token.length < 16) {
     throw new Error(
-      "cave_serve_token_required: set a bearer token of at least 16 characters; this endpoint spends money",
+      "cave_serve_token_required: set a bearer token of at least 16 characters, or pass authenticate(); this endpoint spends money",
     );
   }
   const rootDir = options.rootDir ?? processRoot();
@@ -260,7 +325,11 @@ export function createAgentHandler(options: AgentHandlerOptions): AgentHandler {
       job.broadcast.push(job.encoder.event({ kind: "turn.end", stopReason: "error" }));
     };
     try {
-      const factoryOptions = options.runOptions?.({ sessionId: job.sessionId, runId: job.runId }) ?? {};
+      const factoryOptions = options.runOptions?.({
+        sessionId: job.sessionId,
+        runId: job.runId,
+        ...(job.session?.principal === undefined ? {} : { principal: job.session.principal }),
+      }) ?? {};
       const runOptions: RunOptions = {
         ...factoryOptions,
         rootDir: factoryOptions.rootDir ?? rootDir,
@@ -338,15 +407,30 @@ export function createAgentHandler(options: AgentHandlerOptions): AgentHandler {
     summary: summarize,
   }, maxBodyBytes);
 
+  const settled = new Set<string>();
+  function rememberSettled(runId: string): void {
+    if (settled.size >= MAX_SETTLED_MEMO) {
+      // Insertion-ordered, so this drops the oldest memo first.
+      const oldest = settled.values().next();
+      if (!oldest.done) settled.delete(oldest.value);
+    }
+    settled.add(runId);
+  }
+
   /**
    * One pass over the store. Repeated on an interval, not just at boot,
    * because a run stranded by a PEER instance's death is only reclaimed once
    * somebody looks again — its journal lock is released by the peer's demise,
    * but nothing re-drives it until a sweep notices.
    *
-   * ponytail: O(journals) per sweep, and every sweep reads each journal.
-   * Fine to thousands of runs; past that the store wants a pending index
-   * (a `list({ status: "pending" })` the DO/SQL store can answer directly).
+   * Settled runs are remembered (see {@link MAX_SETTLED_MEMO}), so a pass reads
+   * only the journals that are still pending plus whatever is new. The first
+   * pass after a restart still reads everything.
+   *
+   * ponytail: `store.list()` itself is still O(all runs) per sweep, which is
+   * cheap next to loading them but is the next ceiling; a
+   * `list({ status: "pending" })` the SQL/DO store answers from an index is the
+   * upgrade when a store holds enough runs for the enumeration alone to hurt.
    */
   async function sweep(
     resumed: string[],
@@ -360,6 +444,7 @@ export function createAgentHandler(options: AgentHandlerOptions): AgentHandler {
     if (store.list === undefined) return { listable: false, resumed, skipped, sleeping };
     for (const runId of runIds) {
       if (claimed.has(runId) || declined.has(runId) || admitted(runId)) continue;
+      if (settled.has(runId)) continue;
       let summary: DurableRunSummary;
       try {
         let lines = journals.get(runId);
@@ -373,7 +458,13 @@ export function createAgentHandler(options: AgentHandlerOptions): AgentHandler {
         skipped.push({ runId, reason: error instanceof Error ? error.message : String(error) });
         continue;
       }
-      if (summary.status !== "pending") continue;
+      if (summary.status !== "pending") {
+        // A corrupt journal is not memoized above: that read can fail for
+        // reasons the store may recover from, and skipping it forever would
+        // turn a transient fault into a permanently invisible run.
+        rememberSettled(runId);
+        continue;
+      }
       if (summary.cancelRequested !== undefined) {
         await settleCancelledRun(store, runId, summary.cancelRequested);
         skipped.push({ runId, reason: DURABLE_CANCELLED_CODE });
@@ -403,7 +494,7 @@ export function createAgentHandler(options: AgentHandlerOptions): AgentHandler {
     }
     sweeping = true;
     try {
-      const runIds = await store.list();
+      const runIds = (await store.list()).filter((runId) => runId !== INSTANCE_LOCK_RUN_ID);
       const journals = new Map<string, readonly string[]>();
       const sessionRecovery = await sessions.recover(runIds, journals);
       resumed.push(...sessionRecovery.resumed);
@@ -436,7 +527,9 @@ export function createAgentHandler(options: AgentHandlerOptions): AgentHandler {
     if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
       return json(400, { error: "cave_serve_body_invalid" });
     }
-    const { runId: rawRunId, input } = payload as { runId?: unknown; input?: unknown };
+    const { runId: rawRunId, input: rawInput, context } = payload as {
+      runId?: unknown; input?: unknown; context?: unknown;
+    };
     if (typeof rawRunId !== "string") return json(400, { error: "cave_serve_run_id_required" });
     try { validateDurableRunId(rawRunId); }
     catch (error) {
@@ -448,8 +541,13 @@ export function createAgentHandler(options: AgentHandlerOptions): AgentHandler {
     if (/\.\d+$/u.test(rawRunId)) {
       return json(400, { error: "cave_serve_run_id_reserved" });
     }
-    if (typeof input !== "string" || input === "") {
+    if (typeof rawInput !== "string" || rawInput === "") {
       return json(400, { error: "cave_serve_input_must_be_text" });
+    }
+    let input: string;
+    try { input = withMessageContext(rawInput, context); }
+    catch (error) {
+      return json(400, { error: error instanceof Error ? error.message : "cave_serve_body_invalid" });
     }
     const summary = await summarize(rawRunId);
     if (summary.status === "completed" || summary.status === "failed") return json(200, summary);
@@ -496,24 +594,47 @@ export function createAgentHandler(options: AgentHandlerOptions): AgentHandler {
         queued: queue.length,
       });
     }
-    const presented = bearer(request);
-    if (presented === undefined || !tokenMatches(presented, options.token)) {
-      return json(401, { error: "cave_serve_unauthorized" });
+    let namespace = "";
+    let principal: Principal | undefined;
+    if (authenticate === undefined) {
+      const presented = bearer(request);
+      if (presented === undefined || !tokenMatches(presented, token)) {
+        return json(401, { error: "cave_serve_unauthorized" });
+      }
+    } else {
+      // A hook that throws is an authentication failure, not a 500: a verifier
+      // that cannot reach its JWKS must not fall open.
+      try { principal = await authenticate(request); }
+      catch { return json(401, { error: "cave_serve_unauthorized" }); }
+      if (principal === undefined || typeof principal.id !== "string" || principal.id === "") {
+        return json(401, { error: "cave_serve_unauthorized" });
+      }
+      namespace = await principalTag(principal.id);
     }
     const wsMatch = /^\/sessions\/([^/]+)\/ws$/.exec(path);
     if (wsMatch?.[1] !== undefined && request.method === "GET") {
-      const rejected = await sessions.webSocketPreflight(wsMatch[1]);
+      const rejected = await sessions.webSocketPreflight(wsMatch[1], namespace);
       if (rejected !== undefined) return rejected;
       const upgraded = options.upgrade?.(request);
       if (upgraded === undefined) return json(501, { error: "cave_serve_websocket_unavailable" });
-      const attached = await sessions.webSocket(wsMatch[1], request, upgraded.socket);
+      const attached = await sessions.webSocket(wsMatch[1], request, upgraded.socket, namespace, principal);
       if (!attached.ok) {
         upgraded.socket.close(1008, (await attached.json() as { error?: string }).error ?? "rejected");
       }
       return upgraded.response;
     }
-    const sessionResponse = await sessions.route(request, path);
+    const sessionResponse = await sessions.route(request, path, namespace, principal);
     if (sessionResponse !== undefined) return sessionResponse;
+    // `/runs` addresses journals by raw run id, with nothing tying a run to a
+    // principal. Under a single token that is the whole API; under authenticate()
+    // it would hand any principal every other principal's runs, so it closes
+    // rather than silently spanning the isolation boundary sessions provide.
+    if (authenticate !== undefined && path.startsWith("/runs")) {
+      return json(403, {
+        error: "cave_serve_runs_require_single_principal",
+        message: "with authenticate() configured, use /sessions; /runs is not principal-scoped",
+      });
+    }
     if (path === "/runs" && request.method === "POST") return submit(request);
     const streamMatch = /^\/runs\/([^/]+)\/events$/.exec(path);
     if (streamMatch?.[1] !== undefined && request.method === "GET") {

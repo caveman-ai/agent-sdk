@@ -33,7 +33,10 @@ Declared in `packages/agent/dist/serve.d.ts`.
 ```ts
 export interface AgentServerOptions {
     definition: AgentDefinition;
-    token: string;
+    /** Single-principal shorthand. Optional when `authenticate` is supplied. */
+    token?: string;
+    /** See {@link AgentHandlerOptions.authenticate}. Namespaces sessions per principal. */
+    authenticate?: AgentHandlerOptions["authenticate"];
     store?: DurableStore;
     rootDir?: string;
     build?: AnyCaveBuildLock;
@@ -42,6 +45,23 @@ export interface AgentServerOptions {
     maxConcurrentRuns?: number;
     maxQueuedRuns?: number;
     maxBodyBytes?: number;
+    /**
+     * Refuse to start while another instance is live against the same store.
+     * Default `true`.
+     *
+     * Sessions, their replay buffers, and their deletion tombstones are held in
+     * this process, so two instances sharing one store do not share them: the
+     * same session id can be driven from both with neither seeing the other's
+     * messages. Run journals are individually leased and stay safe; session state
+     * is what diverges. Until session ownership is itself durable, one active
+     * instance is the supported deployment, and this makes that a loud refusal at
+     * startup rather than a quiet split brain in production.
+     *
+     * The lease expires, so a crashed instance is taken over by the next one:
+     * active/standby works, active/active does not. Set `false` only for a
+     * deployment that never addresses one session from two instances.
+     */
+    singleInstance?: boolean;
 }
 ```
 

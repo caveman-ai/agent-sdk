@@ -1,0 +1,28 @@
+{
+  "name": "@caveman-ai/example-support-desk",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "cavemanSample": {
+    "workflow": "customer support desk: read tools, skills, subagent wallet, memory, budget, breakers, durable replay, streaming, sessions",
+    "minNodeMajor": 22
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "ticket": "node --env-file-if-exists=.env src/ticket.ts",
+    "demo": "node --env-file-if-exists=.env src/demo.ts",
+    "chat": "node --env-file-if-exists=.env src/chat.ts",
+    "serve": "node --env-file-if-exists=.env src/serve.ts",
+    "build": "tsc --noEmit",
+    "test": "node --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "@caveman-ai/agent": "file:../../packages/agent"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "typescript": "5.9.3"
+  }
+}

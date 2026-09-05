@@ -73,8 +73,28 @@ output({ maxTokens: 500, schema: … })
 ```
 
 `maxTokens` is both the model's output allowance and, in the Claude lane, the
-SDK task token budget and a terminal provider-usage ceiling. Structured output
-is validated before the value can enter model context.
+SDK task token budget and a terminal provider-usage ceiling.
+
+With a `schema`, the JSON Schema itself is rendered into the system prompt
+(`<cave-output>`), the final message is parsed and validated against it, and
+the parsed value is returned as `result.output`, typed from the schema:
+
+```ts
+const finding = schema.object({
+  severity: schema.union([schema.literal("low"), schema.literal("high")]),
+  evidence: schema.array(schema.string()),
+});
+const investigator = agent({ id: "inv", instructions, model: auto(), output: output({ maxTokens: 800, schema: finding }) });
+
+const result = await run(investigator, question);
+result.output;            // { severity: "low" | "high"; evidence: string[] } | undefined
+```
+
+A final message that is not JSON fails the run with
+`cave_output_schema_invalid_json`; one that does not match fails with
+`cave_output_schema_mismatch`. `output` is absent when no schema is declared or
+the run stopped before a final message (`stopReason` says why). The journaled
+result of a durable run carries `output`, so a replay returns it too.
 
 The budget ladder can clamp a call's output down to what the remaining budget
 affords, and refuses below `OUTPUT_CLAMP_FLOOR_TOKENS`. See

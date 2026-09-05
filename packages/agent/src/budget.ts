@@ -565,6 +565,8 @@ export interface ReceiptTool {
   readonly name: string;
   readonly calls: number;
   readonly errors: number;
+  /** Calls refused by `RunOptions.toolPolicy`; absent when zero, and counted under `errors` too. */
+  readonly denied?: number;
 }
 
 /**
@@ -668,7 +670,7 @@ export interface PendingCompaction {
 export class ReceiptRecorder {
   private readonly callLog: ReceiptCall[] = [];
   private workingCallCount = 0;
-  private readonly toolLog = new Map<string, { calls: number; errors: number }>();
+  private readonly toolLog = new Map<string, { calls: number; errors: number; denied: number }>();
   private readonly subagentLog: RunReceipt[] = [];
   private readonly compactionLog: Array<PendingCompaction & { workingCallsBefore: number }> = [];
 
@@ -721,17 +723,23 @@ export class ReceiptRecorder {
     }));
   }
 
-  recordToolCall(name: string): void {
-    const entry = this.toolLog.get(name) ?? { calls: 0, errors: 0 };
-    entry.calls++;
+  private toolEntry(name: string): { calls: number; errors: number; denied: number } {
+    const entry = this.toolLog.get(name) ?? { calls: 0, errors: 0, denied: 0 };
     this.toolLog.set(name, entry);
+    return entry;
+  }
+
+  recordToolCall(name: string): void {
+    this.toolEntry(name).calls++;
   }
 
   recordToolOutcome(name: string, isError: boolean): void {
-    if (!isError) return;
-    const entry = this.toolLog.get(name) ?? { calls: 0, errors: 0 };
-    entry.errors++;
-    this.toolLog.set(name, entry);
+    if (isError) this.toolEntry(name).errors++;
+  }
+
+  /** A policy denial; the blocked call still settles as an error via `recordToolOutcome`. */
+  recordToolDenial(name: string): void {
+    this.toolEntry(name).denied++;
   }
 
   recordSubagent(receipt: RunReceipt): void {
@@ -821,6 +829,7 @@ export class ReceiptRecorder {
         name,
         calls: entry.calls,
         errors: entry.errors,
+        ...(entry.denied === 0 ? {} : { denied: entry.denied }),
       }))),
       subagents: Object.freeze([...this.subagentLog]),
       tranches: input.meter?.tranches ?? Object.freeze([]),

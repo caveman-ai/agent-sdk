@@ -316,7 +316,9 @@ test("http backend round-trips exec/read/write, enforces bearer auth, and caps o
       timedOut: false,
       truncated: true,
     });
-    assert.deepEqual(requests.at(-1).input, {
+    const { execId, ...execBody } = requests.at(-1).input;
+    assert.equal(typeof execId, "string");
+    assert.deepEqual(execBody, {
       command: "printf",
       args: ["123456789"],
       cwd: "/workspace",
@@ -387,6 +389,47 @@ test("http backend caps streamed responses, maps abort, and refuses insecure rem
   assert.throws(
     () => httpExecutionBackend({ url: "http://backend.example", token: "token" }),
     /cave_execution_backend_http_insecure_url/,
+  );
+});
+
+test("http backend posts /cancel with the aborted exec's id", async () => {
+  const calls = [];
+  const backend = httpExecutionBackend({
+    url: "http://localhost",
+    token: "token",
+    fetch: async (url, init) => {
+      const endpoint = new URL(url).pathname.replace(/^\//u, "");
+      const body = JSON.parse(init.body);
+      calls.push({ endpoint, body });
+      if (endpoint === "exec") throw new DOMException("aborted", "AbortError");
+      return new Response("{}");
+    },
+  });
+  const result = await backend.exec({
+    command: "sleep", args: ["600"], cwd: "/workspace", env: {}, timeoutMs: 600_000,
+    maxOutputBytes: 1_024,
+  });
+  assert.equal(result.stderr, "cave_execution_backend_aborted");
+  assert.deepEqual(calls.map((call) => call.endpoint), ["exec", "cancel"]);
+  assert.equal(typeof calls[0].body.execId, "string");
+  assert.notEqual(calls[0].body.execId, "");
+  assert.equal(calls[1].body.execId, calls[0].body.execId);
+});
+
+test("http backend swallows a provider that has no /cancel", async () => {
+  const backend = httpExecutionBackend({
+    url: "http://localhost",
+    token: "token",
+    fetch: async (url) => {
+      if (new URL(url).pathname === "/exec") throw new DOMException("aborted", "AbortError");
+      return new Response("not found", { status: 404 });
+    },
+  });
+  assert.equal(
+    (await backend.exec({
+      command: "x", args: [], cwd: "/workspace", env: {}, timeoutMs: 1_000, maxOutputBytes: 1,
+    })).stderr,
+    "cave_execution_backend_aborted",
   );
 });
 

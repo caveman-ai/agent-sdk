@@ -17,9 +17,10 @@ Contract:
 
 | Endpoint | Request JSON | Success JSON |
 | --- | --- | --- |
-| `/exec` | `{command,args,cwd,env,timeoutMs,maxOutputBytes}` | `{stdout,stderr,code,timedOut,truncated,startFailed?}` |
+| `/exec` | `{execId,command,args,cwd,env,timeoutMs,maxOutputBytes}` | `{stdout,stderr,code,timedOut,truncated,startFailed?}` |
 | `/read` | `{path,maxBytes?}` | `{data}` (`data` is base64) |
 | `/write` | `{path,data}` (`data` is base64) | `{}` |
+| `/cancel` (optional) | `{execId}` | `{}` |
 | `/prepare` (optional) | `{}` | `{}` |
 | `/snapshot` (optional) | `{}` | `{snapshotId}` |
 | `/restore` (optional) | `{snapshotId}` | `{}` |
@@ -31,7 +32,13 @@ closed. A command that cannot start returns code `127`, empty `stdout`, and
 `startFailed: true`. `/exec` must enforce `timeoutMs` and `maxOutputBytes`; `truncated` is
 true whenever bytes were discarded. Client also bounds oversized responses to
 `maxOutputBytes`. `AbortSignal` is not serialized; client uses it to cancel
-HTTP request.
+the HTTP request, then posts `/cancel` with the aborted call's `execId` so the
+server can kill that process tree. `/cancel` is best effort and bounded at 5s:
+its response is ignored, a provider that does not implement it answers 404, and
+the client still returns the aborted `ExecResult` either way. A server that
+omits `/cancel` leaves the remote process running until its own `timeoutMs`
+expires, so providers should implement it. `execId` is unique per `/exec` call;
+servers must scope a cancel to the matching call and ignore unknown ids.
 
 For remote backends, `env` contains only allowlisted locale/terminal keys:
 `LANG`, `LC_ALL`, `LC_CTYPE`, `TZ`, and `TERM`. Server owns `PATH`, `HOME`,

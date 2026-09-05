@@ -1,0 +1,9 @@
+[
+  { "trace_id": "tr_0901a", "at": "2026-09-01T09:12:00Z", "agent": "support-desk", "deployment": "v41", "status": "ok",    "tool_calls": ["lookup_order"],                       "input_tokens": 1810, "output_tokens": 220, "root_request_id": "req-1a" },
+  { "trace_id": "tr_0901b", "at": "2026-09-01T11:40:00Z", "agent": "support-desk", "deployment": "v41", "status": "ok",    "tool_calls": ["lookup_order", "load_skill"],         "input_tokens": 2400, "output_tokens": 310, "root_request_id": "req-1b" },
+  { "trace_id": "tr_0902a", "at": "2026-09-02T08:05:00Z", "agent": "support-desk", "deployment": "v41", "status": "ok",    "tool_calls": ["orders_for_customer", "lookup_order"], "input_tokens": 2100, "output_tokens": 260, "root_request_id": "req-2a" },
+  { "trace_id": "tr_0903a", "at": "2026-09-03T14:22:00Z", "agent": "support-desk", "deployment": "v42", "status": "error", "tool_calls": ["lookup_order", "lookup_order", "lookup_order"], "input_tokens": 5200, "output_tokens": 90, "root_request_id": "req-3a", "error": "loop_detected" },
+  { "trace_id": "tr_0903b", "at": "2026-09-03T16:48:00Z", "agent": "support-desk", "deployment": "v42", "status": "error", "tool_calls": ["lookup_order", "lookup_order", "lookup_order", "lookup_order"], "input_tokens": 6900, "output_tokens": 80, "root_request_id": "req-3b", "error": "loop_detected" },
+  { "trace_id": "tr_0904a", "at": "2026-09-04T10:15:00Z", "agent": "support-desk", "deployment": "v42", "status": "ok",    "tool_calls": ["lookup_order"],                       "input_tokens": 1900, "output_tokens": 240, "root_request_id": "req-4a" },
+  { "trace_id": "tr_0904b", "at": "2026-09-04T13:31:00Z", "agent": "support-desk", "deployment": "v42", "status": "error", "tool_calls": ["lookup_order", "lookup_order", "lookup_order"], "input_tokens": 5100, "output_tokens": 70, "root_request_id": "req-4b", "error": "loop_detected" }
+]

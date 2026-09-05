@@ -755,11 +755,11 @@ function environmentContexts(environment: AgentEnvironment): ContextDefinition[]
   return contexts;
 }
 
-export function applyAgentEnvironment(
-  definition: AgentDefinition,
+export function applyAgentEnvironment<D extends AgentDefinition>(
+  definition: D,
   environment: AgentEnvironment,
   options: ApplyAgentEnvironmentOptions = {},
-): AgentDefinition {
+): D {
   const additions = environmentContexts(environment);
   for (const addition of additions) {
     if (definition.contexts.some((entry) => entry.id === addition.id)) {
@@ -800,7 +800,7 @@ export function applyAgentEnvironment(
     // Passing `sandbox` unconditionally would turn an undeclared posture into a
     // declared one and cost the definition its host-by-default downgrade.
     ...(definition.sandboxDeclared ? { sandbox: definition.sandbox } : {}),
-  });
+  }) as D;
 }
 
 /** Optional compatibility adapter for products that choose workspace discovery. */

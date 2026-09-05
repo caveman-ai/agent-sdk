@@ -353,6 +353,7 @@ async function runClaudeAgentWithOptions(
       );
     }
     const text = result.result;
+    let output: { readonly value: unknown } | undefined;
     if (definition.output?.schema !== undefined) {
       let parsed: unknown;
       try {
@@ -363,6 +364,7 @@ async function runClaudeAgentWithOptions(
       if (!Value.Check(definition.output.schema, parsed)) {
         throw carry("cave_output_schema_mismatch", "the SDK output did not match the declared schema");
       }
+      output = { value: parsed };
     }
     // Past the success gate, usage must be accountable. A success whose usage
     // validateProviderUsage rejected is a real evidence failure — surface it
@@ -386,6 +388,7 @@ async function runClaudeAgentWithOptions(
       runId: runID,
       agentId: definition.id,
       text,
+      ...(output === undefined ? {} : { output: output.value }),
       contextIR: lowered.ir,
       contextBill: bill,
       cachePrefixSHA256: prefixSHA256,

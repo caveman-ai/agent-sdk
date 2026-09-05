@@ -6,7 +6,7 @@ Every identifier the runtime, adapters, and tooling can emit under the reserved
 `cave_` namespace: failure codes, stop reasons, framework-owned tool names, and
 refusal reasons. The namespace is reserved; user tools may not declare names in it.
 
-Total: **766** identifiers.
+Total: **783** identifiers.
 
 ## Sandbox and containment
 
@@ -232,7 +232,7 @@ Total: **766** identifiers.
 | `cave_durable_tool_identity_invalid` | `packages/agent/src/durable.ts` |
 | `cave_durable_tool_limit` | `packages/agent/src/durable.ts` |
 | `cave_durable_tool_path_invalid` | `packages/agent/src/durable.ts` |
-| `cave_durable_tool_replay_incomplete` | `packages/agent/src/durable.ts` |
+| `cave_durable_tool_replay_incomplete` | `packages/agent/src/runtime.ts` |
 | `cave_durable_tool_replay_mismatch` | `packages/agent/src/durable.ts` |
 | `cave_durable_value_cycle` | `packages/agent/src/durable.ts` |
 | `cave_durable_value_limit` | `packages/agent/src/durable.ts` |
@@ -281,10 +281,15 @@ Total: **766** identifiers.
 | `cave_tool_call_budget_exceeded` | `packages/agent/src/runtime.ts` |
 | `cave_tool_call_loop_detected` | `packages/agent/src/breakers.ts` |
 | `cave_tool_definition_invalid` | `packages/agent/src/definition-graph.ts` |
+| `cave_tool_denied` | `packages/agent/src/tool-policy.ts` |
 | `cave_tool_effect_unquiesced` | `packages/agent/src/runtime.ts` |
 | `cave_tool_implementation_sha256` | `packages/agent/src/build.ts` |
 | `cave_tool_input_schema_mismatch` | `packages/agent/src/runtime.ts` |
 | `cave_tool_output_schema_mismatch` | `packages/agent/src/tool-internal.ts` |
+| `cave_tool_policy_decision_invalid` | `packages/agent/src/tool-policy.ts` |
+| `cave_tool_policy_failed` | `packages/agent/src/tool-policy.ts` |
+| `cave_tool_policy_reason_invalid` | `packages/agent/src/tool-policy.ts` |
+| `cave_tool_policy_timeout` | `packages/agent/src/tool-policy.ts` |
 | `cave_tool_result_inline_limit` | `packages/agent/src/runtime.ts` |
 | `cave_tool_result_limit` | `packages/agent/src/tool-internal.ts` |
 | `cave_tool_result_missing` | `packages/agent/src/runtime.ts` |
@@ -541,7 +546,7 @@ Total: **766** identifiers.
 
 | Identifier | Declared in |
 | --- | --- |
-| `cave_agent_controller_in_use` | `packages/agent/src/runtime.ts` |
+| `cave_agent_controller_in_use` | `packages/agent/src/run-controller.ts` |
 | `cave_agent_definition_invalid` | `packages/agent/src/definition-graph.ts` |
 | `cave_agent_environment_context_collision` | `packages/agent/src/agent-environment.ts` |
 | `cave_agent_environment_tool_collision` | `packages/agent/src/agent-environment.ts` |
@@ -558,8 +563,8 @@ Total: **766** identifiers.
 | `cave_agent_plugin_manifest_required` | `packages/agent/src/agent-environment.ts` |
 | `cave_agent_plugin_name_invalid` | `packages/agent/src/agent-environment.ts` |
 | `cave_agent_plugin_schema_unsupported` | `packages/agent/src/agent-environment.ts` |
-| `cave_agent_queue_index_invalid` | `packages/agent/src/runtime.ts` |
-| `cave_agent_queue_message_required` | `packages/agent/src/runtime.ts` |
+| `cave_agent_queue_index_invalid` | `packages/agent/src/run-controller.ts` |
+| `cave_agent_queue_message_required` | `packages/agent/src/run-controller.ts` |
 | `cave_agent_regular_file_required` | `packages/agent/src/agent-environment.ts` |
 | `cave_agent_run_failed` | `packages/agent/src/runtime.ts` |
 | `cave_agent_skill_` | `packages/agent/src/agent-environment.ts` |
@@ -762,8 +767,8 @@ Total: **766** identifiers.
 | `cave_engine_aborted` | `packages/agent/src/runtime.ts` |
 | `cave_engine_timeout` | `packages/agent/src/runtime.ts` |
 | `cave_execution_backend_aborted` | `packages/agent/src/execution-backend.ts` |
-| `cave_execution_backend_command_sessions_disabled` | `packages/agent/src/code.ts` |
-| `cave_execution_backend_command_sessions_local_only` | `packages/agent/src/code.ts` |
+| `cave_execution_backend_command_sessions_disabled` | `packages/agent/src/shell-tools.ts` |
+| `cave_execution_backend_command_sessions_local_only` | `packages/agent/src/shell-tools.ts` |
 | `cave_execution_backend_http_` | `packages/agent/src/execution-backend.ts` |
 | `cave_execution_backend_http_exec_invalid` | `packages/agent/src/execution-backend.ts` |
 | `cave_execution_backend_http_insecure_url` | `packages/agent/src/execution-backend.ts` |
@@ -883,26 +888,38 @@ Total: **766** identifiers.
 | `cave_serve_concurrency_invalid` | `packages/agent/src/serve-handler.ts` |
 | `cave_serve_draining` | `packages/agent/src/serve-handler.ts` |
 | `cave_serve_durable_owned` | `packages/agent/src/serve.ts` |
-| `cave_serve_events_gap` | `packages/agent/src/serve-session.ts` |
+| `cave_serve_events_gap` | `packages/agent/src/serve-events.ts` |
 | `cave_serve_events_not_retained` | `packages/agent/src/serve-handler.ts` |
 | `cave_serve_input_must_be_text` | `packages/agent/src/serve-handler.ts` |
+| `cave_serve_instance_already_active` | `packages/agent/src/serve.ts` |
 | `cave_serve_internal` | `packages/agent/src/serve.ts` |
 | `cave_serve_not_found` | `packages/agent/src/serve-handler.ts` |
 | `cave_serve_queue_full` | `packages/agent/src/serve-handler.ts` |
 | `cave_serve_resume_needs_original_input` | `packages/agent/src/serve-handler.ts` |
 | `cave_serve_run_ended_without_terminal_event` | `packages/agent/src/serve-handler.ts` |
 | `cave_serve_run_id_required` | `packages/agent/src/serve-handler.ts` |
+| `cave_serve_run_id_reserved` | `packages/agent/src/serve-handler.ts` |
+| `cave_serve_run_option_owned` | `packages/agent/src/serve.ts` |
+| `cave_serve_runs_require_single_principal` | `packages/agent/src/serve-handler.ts` |
 | `cave_serve_token_required` | `packages/agent/src/serve-handler.ts` |
 | `cave_serve_unauthorized` | `packages/agent/src/serve-handler.ts` |
+| `cave_serve_upgrade_required` | `packages/agent/src/serve.ts` |
 | `cave_serve_websocket_message_invalid` | `packages/agent/src/serve-session.ts` |
 | `cave_serve_websocket_unavailable` | `packages/agent/src/serve.ts` |
+| `cave_session_busy_elsewhere` | `packages/agent/src/serve-session.ts` |
 | `cave_session_conversation_unrecoverable` | `packages/agent/src/runtime.ts` |
 | `cave_session_id_required` | `packages/agent/src/serve-session.ts` |
 | `cave_session_message_author_invalid` | `packages/agent/src/serve-session.ts` |
+| `cave_session_message_context_invalid` | `packages/agent/src/serve-session.ts` |
+| `cave_session_message_context_too_large` | `packages/agent/src/serve-session.ts` |
 | `cave_session_message_mode_invalid` | `packages/agent/src/serve-session.ts` |
 | `cave_session_message_text_required` | `packages/agent/src/serve-session.ts` |
+| `cave_session_not_last_run` | `packages/agent/src/serve-session.ts` |
+| `cave_shell_tool_duplicate` | `packages/agent/src/shell-tools.ts` |
+| `cave_shell_tool_unknown` | `packages/agent/src/shell-tools.ts` |
 | `cave_side_effect_blocked` | `packages/agent/src/runtime.ts` |
 | `cave_stale_lock` | `packages/agent/src/cli.ts` |
+| `cave_static_context_unserializable` | `packages/agent/src/runtime.ts` |
 | `cave_stream_cancelled` | `packages/agent/src/runtime.ts` |
 | `cave_testing_script_exhausted` | `packages/agent/src/testing.ts` |
 | `cave_transform_registry_unavailable` | `packages/agent/src/cli.ts` |

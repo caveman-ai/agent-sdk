@@ -5,22 +5,27 @@ import { resolve } from "node:path";
 import type { Duplex } from "node:stream";
 import { Readable } from "node:stream";
 import type { AnyCaveBuildLock } from "./build.js";
-import type { DurableStore } from "./durable.js";
+import { DiskDurableStore, type DurableStore } from "./durable.js";
 import type { AgentDefinition } from "./definition.js";
 import {
   createAgentHandler,
+  INSTANCE_LOCK_RUN_ID,
   type AgentHandlerOptions,
+  type Principal,
   type RecoveryReport,
   type WebSocketLike,
 } from "./serve-handler.js";
 import type { RunOptions } from "./runtime.js";
 
 type PerRunOptions = Omit<RunOptions, "durable" | "controller" | "signal" | "conversation">;
-type PerRunOptionsFactory = (context: { sessionId: string; runId: string }) => PerRunOptions;
+type PerRunOptionsFactory = (context: { sessionId: string; runId: string; principal?: Principal }) => PerRunOptions;
 
 export interface AgentServerOptions {
   definition: AgentDefinition;
-  token: string;
+  /** Single-principal shorthand. Optional when `authenticate` is supplied. */
+  token?: string;
+  /** See {@link AgentHandlerOptions.authenticate}. Namespaces sessions per principal. */
+  authenticate?: AgentHandlerOptions["authenticate"];
   store?: DurableStore;
   rootDir?: string;
   build?: AnyCaveBuildLock;
@@ -29,6 +34,23 @@ export interface AgentServerOptions {
   maxConcurrentRuns?: number;
   maxQueuedRuns?: number;
   maxBodyBytes?: number;
+  /**
+   * Refuse to start while another instance is live against the same store.
+   * Default `true`.
+   *
+   * Sessions, their replay buffers, and their deletion tombstones are held in
+   * this process, so two instances sharing one store do not share them: the
+   * same session id can be driven from both with neither seeing the other's
+   * messages. Run journals are individually leased and stay safe; session state
+   * is what diverges. Until session ownership is itself durable, one active
+   * instance is the supported deployment, and this makes that a loud refusal at
+   * startup rather than a quiet split brain in production.
+   *
+   * The lease expires, so a crashed instance is taken over by the next one:
+   * active/standby works, active/active does not. Set `false` only for a
+   * deployment that never addresses one session from two instances.
+   */
+  singleInstance?: boolean;
 }
 
 export interface AgentServer {
@@ -109,6 +131,10 @@ async function writeResponse(
     response.end();
     return;
   }
+  // Node buffers the head until the first body write. An SSE client that
+  // attaches before any event would otherwise wait for the first keepalive
+  // (15s) just to see the response headers.
+  response.flushHeaders();
   const reader = result.body.getReader();
   const stop = (): void => { abort.abort(); void reader.cancel().catch(() => undefined); };
   response.once("close", stop);
@@ -184,10 +210,15 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     }
   }
   const rootDir = options.rootDir === undefined ? undefined : resolve(options.rootDir);
+  // Resolved here rather than left to the handler's default, so the instance
+  // lease below and the handler's journals are the same store.
+  const store = options.store ??
+    new DiskDurableStore(`${(rootDir ?? process.cwd()).replace(/[\\/]$/u, "")}/.caveman/runs/durable`);
   const handler = createAgentHandler({
     definition: options.definition,
-    token: options.token,
-    ...(options.store === undefined ? {} : { store: options.store }),
+    ...(options.token === undefined ? {} : { token: options.token }),
+    ...(options.authenticate === undefined ? {} : { authenticate: options.authenticate }),
+    store,
     ...(rootDir === undefined ? {} : { rootDir }),
     ...(options.build === undefined ? {} : { build: options.build }),
     ...(runOptions === undefined ? {} : { runOptions }),
@@ -201,6 +232,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
   } satisfies AgentHandlerOptions);
   let sweepTimer: NodeJS.Timeout | undefined;
   let socketServer: WebSocketServerLike | undefined;
+  let releaseInstance: (() => Promise<void>) | undefined;
 
   const server = createServer((request, response) => {
     const abort = new AbortController();
@@ -252,6 +284,22 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
   return {
     server,
     async listen(port: number, host = "0.0.0.0"): Promise<number> {
+      // Claimed before the socket opens: a refused instance must never have
+      // taken a request it would then drive against another instance's sessions.
+      if (options.singleInstance !== false) {
+        try {
+          releaseInstance = await store.acquire(INSTANCE_LOCK_RUN_ID);
+        } catch (error) {
+          throw new Error(
+            "cave_serve_instance_already_active: another instance holds this store's " +
+            "instance lease. Session state is per-process, so two live instances can " +
+            "drive one session blind to each other. Run one instance (a crashed one's " +
+            "lease expires and the next takes over), or set singleInstance: false if " +
+            "no session is ever addressed from two instances.",
+            { cause: error },
+          );
+        }
+      }
       await new Promise<void>((resolveListen, rejectListen) => {
         server.once("error", rejectListen);
         server.listen(port, host, () => {
@@ -276,6 +324,11 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       await handler.close(graceMs);
       socketServer?.close();
       await closed;
+      // Released last: the next instance should not adopt this store until this
+      // one has finished draining into it.
+      await releaseInstance?.().catch(() => undefined);
+      releaseInstance = undefined;
+      await store.close(INSTANCE_LOCK_RUN_ID).catch(() => undefined);
     },
   };
 }

@@ -6,7 +6,14 @@ import {
   runLockedAgent,
   streamAgent,
   type RunOptions,
+  type RunResult,
 } from "./runtime.js";
+import type { Static, TSchema } from "@earendil-works/pi-ai";
+
+/** The parsed `RunResult.output` type for a definition whose `output()` declares a schema. */
+export type AgentOutput<D> = D extends AgentDefinition<infer S>
+  ? S extends TSchema ? Static<S> : never
+  : never;
 import { agentDirRunDefaults } from "./dir-loader.js";
 import { writeRunReceipt } from "./receipt-print.js";
 import type { AgentInput } from "./input.js";
@@ -96,9 +103,20 @@ export type {
 export {
   AgentRunController,
   CavemanRunError,
+  agentStaticContextDiagnostics,
   createConversation,
   verifySandboxConformance,
 } from "./runtime.js";
+export type { AgentStaticContextDiagnostics } from "./runtime.js";
+export { shellTools } from "./shell-tools.js";
+export type { ShellToolName, ShellToolsOptions } from "./shell-tools.js";
+export { decideToolCall, TOOL_POLICY_TIMEOUT_MS } from "./tool-policy.js";
+export type {
+  ToolCallDecision,
+  ToolCallDenial,
+  ToolCallPolicy,
+  ToolCallPolicyInput,
+} from "./tool-policy.js";
 // The scoped-egress contract is public because it is what a caller writes in
 // `RunOptions.sandboxProfile.network`. `egressAllowed` is exported alongside it
 // so the exact rule a deployment will be held to can be asserted in that
@@ -168,13 +186,13 @@ function withAgentDirDefaults(
   return merged;
 }
 
-export async function run(
-  definition: AgentDefinition,
+export async function run<D extends AgentDefinition>(
+  definition: D,
   input: AgentInput,
   options?: RunOptions,
-) {
+): Promise<RunResult<AgentOutput<D>>> {
   const merged = withAgentDirDefaults(definition, options);
-  const result = await runAgent(definition, input, merged);
+  const result = await runAgent(definition, input, merged) as RunResult<AgentOutput<D>>;
   // F1: the receipt print is the default end of a scaffolded (directory-
   // loaded) run — `printReceipt` defaults ON there and OFF everywhere else,
   // because stdout may be a protocol channel a receipt would corrupt.
@@ -196,13 +214,14 @@ export async function run(
 }
 
 /** Execute a validated Pi Cave Build from an embedded application. */
-export async function runLocked(
-  definition: AgentDefinition,
+export async function runLocked<D extends AgentDefinition>(
+  definition: D,
   input: AgentInput,
   build: import("./build.js").AnyCaveBuildLock,
   options?: RunOptions,
-) {
-  return runLockedAgent(definition, input, build, withAgentDirDefaults(definition, options));
+): Promise<RunResult<AgentOutput<D>>> {
+  return await runLockedAgent(definition, input, build, withAgentDirDefaults(definition, options)) as
+    RunResult<AgentOutput<D>>;
 }
 
 export function stream(

@@ -60,6 +60,25 @@ const DEFAULT_TABLE = "caveman_durable_journal";
 // of escaped: anything outside this alphabet never reaches a query string.
 const TABLE_PATTERN = /^[a-z_][a-z0-9_]{0,54}$/;
 
+/** Sequence collisions are contention, not failure, until they stop resolving. */
+const MAX_SEQ_ATTEMPTS = 12;
+const BASE_RETRY_MS = 4;
+
+/**
+ * Drivers report a unique violation differently: Postgres carries SQLSTATE
+ * 23505, `node:sqlite` and better-sqlite3 spell it in the message. Matching on
+ * both keeps this file driver-free, which is the point of {@link SqlExecutor}.
+ */
+function isDuplicateKey(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code;
+  if (code === "23505" || code === "SQLITE_CONSTRAINT_PRIMARYKEY" ||
+      code === "SQLITE_CONSTRAINT_UNIQUE") {
+    return true;
+  }
+  const message = error instanceof Error ? error.message.toLowerCase() : "";
+  return message.includes("duplicate key") || message.includes("unique constraint");
+}
+
 export class SqlDurableStore implements DurableStore {
   private readonly sql: SqlExecutor;
   private readonly dialect: "sqlite" | "postgres";
@@ -161,16 +180,38 @@ export class SqlDurableStore implements DurableStore {
     }
     await this.assertStillHeld(runId);
     for (const line of lines) {
-      // The sequence is chosen inside the INSERT, so two concurrent writers
-      // cannot read the same MAX and then race to claim it.
-      // ponytail: atomic under SQLite and under any engine that serializes or
-      // row-locks this statement; a dedicated sequence table is the upgrade if a
-      // weaker isolation level ever produces a duplicate-key collision here.
-      await this.query(
-        `INSERT INTO ${this.table} (run_id, seq, line) ` +
-        `SELECT ?, COALESCE(MAX(seq), 0) + 1, ? FROM ${this.table} WHERE run_id = ?`,
-        [runId, line, runId],
-      );
+      await this.insertLine(runId, line);
+    }
+  }
+
+  /**
+   * `SELECT COALESCE(MAX(seq), 0) + 1` inside the INSERT is only atomic on an
+   * engine that serializes the statement. SQLite does; Postgres at READ
+   * COMMITTED does not, and concurrent appends to one run collided on the
+   * primary key (9 of 12 writers lost, against a real server). Losing an append
+   * silently is not an option for a journal, so a collision is retried: the
+   * PRIMARY KEY is the arbiter, and the loser re-reads MAX and tries the next
+   * sequence. Retries are bounded, and exhausting them throws rather than
+   * dropping the line.
+   */
+  private async insertLine(runId: string, line: string): Promise<void> {
+    for (let attempt = 0; attempt < MAX_SEQ_ATTEMPTS; attempt++) {
+      try {
+        await this.query(
+          `INSERT INTO ${this.table} (run_id, seq, line) ` +
+          `SELECT ?, COALESCE(MAX(seq), 0) + 1, ? FROM ${this.table} WHERE run_id = ?`,
+          [runId, line, runId],
+        );
+        return;
+      } catch (error) {
+        if (!isDuplicateKey(error) || attempt === MAX_SEQ_ATTEMPTS - 1) throw error;
+        // Full jitter: contending writers that back off by the same amount just
+        // collide again on the next attempt.
+        await new Promise((wake) => {
+          const timer = setTimeout(wake, Math.random() * BASE_RETRY_MS * (attempt + 1));
+          (timer as { unref?: () => void }).unref?.();
+        });
+      }
     }
   }
 
