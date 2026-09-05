@@ -172,11 +172,11 @@
   },
   "devDependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.3.220",
-    "@types/node": "24.10.1",
+    "@types/node": "26.4.1",
     "ajv": "8.20.0",
     "eve": "0.29.2",
     "pg": "^8.23.0",
-    "typescript": "5.9.3",
+    "typescript": "7.0.2",
     "ws": "8.21.3",
     "zod": "4.4.3"
   },
