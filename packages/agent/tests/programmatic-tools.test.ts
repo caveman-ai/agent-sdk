@@ -446,6 +446,7 @@ test("programmatic runtime collapses ordinary tools into one typed code surface"
   assert.ok(providerSchemaBytes(runtime.definition) < providerSchemaBytes(direct.definition));
   const description = runtime.definition.tools[0]!.description;
   assert.match(description, /declare function read_file\(args:/);
+  assert.match(description, /line.number.*tab|number.*tab/i);
   assert.match(description, /declare function write_file\(args:/);
   assert.match(description, /declare function bash\(args:.*query\?: string/);
   assert.doesNotMatch(description, /"sessionId"|"query"/);

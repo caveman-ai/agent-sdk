@@ -157,7 +157,7 @@ export const OBSERVE_ONLY_BANNER = [
 ].join("\n");
 
 const FULL_TOOL_INSTRUCTIONS = [
-  "- read_file reads a file (optionally a line range) from the workspace.",
+  "- read_file prefixes each line with its number and tab. Strip prefixes before copying; preserve newlines.",
   "- grep searches the workspace with ripgrep, falling back to grep.",
   "- bash runs one shell command in the workspace and returns its combined output.",
   "- write_file creates a file, or overwrites one only when overwrite is true.",
@@ -167,7 +167,7 @@ const FULL_TOOL_INSTRUCTIONS = [
 ].join("\n");
 
 const PEBBLE_V1_TOOL_INSTRUCTIONS = [
-  "- read_file reads a file (optionally a line range) from the workspace.",
+  "- read_file prefixes each line with its number and tab. Strip prefixes before copying; preserve newlines.",
   "- bash runs one shell command in the workspace and returns its combined output.",
   "- write_file creates a file, or overwrites one only when overwrite is true.",
   "- edit_file replaces an exact string in a file. Match enough surrounding text",

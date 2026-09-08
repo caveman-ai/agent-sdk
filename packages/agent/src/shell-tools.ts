@@ -181,6 +181,8 @@ export function shellTools(options: ShellToolsOptions): ToolDefinition[] {
     name: "read_file",
     description:
       "Read a UTF-8 file from the workspace. Optional offset/limit read a line range. " +
+      "Each returned line starts with its 1-based line number and a tab. These prefixes are not file content; " +
+      "remove the leading number and tab from each line before copying content into another file. " +
       `Output is capped at ${caps.read_file} bytes.`,
     input: schema.object({
       path: schema.string(),

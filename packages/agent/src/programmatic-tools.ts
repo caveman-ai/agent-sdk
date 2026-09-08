@@ -373,7 +373,7 @@ function createCodeTool(
 
 function codeToolDescription(definitions: readonly ToolDefinition[]): string {
   const declarations = definitions.map((definition) =>
-    `declare function ${definition.name}(args: ${schemaType(definition.input)}): Promise<string>;`
+    `// ${definition.description.replace(/\r?\n/g, "\n// ")}\ndeclare function ${definition.name}(args: ${schemaType(definition.input)}): Promise<string>;`
   );
   return [
     "Bounded async JS cell. Tools are direct functions and under tools.",

@@ -28,6 +28,31 @@ key and zero configuration.
 npm install @caveman-ai/agent      # Node 22.19+, one provider key
 ```
 
+## Why use it
+
+Most agent SDKs hand you a loop and leave the bill to you. This one is built
+around the spend.
+
+- **A run can be capped.** `budget: { maxUsd: 1 }` reserves the worst case
+  before a call leaves and settles measured cost after. A model the catalog
+  cannot price fails closed instead of counting as `$0`.
+- **You get a receipt, not a dashboard.** Every run returns per-call,
+  per-tool, per-subagent spend in the result object.
+- **A crash does not buy the same tokens twice.** Runs journal their intent
+  before network work, so a resumed run restores what it already spent.
+- **Context stays small on purpose.** Skill descriptions enter stable context;
+  skill bodies stay on disk until invoked. When the budget tightens,
+  compaction evicts, then summarizes, then clamps, then stops, preserving
+  exact commitments at each step.
+- **One tool instead of forty.** Programmatic mode gives the model a single
+  bounded code cell that calls your tools through typed proxies, so a wall of
+  JSON schemas never enters the prompt.
+- **Recall does not stall the turn.** Memory retrieval starts during turn N
+  and lands in turn N+1.
+
+Local savings stay **inferred**. The default direct mode is observe-only and
+makes no efficiency claim; what it gives you is the ledger.
+
 ## Define
 
 ```ts
