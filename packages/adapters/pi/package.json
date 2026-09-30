@@ -18,14 +18,21 @@
     },
     "./manifest": "./src/manifest.js"
   },
-  "files": ["src", "README.md"],
+  "files": [
+    "src",
+    "README.md"
+  ],
   "dependencies": {
     "@caveman-ai/adapter-kit": "0.1.0"
   },
   "peerDependencies": {
     "@caveman-ai/agent": "0.2.0",
-    "@earendil-works/pi-agent-core": "0.83.0"
+    "@earendil-works/pi-agent-core": "^0.84.4"
   },
-  "engines": { "node": ">=22.19.0" },
-  "publishConfig": { "access": "public" }
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
 }
