@@ -32,10 +32,10 @@
   },
   "peerDependencies": {
     "@caveman-ai/agent": "0.2.0",
-    "@mastra/core": "1.63.2"
+    "@mastra/core": "1.64.0"
   },
   "devDependencies": {
-    "@mastra/core": "1.63.2",
+    "@mastra/core": "1.64.0",
     "@types/node": "24.10.1",
     "typescript": "5.9.3"
   },
