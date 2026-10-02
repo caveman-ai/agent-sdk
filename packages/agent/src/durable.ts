@@ -377,7 +377,7 @@ export interface ResumedEvent extends JournalEventBase {
 export interface CallStartedEvent extends JournalEventBase {
   type: "call_started";
   path: string;
-  kind: "model" | "compaction";
+  kind: "model" | "compaction" | "cache_warm";
   provider: string;
   model: string;
 }
@@ -406,7 +406,7 @@ export interface JournaledCallUsage {
 export interface CallSettledEvent extends JournalEventBase {
   type: "call_settled";
   path: string;
-  kind: "model" | "compaction";
+  kind: "model" | "compaction" | "cache_warm";
   call: JournaledCallUsage;
   /** Amount settled into the run's meter, in its denomination. Absent on unmetered runs. */
   settledAmount?: number;
@@ -1128,7 +1128,7 @@ function validateCallIdentity(
   model: unknown,
 ): void {
   requireJournalPath(path);
-  if (kind !== "model" && kind !== "compaction") throw corrupt("malformed call kind");
+  if (kind !== "model" && kind !== "compaction" && kind !== "cache_warm") throw corrupt("malformed call kind");
   requireJournalString(provider, 512, "provider identity");
   requireJournalString(model, 512, "model identity");
 }
@@ -1810,7 +1810,7 @@ export function analyzeJournal(
         pendingCalls.set(key, pending);
         if (event.path === "") {
           if (event.kind === "model") rootModelIntents += 1;
-          else priorRootCompactions += 1;
+          else if (event.kind === "compaction") priorRootCompactions += 1;
         }
         break;
       }

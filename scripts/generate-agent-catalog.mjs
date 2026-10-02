@@ -677,6 +677,15 @@ export function catalogPriceVerifiedAt(
   return PRICES[\`\${catalogProvider(provider)}/\${model}\`]?.verifiedAt;
 }
 
+/** Cache billing semantics in force at a request time; undefined when unpriced then. */
+export function catalogCacheMode(
+  provider: string,
+  model: string,
+  accountingAt?: Date,
+): CatalogPriceRates["cacheMode"] | undefined {
+  return catalogPriceResolution(PRICES[\`\${catalogProvider(provider)}/\${model}\`], accountingAt)?.price.cacheMode;
+}
+
 export function catalogCost(
   usage: CatalogUsage,
   accountingAt?: Date,

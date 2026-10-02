@@ -457,6 +457,7 @@
 ./catalog	CatalogSupportState
 ./catalog	CatalogUsage
 ./catalog	PRICE_PROVENANCE_SHA256
+./catalog	catalogCacheMode
 ./catalog	catalogCacheProfile
 ./catalog	catalogCost
 ./catalog	catalogCostForPrice
@@ -539,6 +540,7 @@
 ./command-session	CommandSessionWriteResult
 ./command-session	createCommandSessionRuntime
 ./compaction	CONTEXT_SEED_MAX_CHARS
+./compaction	CompactionModelOverride
 ./compaction	CompactionOptions
 ./compaction	ContextAnchor
 ./compaction	ContextAnchorKind
@@ -561,7 +563,9 @@
 ./compaction	MessagePlan
 ./compaction	NormalizedCompaction
 ./compaction	SUMMARY_SCHEMA_VERSION
+./compaction	compactionForModel
 ./compaction	contextSummarySources
+./compaction	contextWindowFull
 ./compaction	elidedDigest
 ./compaction	evaluateContextSummary
 ./compaction	evaluateContextSummaryStability

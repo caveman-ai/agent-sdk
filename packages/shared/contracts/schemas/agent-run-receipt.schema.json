@@ -82,7 +82,8 @@
         "estimatedUsd": { "type": "number", "minimum": 0 },
         "unpriced": { "type": "boolean" },
         "usageBasis": { "enum": ["provider_reported", "unavailable"] },
-        "clampedOutputTokens": { "$ref": "#/$defs/nonNegativeInteger" }
+        "clampedOutputTokens": { "$ref": "#/$defs/nonNegativeInteger" },
+        "purpose": { "enum": ["cache_warm"] }
       }
     },
     "tool": {

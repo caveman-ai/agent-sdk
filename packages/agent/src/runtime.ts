@@ -21,8 +21,10 @@ import {
   getCurrentSystemPrompt,
   getCurrentTools,
   getInitialSystemMessage,
+  isContextOverflow,
   type Api,
   type AssistantMessage,
+  type AssistantMessageEventStream,
   type CacheRetention,
   type ImageContent,
   type Model,
@@ -58,6 +60,7 @@ import {
   type BudgetExhaustionHandler,
   type BudgetReservation,
   type CallCeiling,
+  type ReceiptCall,
   type ReceiptCompaction,
   type ReceiptResume,
   type RunBudget,
@@ -83,15 +86,31 @@ import {
 } from "./durable.js";
 import {
   BreakerState,
+  failFastPreStream,
   normalizeRunBreakers,
+  serverRetryDelayMs,
+  stoppedTurnStream,
   type RunBreakers,
 } from "./breakers.js";
 import { CATALOG_SHA256, catalogSearchCeiling } from "./catalog.js";
+import { imageInputLimitViolation } from "./image-limits.js";
+import {
+  CACHE_WARM_OUTPUT_TOKENS,
+  CACHE_WARM_QUIESCE_MS,
+  CacheWarmer,
+  cacheWarmDecision,
+  sendCacheWarm,
+  type CacheWarmRequest,
+  type CacheWarmingMode,
+} from "./cache-warmer.js";
 import { executeConnectTool } from "./connect.js";
 import { findPackageJSONCompat } from "./node-compat.js";
 import {
+  CONTEXT_SEED_MAX_CHARS,
   SUMMARY_SCHEMA_VERSION,
+  compactionForModel,
   contextSummarySources,
+  contextWindowFull,
   elidedDigest,
   evictMessage,
   latestContextSummary,
@@ -112,6 +131,7 @@ import {
   lowerAgentContext,
   prepareLockedHarnessExecution,
   validatePlanSelection,
+  providerCallRecord,
   validateProviderUsage,
   type ValidatedProviderUsage,
 } from "./execution-kernel.js";
@@ -195,6 +215,8 @@ export type CavemanRunEvent =
   | { type: "run_start"; runId: string; agentId: string }
   | { type: "context_ready"; runId: string; contextIR: ContextIR; bill: Record<string, number> }
   | { type: "model_route"; runId: string; decision: ModelCallRouteDecision }
+  // A settled prompt-cache refresh: spend outside any turn, receipted as `call`.
+  | { type: "cache_warm"; runId: string; call: ReceiptCall }
   | { type: "pi"; runId: string; event: AgentEvent }
   | { type: "nested_tool_start"; runId: string; id: string; name: string; args: unknown }
   | { type: "nested_tool_end"; runId: string; id: string; name: string; isError: boolean; result: unknown }
@@ -417,6 +439,11 @@ export interface ModelCallRouteInput {
   /** Zero-based root provider-call index, including paid compactions. */
   readonly callIndex: number;
   readonly role: "working" | "compaction";
+  /**
+   * Pi's request reason, always set by the runtime (optional for hand-built inputs): `user`
+   * after user input, `continuation` after tool results, `direct` for a compaction.
+   */
+  readonly reason?: "user" | "continuation" | "direct";
   readonly provider: string;
   readonly currentModel: string;
   /** Conservative serialized-context ceiling used by wallet admission. */
@@ -686,6 +713,8 @@ export interface RunOptions {
   sessionId?: string;
   /** Provider-native prompt-cache retention. Generic runs inherit Pi's short default. */
   cacheRetention?: CacheRetention;
+  /** Pi's `cacheWarming`. `streaming` keeps a valuable prompt cache warm while tools run. Off by default. */
+  cacheWarming?: CacheWarmingMode;
   gatewayURL?: string;
   ensureRuntime?: boolean;
   /**
@@ -1875,14 +1904,20 @@ async function* streamAgentInternal(
       atCall: meter.calls,
     });
   };
+  if (options.cacheWarming !== undefined && options.cacheWarming !== "off" && options.cacheWarming !== "streaming") {
+    throw new Error("cave_cache_warming_invalid");
+  }
+  const cacheWarmer = options.cacheWarming === "streaming" ? new CacheWarmer() : undefined;
+  // Run scope: a warm settled while the run stops still drains before its terminal event.
+  const queued: CavemanRunEvent[] = [];
   let activeAbort: (() => void) | undefined;
   let activeExecution: Promise<void> | undefined;
   let sandboxSourceSnapshot: SandboxSourceSnapshot | undefined;
   const pendingSpendReservations: SpendReservation[][] = [];
   const pendingCallRecords: PendingCallRecord[] = [];
   let spendFailure: Error | undefined;
-  // Set when the ladder declines to start another call. Pi answers the refusal
-  // with one synthesized zero-usage error turn; that turn is our own stop, not
+  // Set when the ladder declines to start another call. The refusal is one
+  // empty zero-usage `stop` turn that finishTurn ends; it is our own stop, not
   // provider evidence, so it is skipped by the usage accounting below and
   // dropped from the committed conversation.
   let stopReason: RunStopReason | undefined;
@@ -2457,7 +2492,54 @@ async function* streamAgentInternal(
     let activeWorkingModel = routedModel;
     let toolErrorStreak = 0;
     let previousRouteUsage: ModelCallRouteInput["previousUsage"];
-    const queued: CavemanRunEvent[] = [];
+    // A warm whose usage is unreadable settled at worst case, so the run goes
+    // on, but its usage report can no longer claim to be complete.
+    let usageIncomplete = false;
+    // Every provider call this run made joins its totals and journal here.
+    // Unreadable usage is an unpriced zero, never a free call; a warm replays
+    // the previous request, so routing and cache state ignore it.
+    const accrueCall = (
+      kind: "model" | "compaction" | "cache_warm",
+      callModel: Model<Api>,
+      usage: ValidatedProviderUsage | undefined,
+      settledAmount: number | undefined,
+      journalIt = true,
+    ) => {
+      const call = providerCallRecord(callModel, usage);
+      if (call.unpriced) unpricedCall = true;
+      if (usage === undefined) {
+        if (kind === "cache_warm") usageIncomplete = true;
+        else usageFailure ??= new Error("cave_provider_usage_incomplete");
+      } else {
+        inputTokens += usage.inputTokens;
+        outputTokens += usage.outputTokens;
+        cacheReadTokens += usage.cacheReadTokens;
+        cacheWriteTokens += usage.cacheWriteTokens;
+        reasoningTokens += usage.reasoningTokens;
+        costUsd += usage.catalogCostUsd;
+        if (kind !== "cache_warm") {
+          lastCallCacheState = usage.cacheReadTokens > 0 ? "warm" : "cold";
+          previousRouteUsage = {
+            model: `${usage.provider}/${usage.model}`,
+            inputTokens: usage.inputTokens,
+            cacheReadTokens: usage.cacheReadTokens,
+            cacheWriteTokens: usage.cacheWriteTokens,
+          };
+        }
+      }
+      if (journalIt) {
+        activeJournal?.emit({
+          v: DURABLE_JOURNAL_VERSION,
+          at: activeJournal.now(),
+          type: "call_settled",
+          path: journalPath,
+          kind,
+          call,
+          ...(settledAmount === undefined ? {} : { settledAmount }),
+        });
+      }
+      return call;
+    };
     let wake: (() => void) | undefined;
     const wakeQueuedConsumer = (): void => {
       const pending = wake;
@@ -2835,78 +2917,19 @@ async function* streamAgentInternal(
             breakers?.settleRetry(pendingCall.retryAttempt, measuredSpend, "provider_reported");
           }
         }
-        inputTokens += usage.inputTokens;
-        outputTokens += usage.outputTokens;
-        cacheReadTokens += usage.cacheReadTokens;
-        cacheWriteTokens += usage.cacheWriteTokens;
-        reasoningTokens += usage.reasoningTokens;
-        costUsd += usage.catalogCostUsd;
-        if (!usage.priced) unpricedCall = true;
-        lastCallCacheState = usage.cacheReadTokens > 0 ? "warm" : "cold";
-        previousRouteUsage = {
-          model: `${usage.provider}/${usage.model}`,
-          inputTokens: usage.inputTokens,
-          cacheReadTokens: usage.cacheReadTokens,
-          cacheWriteTokens: usage.cacheWriteTokens,
-        };
-        receipt.recordCall({
-          provider: usage.provider,
-          model: usage.model,
-          inputTokens: usage.inputTokens,
-          outputTokens: usage.outputTokens,
-          cacheReadTokens: usage.cacheReadTokens,
-          cacheWriteTokens: usage.cacheWriteTokens,
-          reasoningTokens: usage.reasoningTokens,
-          estimatedUsd: usage.catalogCostUsd,
-          unpriced: !usage.priced,
-          usageBasis: "provider_reported",
-          clampedOutputTokens: pendingCall?.clampedOutputTokens,
-        });
-        if (journalThisSettle && activeJournal !== undefined) {
-          activeJournal.emit({
-            v: DURABLE_JOURNAL_VERSION,
-            at: activeJournal.now(),
-            type: "call_settled",
-            path: journalPath,
-            kind: "model",
-            call: {
-              provider: usage.provider,
-              model: usage.model,
-              inputTokens: usage.inputTokens,
-              outputTokens: usage.outputTokens,
-              cacheReadTokens: usage.cacheReadTokens,
-              cacheWriteTokens: usage.cacheWriteTokens,
-              reasoningTokens: usage.reasoningTokens,
-              estimatedUsd: usage.catalogCostUsd,
-              unpriced: !usage.priced,
-              usageBasis: "provider_reported",
-            },
-            ...(budgetReservation !== undefined && reservationMeter !== undefined
-              ? {
-                settledAmount: reservationMeter.denomination === "usd"
-                  ? usage.catalogCostUsd
-                  : usage.totalTokens,
-              }
-              : {}),
-          });
-        }
+        const call = accrueCall(
+          "model",
+          callModel,
+          usage,
+          budgetReservation !== undefined && reservationMeter !== undefined
+            ? reservationMeter.denomination === "usd" ? usage.catalogCostUsd : usage.totalTokens
+            : undefined,
+          journalThisSettle,
+        );
+        receipt.recordCall({ ...call, clampedOutputTokens: pendingCall?.clampedOutputTokens });
       } catch (error) {
         const failure = error instanceof Error ? error : new Error(String(error));
         usageFailure ??= failure;
-        unpricedCall = true;
-        receipt.recordCall({
-          provider: callModel.provider,
-          model: callModel.id,
-          inputTokens: 0,
-          outputTokens: 0,
-          cacheReadTokens: 0,
-          cacheWriteTokens: 0,
-          reasoningTokens: 0,
-          estimatedUsd: 0,
-          unpriced: true,
-          usageBasis: "unavailable",
-          clampedOutputTokens: pendingCall?.clampedOutputTokens,
-        });
         // Worst-case settlement keeps unreadable provider usage from looking
         // free. A later tool must see the resulting dead wallet.
         if (budgetReservation !== undefined) {
@@ -2923,31 +2946,10 @@ async function* streamAgentInternal(
           markSpendIncomplete(reservation.map((item) => item.ledger));
           spendFailure ??= failure;
         }
-        if (journalThisSettle && activeJournal !== undefined) {
-          // Unreadable usage settles at worst case in the meter; the journal
-          // records the same honesty — an unavailable-usage call, settled at
-          // the reservation amount, never a free call.
-          activeJournal.emit({
-            v: DURABLE_JOURNAL_VERSION,
-            at: activeJournal.now(),
-            type: "call_settled",
-            path: journalPath,
-            kind: "model",
-            call: {
-              provider: callModel.provider,
-              model: callModel.id,
-              inputTokens: 0,
-              outputTokens: 0,
-              cacheReadTokens: 0,
-              cacheWriteTokens: 0,
-              reasoningTokens: 0,
-              estimatedUsd: 0,
-              unpriced: true,
-              usageBasis: "unavailable",
-            },
-            ...(budgetReservation === undefined ? {} : { settledAmount: budgetReservation.amount }),
-          });
-        }
+        // The journal records the same honesty: an unavailable-usage call,
+        // settled at the reservation amount, never a free call.
+        const call = accrueCall("model", callModel, undefined, budgetReservation?.amount, journalThisSettle);
+        receipt.recordCall({ ...call, clampedOutputTokens: pendingCall?.clampedOutputTokens });
       }
       finalMessage = message;
     };
@@ -2958,10 +2960,14 @@ async function* streamAgentInternal(
       streamOptions: Parameters<StreamFn>[2],
     ): Promise<{ selected: Model<Api>; decision?: ModelCallRouteDecision }> => {
       const hasImages = context.messages.some((message) => messageHasImage(message));
+      const imageLimit = (candidate: Model<Api>) =>
+        hasImages ? imageInputLimitViolation(candidate, context.messages) : undefined;
       if (options.modelRouter === undefined) {
         if (hasImages && !current.input.includes("image")) {
           throw new Error(`cave_model_input_unsupported:${current.provider}/${current.id}:images`);
         }
+        const limit = imageLimit(current);
+        if (limit !== undefined) throw new Error(`cave_model_input_limit:${current.provider}/${current.id}:${limit}`);
         return { selected: current };
       }
       const outputTokenCap = Math.min(
@@ -2977,6 +2983,9 @@ async function* streamAgentInternal(
       const decision = await options.modelRouter({
         callIndex: routedCalls,
         role,
+        reason: role === "compaction" ? "direct"
+          : context.messages.findLast((item) => item.role !== "system")?.role === "toolResult"
+            ? "continuation" : "user",
         provider: model.provider,
         currentModel: `${current.provider}/${current.id}`,
         ctxTokens,
@@ -2997,6 +3006,8 @@ async function* streamAgentInternal(
       if (hasImages && !raw.input.includes("image")) {
         throw new Error(`cave_model_route_incompatible:${decision.model}:images`);
       }
+      const limit = imageLimit(raw);
+      if (limit !== undefined) throw new Error(`cave_model_route_incompatible:${decision.model}:${limit}`);
       if (ctxTokens > raw.contextWindow) {
         throw new Error(`cave_model_route_incompatible:${decision.model}:context`);
       }
@@ -3012,6 +3023,61 @@ async function* streamAgentInternal(
       wake?.();
       wake = undefined;
     };
+    // Pi's streaming cache warming: a refresh is a metered call like any other,
+    // reserved first, settled from provider usage, receipted, and journaled.
+    const refreshCacheWarm = async (request: CacheWarmRequest, signal: AbortSignal): Promise<boolean> => {
+      const { model, context } = request;
+      const prior = previousRouteUsage;
+      if (request.sent === undefined || prior === undefined || options.signal?.aborted ||
+          breakers?.tripped !== undefined || (deadlineAt !== undefined && performance.now() >= deadlineAt) ||
+          budgetMeter?.revoked || budgetMeter?.capBreached || spendFailure || usageFailure || usageIncomplete ||
+          executionContext.spendLedgers.length > 0) {
+        return false;
+      }
+      const accountingAt = new Date();
+      const promptTokens = (prior.inputTokens ?? 0) + prior.cacheReadTokens + prior.cacheWriteTokens;
+      if (cacheWarmDecision(model.provider, model.id, promptTokens, accountingAt)?.action !== "warm") return false;
+      const cost = budgetMeter === undefined ? undefined : callCeilingCost(budgetMeter.denomination,
+        transcriptCeiling(model, context.messages as unknown as readonly AgentMessage[], CACHE_WARM_OUTPUT_TOKENS,
+          restorableRequestBytes(conversationOriginals, instructions, originalInstructions)),
+        CACHE_WARM_OUTPUT_TOKENS, accountingAt);
+      let held = cost === undefined ? undefined : budgetMeter?.reserve(cost, CACHE_WARM_OUTPUT_TOKENS);
+      if (budgetMeter !== undefined && held === undefined) return false;
+      try {
+        if (budgetMeter !== undefined) journalMeterCall(budgetMeter);
+        // The intent is durable before the verified replay can leave; a warm
+        // refused before sending journals and receipts nothing.
+        const sent = await sendCacheWarm(baseStream, request, accountingAt, budgetMeter?.denomination === "usd", () => {
+          activeJournal?.emit({ v: DURABLE_JOURNAL_VERSION, at: activeJournal.now(), type: "call_started",
+            path: journalPath, kind: "cache_warm", provider: model.provider, model: model.id });
+          return activeJournal?.flush() ?? Promise.resolve();
+        }, signal);
+        if (sent === undefined) return false;
+        // Unreadable or abandoned usage settles at the reserved worst case and
+        // ends warming; the wallet already holds the maximum, so the run goes on.
+        const metered = sent.usage === undefined ? held?.amount ?? 0
+          : budgetMeter?.denomination === "usd" ? sent.usage.catalogCostUsd : sent.usage.totalTokens;
+        if (held !== undefined) budgetMeter!.settle(held, metered);
+        held = undefined;
+        const call = {
+          ...accrueCall("cache_warm", model, sent.usage, budgetMeter === undefined ? undefined : metered),
+          clampedOutputTokens: undefined,
+          purpose: "cache_warm" as const,
+        };
+        receipt.recordCompactionCall(call);
+        queued.push({ type: "cache_warm", runId, call });
+        wakeQueuedConsumer();
+        await activeJournal?.flush();
+        return sent.ok;
+      } catch (error) {
+        // A journal that cannot persist a paid call's evidence stops the run.
+        spendFailure ??= error instanceof Error ? error : new Error(String(error));
+        return false;
+      } finally {
+        if (held !== undefined) budgetMeter!.cancel(held);
+      }
+    };
+    const warmingStream = cacheWarmer?.wrap(baseStream, refreshCacheWarm);
     const streamFn: StreamFn = async (_selected, context, streamOptions) => {
       if (options.signal?.aborted) {
         throw options.signal.reason ?? new Error("cave_run_aborted");
@@ -3045,7 +3111,7 @@ async function* streamAgentInternal(
       if (modelCalls >= maxModelCalls) {
         stopReason = "call_budget_exhausted";
         refusalPending = true;
-        throw new Error("cave_run_stopped");
+        return stoppedTurnStream(activeWorkingModel);
       }
       let routed: Awaited<ReturnType<typeof resolveModelRoute>>;
       try {
@@ -3105,12 +3171,11 @@ async function* streamAgentInternal(
         throw ladderFailure;
       }
       if (decided.action === "stop") {
-        // Pi answers a thrown streamFn with a synthesized zero-usage error turn,
-        // so record the refusal before throwing or the stop becomes the usage
-        // failure that turn produces.
+        // The refusal is one empty zero-usage `stop` turn that finishTurn ends,
+        // never a Pi-synthesized error turn the usage accounting must explain.
         stopReason = decided.reason;
         refusalPending = true;
-        throw new Error("cave_run_stopped");
+        return stoppedTurnStream(selected);
       }
       if (decided.action === "compact") {
         // Compaction happens between turns, where a rewritten context can
@@ -3119,7 +3184,7 @@ async function* streamAgentInternal(
         // closed rather than silently proceeding at an unreserved cost.
         stopReason = "budget_exhausted";
         refusalPending = true;
-        throw new Error("cave_run_stopped");
+        return stoppedTurnStream(selected);
       }
       const pendingCall: PendingCallRecord = {
         model: selected,
@@ -3176,7 +3241,7 @@ async function* streamAgentInternal(
           ? options.signal
           : AbortSignal.any([streamOptions.signal, options.signal]);
       const streamOnce = async () => {
-        let source = await baseStream(selected, context, {
+        let source = await (warmingStream ?? baseStream)(selected, context, {
         ...streamOptions,
         ...(options.cacheRetention === undefined
           ? {}
@@ -3376,7 +3441,10 @@ async function* streamAgentInternal(
           return activeJournal?.flush();
         },
         abandonPendingCall,
-      );
+      ).catch((error: unknown) => {
+        if (!refusalPending || (error as Error | undefined)?.message !== "cave_run_stopped") throw error;
+        return stoppedTurnStream(selected);
+      });
     };
 
     const pi = new Agent({
@@ -3391,6 +3459,12 @@ async function* streamAgentInternal(
       },
       sessionId,
       streamFn,
+      // A refused call ends the run here: no queue poll, no further request.
+      // Warming covers a request's tool run, so it is quiesced before the next one.
+      finishTurn: async () => {
+        await cacheWarmer?.stop(CACHE_WARM_QUIESCE_MS);
+        return refusalPending ? { action: "end" as const } : undefined;
+      },
       // Indexes below are conversation indexes: Pi's leading system message
       // stays in front, so recall can never land before it.
       transformContext: async (messages) => {
@@ -3454,8 +3528,10 @@ async function* streamAgentInternal(
         // that same-sized summarizer plus post-rewrite headroom cannot fit
         // either. Four call ceilings preserves default-on compact-and-continue
         // while every actual provider call remains hard-reserved.
-        if (nextCallCost === undefined ||
-            budgetMeter.remaining() >= COMPACTION_TRIGGER_MULTIPLIER * nextCallCost) {
+        const windowFull = contextWindowFull(budgetMeter.compaction, activeWorkingModel, previousRouteUsage,
+          [turn.message, ...turn.toolResults]);
+        if (!windowFull && (nextCallCost === undefined ||
+            budgetMeter.remaining() >= COMPACTION_TRIGGER_MULTIPLIER * nextCallCost)) {
           return undefined;
         }
         const compacted = await compactContext({
@@ -3511,69 +3587,7 @@ async function* streamAgentInternal(
           // run's own totals so RunResult and the receipt cannot disagree, and
           // so a parent aggregating this child sees the whole cost.
           accrue: (usage, compactionModel, settledAmount) => {
-            if (usage === undefined) {
-              usageFailure ??= new Error("cave_provider_usage_incomplete");
-              unpricedCall = true;
-              if (activeJournal !== undefined) {
-                activeJournal.emit({
-                  v: DURABLE_JOURNAL_VERSION,
-                  at: activeJournal.now(),
-                  type: "call_settled",
-                  path: journalPath,
-                  kind: "compaction",
-                  call: {
-                    provider: compactionModel.provider,
-                    model: compactionModel.id,
-                    inputTokens: 0,
-                    outputTokens: 0,
-                    cacheReadTokens: 0,
-                    cacheWriteTokens: 0,
-                    reasoningTokens: 0,
-                    estimatedUsd: 0,
-                    unpriced: true,
-                    usageBasis: "unavailable",
-                  },
-                  ...(budgetMeter === undefined ? {} : { settledAmount }),
-                });
-              }
-              return;
-            }
-            inputTokens += usage.inputTokens;
-            outputTokens += usage.outputTokens;
-            cacheReadTokens += usage.cacheReadTokens;
-            cacheWriteTokens += usage.cacheWriteTokens;
-            reasoningTokens += usage.reasoningTokens;
-            costUsd += usage.catalogCostUsd;
-            if (!usage.priced) unpricedCall = true;
-            previousRouteUsage = {
-              model: `${usage.provider}/${usage.model}`,
-              inputTokens: usage.inputTokens,
-              cacheReadTokens: usage.cacheReadTokens,
-              cacheWriteTokens: usage.cacheWriteTokens,
-            };
-            lastCallCacheState = usage.cacheReadTokens > 0 ? "warm" : "cold";
-            if (activeJournal !== undefined) {
-              activeJournal.emit({
-                v: DURABLE_JOURNAL_VERSION,
-                at: activeJournal.now(),
-                type: "call_settled",
-                path: journalPath,
-                kind: "compaction",
-                call: {
-                  provider: usage.provider,
-                  model: usage.model,
-                  inputTokens: usage.inputTokens,
-                  outputTokens: usage.outputTokens,
-                  cacheReadTokens: usage.cacheReadTokens,
-                  cacheWriteTokens: usage.cacheWriteTokens,
-                  reasoningTokens: usage.reasoningTokens,
-                  estimatedUsd: usage.catalogCostUsd,
-                  unpriced: !usage.priced,
-                  usageBasis: "provider_reported",
-                },
-                ...(budgetMeter === undefined ? {} : { settledAmount }),
-              });
-            }
+            accrueCall("compaction", compactionModel, usage, budgetMeter === undefined ? undefined : settledAmount);
           },
           cacheState: lastCallCacheState,
         });
@@ -3877,6 +3891,8 @@ async function* streamAgentInternal(
       }
     }
     await execution;
+    await cacheWarmer?.stop();
+    while (queued.length > 0) yield queued.shift()!;
     await closeProgrammaticSpeculation();
     activeDurableTools?.assertReconciled();
     if (efficiencyPlan && reasoningUsageUnavailable) {
@@ -3885,6 +3901,8 @@ async function* streamAgentInternal(
     if (ladderFailure) throw ladderFailure;
     if (policyFailure) throw policyFailure;
     if (spendFailure) throw spendFailure;
+    // From here an unreadable warm reports exactly like an unreadable compaction.
+    if (usageIncomplete) usageFailure ??= new Error("cave_provider_usage_incomplete");
     if (usageFailure !== undefined &&
         (efficiencyPlan !== undefined ||
           executionContext.spendLedgers.length > 0 ||
@@ -4102,6 +4120,7 @@ async function* streamAgentInternal(
     budgetMeter?.revoke();
     activeAbort?.();
     if (activeExecution) await activeExecution.catch(() => undefined);
+    await cacheWarmer?.stop();
     try {
       await closeProgrammaticSpeculation();
     } catch (settlementError) {
@@ -4187,6 +4206,7 @@ async function* streamAgentInternal(
     }
     await releaseRunResources();
     finishInvocationSpan(2);
+    while (queued.length > 0) yield queued.shift()!;
     yield {
       type: "run_error",
       runId,
@@ -4197,6 +4217,7 @@ async function* streamAgentInternal(
   } finally {
     activeAbort?.();
     if (activeExecution) await activeExecution.catch(() => undefined);
+    await cacheWarmer?.stop();
     await closeProgrammaticSpeculation().catch(() => undefined);
     if (controlledAgent !== undefined) options.controller?._detach(controlledAgent);
     if (activeAbort) options.signal?.removeEventListener("abort", activeAbort);
@@ -6626,7 +6647,7 @@ async function compactContext(input: {
   summary: ContextSummary | undefined;
   tier: ReceiptCompaction["tier"];
 } | undefined> {
-  const config = input.meter.compaction;
+  const config = compactionForModel(input.meter.compaction, `${input.selected.provider}/${input.selected.id}`);
   const accountingAt = new Date();
   const plan = planCompaction(input.messages, config);
   const summarySources = contextSummarySources(input.messages, plan.summarizable);
@@ -6677,6 +6698,11 @@ async function compactContext(input: {
   // to settle — the only cost it can impose is the cold prefix the rewrite
   // forces, which `minYieldTokens` is already the guard for.
   if (config.mode === "new-context") {
+    // Priced with the longest plain seed, like the summarizer's placeholder:
+    // a rollover that cannot yield enough never reaches the sink, so a
+    // declined window is never archived again on every later turn.
+    const longest = messagesTokens(newContextMessages(input.messages, plan, "x".repeat(CONTEXT_SEED_MAX_CHARS)));
+    if (preTokens - longest < config.minYieldTokens) return evictionHelped ? finishEviction() : undefined;
     let seed: string;
     try {
       seed = await config.newContext!({
@@ -7022,9 +7048,15 @@ async function retryModelCall(
   const worstCaseSpend = initial.amount;
   const outputTokenCap = initial.outputTokenCap;
   let attempt = 0;
+  // Exhausted or refused retries surface a provider error turn as itself.
+  const giveUp = (error: unknown) => {
+    const replay = (error as { replay?: AssistantMessageEventStream } | undefined)?.replay;
+    if (replay === undefined) throw error;
+    return replay;
+  };
   for (;;) {
     try {
-      return await attemptCall();
+      return await failFastPreStream(await attemptCall(), pending.model);
     } catch (error) {
       if (pending.reservation !== undefined) {
         pending.reservationMeter?.cancel(pending.reservation);
@@ -7036,27 +7068,31 @@ async function retryModelCall(
         pending.retryAttempt = undefined;
       }
       const terminal = stopError();
-      if (terminal !== undefined || terminalRetryError(error)) {
+      // A context overflow fails the same way on every attempt: never retried.
+      if (terminal !== undefined || terminalRetryError(error) ||
+          isContextOverflow({ stopReason: "error", errorMessage: (error as Error)?.message } as AssistantMessage)) {
         abandon();
-        throw terminal ?? error;
+        if (terminal !== undefined) throw terminal;
+        return giveUp(error);
       }
       attempt++;
-      if (!breakers.retryExposureAvailable(worstCaseSpend, attempt)) {
+      const wait = breakers.backoffMs(attempt, serverRetryDelayMs(error));
+      if (wait === undefined) breakers.recordRetryExhausted(attempt);
+      if (wait === undefined || !breakers.retryExposureAvailable(worstCaseSpend, attempt)) {
         abandon();
-        throw error;
+        return giveUp(error);
       }
       const reservation = meter.reserve(worstCaseSpend, outputTokenCap);
       if (reservation === undefined) {
         breakers.recordRetryExhausted(attempt);
         abandon();
-        throw error;
+        return giveUp(error);
       }
       pending.reservation = reservation;
       pending.reservationMeter = meter;
       pending.retryAttempt = attempt;
       breakers.recordRetryAttempt(worstCaseSpend, attempt);
       await onMeterReserved(meter);
-      const wait = breakers.backoffMs(attempt);
       if (wait > 0) await new Promise((settle) => setTimeout(settle, wait));
       const expired = stopError();
       if (expired !== undefined) {

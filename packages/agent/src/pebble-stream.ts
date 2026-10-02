@@ -196,6 +196,19 @@ export function encodeRunEvent(
         reason: event.decision.reason,
         signals: [...event.decision.signals],
       })];
+    case "cache_warm":
+      // Spend between turns: a usage frame, so live cost includes it.
+      return [encoder.event({
+        kind: "usage",
+        usage: {
+          in: event.call.inputTokens,
+          out: event.call.outputTokens,
+          cacheRead: event.call.cacheReadTokens,
+          cacheWrite: event.call.cacheWriteTokens,
+          costUsd: event.call.unpriced ? null : event.call.estimatedUsd,
+          model: event.call.model,
+        },
+      })];
     case "run_end":
     case "run_error":
       return encoder.terminal(event);
