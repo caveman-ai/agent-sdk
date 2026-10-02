@@ -11,7 +11,36 @@ if (process.env.FIXTURE_FAIL) {
   process.exit(3);
 }
 
-const TOOLS = [
+let chain = { type: ["object", "object"], properties: {}, additionalProperties: false };
+for (let depth = 0; depth < 22; depth++) chain = { type: ["object", "object", "integer", "number"], properties: { a: chain } };
+let combined = { type: "object" };
+for (let depth = 0; depth < 24; depth++) combined = { type: ["object", "null"], allOf: [combined] };
+const defs = { d18: { type: "object" } };
+for (let depth = 0; depth < 18; depth++) {
+  defs[`d${depth}`] = { allOf: [{ $ref: `#/$defs/d${depth + 1}` }, { $ref: `#/$defs/d${depth + 1}` }] };
+}
+const HOSTILE = [
+  { name: "lookup", description: "Look up a key.", inputSchema: {
+    type: "object",
+    properties: { key: { type: "string", pattern: "^(a+)+$" } },
+    patternProperties: { "^(b+)+$": { type: "string" } },
+    required: ["key"],
+  } },
+  { name: "nested", description: "Deep type lists.", inputSchema: chain },
+  { name: "combined", description: "Type lists over allOf.", inputSchema: combined },
+  { name: "refs", description: "A $ref graph.", inputSchema: { $defs: defs, $ref: "#/$defs/d0" } },
+  { name: "pick", description: "Pick one of 32.", inputSchema: {
+    type: "object",
+    properties: { k: { anyOf: Array.from({ length: 32 }, (_, i) => ({ const: i })) } },
+  } },
+  { name: "search", description: "Search files.", inputSchema: {
+    type: "object",
+    properties: { path: { type: "string" }, pattern: { type: "string" } },
+    required: ["path", "pattern"],
+    additionalProperties: false,
+  } },
+];
+const TOOLS = process.env.FIXTURE_HOSTILE ? HOSTILE : [
   {
     name: "echo",
     description: "Echo text back.",
@@ -46,7 +75,7 @@ function call(name, args) {
   if (process.env.FIXTURE_LOG) appendFileSync(process.env.FIXTURE_LOG, `${name} ${process.pid}\n`);
   switch (name) {
     case "echo": return { ...text(args.text), structuredContent: { echoed: args.text, pid: process.pid } };
-    case "env": return text({ ...process.env, FIXTURE_ARGV: process.argv.slice(2).join(" ") });
+    case "env": return text({ ...process.env, FIXTURE_ARGV: process.argv.slice(2).join(" "), FIXTURE_CWD: process.cwd() });
     case "write": return text(`wrote ${args.value ?? ""}`);
     case "crash":
       process.stderr.write("fixture crashing on purpose\n");
@@ -57,6 +86,12 @@ function call(name, args) {
       return text({ pid: child.pid });
     }
     case "fail": return { ...text("fixture failure"), isError: true };
+    case "lookup":
+    case "nested":
+    case "combined":
+    case "refs":
+    case "pick":
+    case "search": return text("ok");
     default: return undefined;
   }
 }
@@ -94,7 +129,10 @@ function serve() {
     }
   });
   // Exit once stdin closes, like real servers.
-  lines.on("close", () => process.exit(0));
+  lines.on("close", () => {
+    if (process.env.FIXTURE_LOG) appendFileSync(process.env.FIXTURE_LOG, `eof ${process.pid}\n`);
+    process.exit(0);
+  });
 }
 
 const delay = Number(process.env.FIXTURE_DELAY_MS ?? 0);

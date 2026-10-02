@@ -23,7 +23,6 @@ import {
   StreamableHttpTransport,
   type AuthProvider,
   type CallToolResult,
-  type McpFetch,
   type McpTransport,
   type Tool as McpTool,
 } from "@earendil-works/pi-mcp";
@@ -40,6 +39,16 @@ import {
   type OAuthClientInformationMixed,
 } from "@earendil-works/pi-mcp/oauth";
 import { buildCodingProcessEnv } from "./coding-backend.js";
+import {
+  HEADER_NAME,
+  HEADER_VALUE,
+  oauthFetch,
+  oauthUrlAllowed,
+  sanitizeServerSchema,
+  secureUrl,
+  TRANSPORT_FETCH,
+  trustedChallenge,
+} from "./mcp-guards.js";
 import { tool, type ToolDefinition } from "./primitives.js";
 import type { ProgrammaticToolNamespace } from "./programmatic-catalog.js";
 import {
@@ -104,7 +113,7 @@ export interface McpValueContext {
 
 export interface McpHostOptions {
   readonly servers: readonly McpServerEntry[];
-  /** Session directory: stdio `cwd` base and the advertised root. */
+  /** Session workspace, advertised to servers as the MCP root. Stdio servers never run in it. */
   readonly cwd: string;
   /** Usually `ProgrammaticToolRuntime.registerNestedTools`. */
   readonly register: (tools: readonly ToolDefinition[], namespace: ProgrammaticToolNamespace) => void;
@@ -164,10 +173,11 @@ const RESULT_SCHEMA = Object.freeze({
 function createMcpToolDefinition(connection: McpConnection, mcpTool: McpTool, name: string): ToolDefinition {
   const server = connection.entry.name;
   const hints = mcpTool.annotations;
+  const schema = sanitizeServerSchema(mcpTool.inputSchema) as Record<string, unknown>;
   const input = {
-    ...mcpTool.inputSchema,
-    type: mcpTool.inputSchema.type ?? "object",
-    ...(mcpTool.inputSchema.properties === undefined ? { properties: {} } : {}),
+    ...schema,
+    type: schema.type ?? "object",
+    ...(schema.properties === undefined ? { properties: {} } : {}),
   };
   const title = mcpTool.title ?? hints?.title;
   const options = {
@@ -291,7 +301,7 @@ function connectionAuth(
   onChallenge: (challenge: OAuthChallenge) => void,
 ): AuthProvider {
   let refreshing: Promise<void> | undefined;
-  const refresh = (stale: string | undefined, fetch: McpFetch, challenge?: OAuthChallenge): Promise<void> =>
+  const refresh = (stale: string | undefined, challenge?: OAuthChallenge): Promise<void> =>
     refreshing ??= (async () => {
       const state = await store.load();
       if (state?.tokens?.access_token !== stale) return;
@@ -307,7 +317,7 @@ function connectionAuth(
           ? {}
           : { authorizationServerMetadataUrl: resolved.authServerMetadataUrl }),
         ...(challenge?.scope === undefined ? {} : { scope: challenge.scope }),
-        fetch,
+        fetch: oauthFetch(serverUrl),
       });
       if (result === "REDIRECT") throw new McpOAuthAuthorizationRequiredError();
     })().finally(() => {
@@ -322,11 +332,11 @@ function connectionAuth(
       const expired = state?.tokensExpireAt !== undefined && state.tokensExpireAt - REFRESH_SKEW_MS <= Date.now();
       if (!expired || state?.tokens?.refresh_token === undefined) return token;
       // A failed refresh sends the old token; the 401 decides.
-      await refresh(token, (input, init) => globalThis.fetch(input, init)).catch(() => undefined);
+      await refresh(token).catch(() => undefined);
       return (await store.load())?.tokens?.access_token;
     },
     async onUnauthorized(context) {
-      const challenge = parseWwwAuthenticate(context.response.headers.get("www-authenticate"));
+      const challenge = trustedChallenge(parseWwwAuthenticate(context.response.headers.get("www-authenticate")), serverUrl);
       onChallenge(challenge);
       if (challenge.error === "insufficient_scope") {
         // Remember the requested scope so a later sign-in (another process) can step up.
@@ -334,7 +344,7 @@ function connectionAuth(
         if (state !== undefined && challenge.scope !== undefined) await store.save({ ...state, stepUpScope: challenge.scope } as McpOAuthState);
         throw new McpOAuthAuthorizationRequiredError();
       }
-      await refresh(context.token, context.fetch, challenge);
+      await refresh(context.token, challenge);
     },
   };
 }
@@ -350,10 +360,10 @@ async function signInMcpServer(options: {
   const { serverUrl, store, settings } = options;
   const stored = await store.load();
   const pending = (stored as { stepUpScope?: unknown } | undefined)?.stepUpScope;
-  const challenge: OAuthChallenge | undefined = options.challenge?.error === "insufficient_scope" ||
-      typeof pending !== "string"
-    ? options.challenge
-    : { ...options.challenge, error: "insufficient_scope", scope: pending };
+  const given = options.challenge === undefined ? undefined : trustedChallenge(options.challenge, serverUrl);
+  const challenge: OAuthChallenge | undefined = given?.error === "insufficient_scope" || typeof pending !== "string"
+    ? given
+    : { ...given, error: "insufficient_scope", scope: pending };
   const stepUp = challenge?.error === "insufficient_scope";
   const callback = callbackSettings(settings);
   // Reuse the registered redirect port so a registered client stays valid.
@@ -402,13 +412,20 @@ async function signInMcpServer(options: {
         : { authorizationServerMetadataUrl: settings.authServerMetadataUrl }),
       ...(scope === undefined ? {} : { scope }),
     };
-    if (await authorizeMcp(provider, { ...flow, skipRefresh: stepUp }) === "AUTHORIZED") return;
+    if (await authorizeMcp(provider, { ...flow, skipRefresh: stepUp, fetch: oauthFetch(serverUrl) }) === "AUTHORIZED") return;
     if (authorizationUrl === undefined) throw new Error("mcp_oauth_authorization_url_missing");
+    // pi-mcp does not check the scheme of the endpoint the user is sent to.
+    if (!oauthUrlAllowed(authorizationUrl, serverUrl)) throw new Error(`mcp_oauth_authorization_endpoint_insecure:${authorizationUrl.origin}`);
     const state = await provider.state();
     options.prompt.showAuthorizationUrl(authorizationUrl);
     const { code, iss } = await server.waitForCallback(state);
     // RFC 9207: authorizeMcp rejects an `iss` that is not the discovered issuer.
-    await authorizeMcp(provider, { ...flow, authorizationCode: code, ...(iss === undefined ? {} : { iss }) });
+    await authorizeMcp(provider, {
+      ...flow,
+      authorizationCode: code,
+      ...(iss === undefined ? {} : { iss }),
+      fetch: oauthFetch(serverUrl),
+    });
   } finally {
     await server.close();
   }
@@ -430,28 +447,45 @@ class McpConnection {
   #stderrTail: string | undefined;
   readonly #host: McpHost;
   readonly #options: McpHostOptions;
-  readonly #auth: AuthProvider | undefined;
+  #auth: AuthProvider | undefined;
+  #url: string | undefined;
+  /** Clients this connection closed on purpose; their close is not a crash. */
+  readonly #closing = new WeakSet<McpClient>();
 
   constructor(entry: McpServerEntry, host: McpHost, options: McpHostOptions) {
     this.entry = entry;
     this.#host = host;
     this.#options = options;
     if (entry.config.enabled === false) this.state = "disabled";
-    const url = this.oauthUrl;
     const provider = !isMcpStdioConfig(entry.config) ? entry.config.auth?.provider : undefined;
-    this.#auth = url !== undefined && options.oauthStore !== undefined
-      ? connectionAuth(
-        url,
-        options.oauthStore(entry.name, url),
-        () => this.oauthSettings(),
-        options.clientName ?? "caveman-agent",
-        (challenge) => {
-          this.challenge = challenge;
-        },
-      )
-      : provider !== undefined
-        ? { token: async () => options.providerToken?.(provider) }
-        : undefined;
+    if (provider !== undefined) this.#auth = { token: async () => options.providerToken?.(provider) };
+  }
+
+  /** The server URL with `${VAR}` resolved; OAuth discovery and the token store key use it. */
+  async url(): Promise<string> {
+    const { config } = this.entry;
+    if (isMcpStdioConfig(config)) throw new Error(`mcp_server_not_http:${this.name}`);
+    this.#url ??= await this.#resolve(config.url, "url", false);
+    if (!URL.canParse(this.#url) || !/^https?:$/.test(new URL(this.#url).protocol)) {
+      throw new Error(`mcp_server_url_invalid:${this.name}`);
+    }
+    // Config checks the raw URL; a `${VAR}` could still resolve to a remote http host.
+    if (config.auth !== undefined && !secureUrl(new URL(this.#url))) throw new Error(`mcp_server_url_insecure:${this.name}`);
+    return this.#url;
+  }
+
+  #authFor(url: string): AuthProvider | undefined {
+    if (this.#auth !== undefined || !this.usesOAuth || this.#options.oauthStore === undefined) return this.#auth;
+    this.#auth = connectionAuth(
+      url,
+      this.#options.oauthStore(this.name, url),
+      () => this.oauthSettings(),
+      this.#options.clientName ?? "caveman-agent",
+      (challenge) => {
+        this.challenge = challenge;
+      },
+    );
+    return this.#auth;
   }
 
   get name(): string {
@@ -467,11 +501,10 @@ class McpConnection {
   }
 
   /** HTTP servers use OAuth unless the config supplies `auth` or an Authorization header. */
-  get oauthUrl(): string | undefined {
+  get usesOAuth(): boolean {
     const { config } = this.entry;
-    if (isMcpStdioConfig(config) || config.auth !== undefined) return undefined;
-    const authorization = Object.keys(config.headers ?? {}).some((name) => name.toLowerCase() === "authorization");
-    return authorization ? undefined : config.url;
+    if (isMcpStdioConfig(config) || config.auth !== undefined) return false;
+    return !Object.keys(config.headers ?? {}).some((name) => name.toLowerCase() === "authorization");
   }
 
   status(): McpServerStatus {
@@ -535,6 +568,7 @@ class McpConnection {
         ...(signal === undefined ? {} : { signal }),
         timeoutMs: this.timeoutMs,
       });
+      if (result.isError === true) this.#host.recordError(nestedName);
       return result;
     } catch (error) {
       if (this.#needsSignIn(error)) {
@@ -562,8 +596,17 @@ class McpConnection {
           `mcp_tool_timeout:${label}: no answer within ${this.timeoutMs} ms; the call may still have run on the server.`,
         );
       }
+      // pi-mcp synthesizes this when an HTTP response stream breaks mid-call.
+      if (error instanceof McpError && error.message.startsWith("MCP response stream failed")) {
+        throw new Error(
+          `mcp_tool_outcome_unknown:${label}: ${error.message}; the call may still have run, check before repeating it.`,
+        );
+      }
       if (error instanceof McpError) throw new Error(`mcp_tool_error:${label}: ${error.message}`);
-      throw new Error(`mcp_tool_failed:${label}: ${errorMessage(error)}`);
+      // The request may have reached the server (reset, 5xx, oversized answer, abort).
+      throw new Error(
+        `mcp_tool_outcome_unknown:${label}: ${errorMessage(error)}; the call may still have run, check before repeating it.`,
+      );
     }
   }
 
@@ -580,6 +623,7 @@ class McpConnection {
     this.#client = undefined;
     const opening = this.#opening;
     // Closing the in-flight client rejects its initialize at once.
+    for (const pending of [client, this.#connecting]) if (pending !== undefined) this.#closing.add(pending);
     await Promise.all([client?.close(), this.#connecting?.close()].map((done) => done?.catch(() => undefined)));
     await opening?.catch(() => undefined);
   }
@@ -596,12 +640,30 @@ class McpConnection {
     if (!isMcpStdioConfig(config)) {
       const headers: Record<string, string> = {};
       for (const [key, value] of Object.entries(config.headers ?? {})) {
-        headers[key] = await this.#resolve(value, `header ${key}`);
+        const resolved = await this.#resolve(value, `header ${key}`);
+        // Errors name the header only; fetch would echo an invalid value back.
+        if (!HEADER_NAME.test(key) || !HEADER_VALUE.test(resolved)) {
+          throw new Error(`mcp_header_invalid:${this.name}:${key}`);
+        }
+        headers[key] = resolved;
       }
+      const url = await this.url();
+      const auth = this.#authFor(url);
       return new StreamableHttpTransport({
-        url: await this.#resolve(config.url, "url", false),
+        url,
         headers,
-        ...(this.#auth === undefined ? {} : { authProvider: this.#auth }),
+        fetch: TRANSPORT_FETCH,
+        ...(auth === undefined ? {} : {
+          authProvider: {
+            ...auth,
+            // fetch would echo a malformed token back in its error.
+            token: async () => {
+              const token = await auth.token();
+              if (token !== undefined && !HEADER_VALUE.test(token)) throw new Error(`mcp_token_invalid:${this.name}`);
+              return token;
+            },
+          },
+        }),
       });
     }
     // The coding allowlist plus only what the entry names: provider and account
@@ -614,10 +676,17 @@ class McpConnection {
     for (const [index, arg] of (config.args ?? []).entries()) {
       args.push(expandHome(await this.#resolve(arg, `arg ${index}`, false)));
     }
+    // Never the session workspace: a repository could plant node_modules/.bin,
+    // .npmrc, or pyproject files that npx, uvx, or python -m would then run.
+    const cwd = config.cwd === undefined
+      ? homedir()
+      : resolve(this.entry.baseDir ?? homedir(), expandHome(await this.#resolve(config.cwd, "cwd", false)));
+    // The allowlist passes Pebble's launch PWD; servers that read $PWD must see their real cwd.
+    if (config.env?.PWD === undefined) env.PWD = cwd;
     return new StdioTransport({
       command: expandHome(await this.#resolve(config.command, "command", false)),
       args,
-      cwd: resolve(this.#options.cwd, expandHome(await this.#resolve(config.cwd ?? ".", "cwd", false))),
+      cwd,
       env,
       inheritEnv: false,
       stderr: "pipe",
@@ -645,6 +714,7 @@ class McpConnection {
       client.onClose(() => this.#handleClose(client, stdio, pid));
       // A malformed or oversized frame drops its response; fail the connection instead of waiting out the timeout.
       client.onError((error) => {
+        // Not deliberate: like a crash, the group's leftovers are stopped.
         if (!error.message.startsWith("Received response for unknown")) void client.close();
       });
       client.onNotification("notifications/tools/list_changed", () => {
@@ -664,6 +734,7 @@ class McpConnection {
       return client;
     } catch (error) {
       this.#connecting = undefined;
+      this.#closing.add(client);
       await client.close().catch(() => undefined);
       if (transport instanceof StdioTransport) {
         this.#stderrTail = transport.stderr.trim().slice(-STDERR_TAIL_CHARS) || undefined;
@@ -702,18 +773,25 @@ class McpConnection {
   }
 
   async #drop(client: McpClient): Promise<void> {
+    this.#closing.add(client);
     if (this.#client === client) this.#client = undefined;
     await client.close().catch(() => undefined);
   }
 
   #handleClose(client: McpClient, stdio: StdioTransport | undefined, pid: number | undefined): void {
-    // A crashed wrapper (npx, uvx) can leave its children running in the group.
-    if (pid !== undefined && process.platform !== "win32") {
-      try {
-        process.kill(-pid, "SIGTERM");
-      } catch {
-        // The group is already gone.
-      }
+    // Deliberate closes go through pi-mcp: stdin close, then SIGTERM, then
+    // SIGKILL. An unexpected one means the server already exited (its stdin is
+    // gone); a crashed wrapper (npx, uvx) can leave children in its group.
+    if (!this.#closing.has(client) && pid !== undefined && process.platform !== "win32") {
+      const signal = (name: NodeJS.Signals) => {
+        try {
+          process.kill(-pid, name);
+        } catch {
+          // The group is already gone.
+        }
+      };
+      signal("SIGTERM");
+      setTimeout(() => signal("SIGKILL"), 2_000).unref();
     }
     if (this.#client !== client || this.#closed) return;
     this.#client = undefined;
@@ -748,6 +826,7 @@ export class McpHost {
   readonly #owners = new Map<string, McpToolOwner>();
   readonly #registered = new Set<string>();
   readonly #called = new Map<string, McpToolOwner>();
+  readonly #isErrors = new Map<string, number>();
 
   constructor(options: McpHostOptions) {
     this.#options = options;
@@ -768,9 +847,10 @@ export class McpHost {
     return [...this.#connections.values()].map((connection) => connection.status());
   }
 
-  /** Server and tool of every MCP tool called so far in this session. */
-  calledTools(): Readonly<Record<string, McpToolOwner>> {
-    return Object.fromEntries(this.#called);
+  /** Server, tool, and `isError` result count of every MCP tool called so far in this session. */
+  calledTools(): Readonly<Record<string, McpToolOwner & { readonly isErrors: number }>> {
+    return Object.fromEntries([...this.#called].map(([name, owner]) =>
+      [name, Object.freeze({ ...owner, isErrors: this.#isErrors.get(name) ?? 0 })]));
   }
 
   /** Bounded wait for servers a cell names, or for all of them when it searches tools. */
@@ -805,9 +885,9 @@ export class McpHost {
   async signIn(name: string, prompt: McpSignInPrompt): Promise<void> {
     const connection = this.#connections.get(name);
     if (connection === undefined) throw new Error(`mcp_server_unknown:${name}`);
-    const url = connection.oauthUrl;
-    if (url === undefined) throw new Error(`mcp_server_oauth_unused:${name}`);
+    if (!connection.usesOAuth) throw new Error(`mcp_server_oauth_unused:${name}`);
     if (connection.state === "disabled") throw new Error(`mcp_server_disabled:${name}`);
+    const url = await connection.url();
     if (this.#options.oauthStore === undefined) throw new Error("mcp_oauth_store_required");
     // The server's 401 challenge names its resource metadata and scope. A
     // connected server still signs in: a stored step-up request needs the browser,
@@ -831,6 +911,11 @@ export class McpHost {
   /** @internal */
   recordCall(nestedName: string, server: string, toolName: string): void {
     this.#called.set(nestedName, Object.freeze({ server, tool: toolName }));
+  }
+
+  /** @internal An `isError` result: resolved for scripts, counted as an error for receipts. */
+  recordError(nestedName: string): void {
+    this.#isErrors.set(nestedName, (this.#isErrors.get(nestedName) ?? 0) + 1);
   }
 
   /** @internal Registers tools a connection has not registered before. */

@@ -48,7 +48,7 @@ export interface McpStdioServerConfig extends McpServerConfigBase {
   readonly args?: readonly string[];
   /** Added to the coding allowlist environment. Values may use `${VAR}` or `!command`. */
   readonly env?: Readonly<Record<string, string>>;
-  /** Relative to the session directory. */
+  /** Relative to the config file's directory; unset means the home directory, never the workspace. */
   readonly cwd?: string;
 }
 
@@ -69,6 +69,12 @@ export interface McpServerEntry {
   readonly config: McpServerConfig;
   /** Config file path, or a label such as `acp` or `plugin:<name>`. */
   readonly source: string;
+  /**
+   * Directory a relative stdio `cwd` resolves against, normally the config
+   * file's directory. Without it, the home directory. Never the session
+   * workspace: a repository must not choose what `npx` or `uvx` resolves.
+   */
+  readonly baseDir?: string;
 }
 
 export interface ParsedMcpServers {
@@ -208,7 +214,7 @@ export function validateMcpServerConfig(name: string, raw: unknown): McpServerCo
  * Parse a decoded `mcp.json` (`{ "mcpServers": { ... } }`). Names that differ
  * only in `-` and `_` would share a namespace, so the later one is rejected.
  */
-export function parseMcpServers(value: unknown, source: string): ParsedMcpServers {
+export function parseMcpServers(value: unknown, source: string, baseDir?: string): ParsedMcpServers {
   if (!isRecord(value) || (value.mcpServers !== undefined && !isRecord(value.mcpServers))) {
     return { servers: [], errors: [`${source}: expected an object with an "mcpServers" object`] };
   }
@@ -225,7 +231,7 @@ export function parseMcpServers(value: unknown, source: string): ParsedMcpServer
       errors.push(`${source}: server "${name}" conflicts with "${clash.name}"`);
       continue;
     }
-    servers.push(Object.freeze({ name, config, source }));
+    servers.push(Object.freeze({ name, config, source, ...(baseDir === undefined ? {} : { baseDir }) }));
   }
   return { servers: Object.freeze(servers), errors: Object.freeze(errors) };
 }

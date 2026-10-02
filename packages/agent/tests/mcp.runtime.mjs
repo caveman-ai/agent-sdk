@@ -256,6 +256,7 @@ test("codemode exposes MCP tools only inside the code cell, with discovery", asy
     assert.equal(registry.get("mcp__fx__echo").speculative, undefined);
     // An isError result resolves inside scripts, like Pi.
     assert.equal(await cell(runtime, "return (await tools.mcp__fx__fail({})).isError;"), "true");
+    assert.equal(host.calledTools().mcp__fx__fail.isErrors, 1, "isError results count as errors for receipts");
   } finally {
     await host.close();
   }
@@ -304,7 +305,7 @@ test("MCP calls dispatch through the kernel and the receipt names the tool", asy
     assert.deepEqual(results, ["wrote https://a.example"]);
     assert.deepEqual(result.toolCalls, [PROGRAMMATIC_TOOL_NAME, "mcp__fx__write"]);
     assert.ok(result.receipt.tools.some((entry) => entry.name === "mcp__fx__write" && entry.calls === 1));
-    assert.deepEqual(host.calledTools(), { mcp__fx__write: { server: "fx", tool: "write" } });
+    assert.deepEqual(host.calledTools(), { mcp__fx__write: { server: "fx", tool: "write", isErrors: 0 } });
   } finally {
     await host.close();
   }
@@ -444,7 +445,8 @@ test("OAuth sign-in rejects a mismatched iss, then succeeds with PKCE and the ri
     save: (state) => void states.set(`${name}|${url}`, structuredClone(state)),
   });
   const runtime = codeRuntime();
-  const host = attach(runtime, [{ name: "remote", source: "test", config: { url: `${remote.base()}/mcp` } }], {
+  const host = attach(runtime, [{ name: "remote", source: "test", config: { url: "${MCP_BASE}/mcp" } }], {
+    resolveValue: async (value) => value.replace("${MCP_BASE}", remote.base()),
     oauthStore: store,
     clientName: "pebble",
     signInHint: (server) => `Run pebble mcp login ${server}.`,
@@ -476,6 +478,7 @@ test("OAuth sign-in rejects a mismatched iss, then succeeds with PKCE and the ri
     const stored = states.get(`remote|${remote.base()}/mcp`);
     assert.equal(stored.tokens.access_token, "good-token");
     assert.equal(stored.clientInformation.client_name, "pebble");
+    assert.deepEqual([...states.keys()], [`remote|${remote.base()}/mcp`], "OAuth keys on the resolved URL");
   } finally {
     await host.close();
     remote.server.close();
@@ -527,7 +530,8 @@ test("a resumed cell that calls an unregistered MCP tool fails closed without re
     streamFn: scripted(code, results),
   }), /cave_durable_tool_replay_incomplete:mcp__fx__write:/);
   assert.match(results[0], /tools\.mcp__fx__write does not exist/);
-  assert.equal((await readFile(log, "utf8")).trim().split("\n").length, 1, "the effect ran exactly once");
+  assert.equal((await readFile(log, "utf8")).split("\n").filter((line) => line.startsWith("write ")).length, 1,
+    "the effect ran exactly once");
   assert.ok(results.every((text) => !text.includes("wrote")), "no fabricated result reached the model");
   await rm(dir, { recursive: true, force: true });
 });
@@ -545,7 +549,7 @@ test("code-cell argument checks accept JSON Schema type lists", async () => {
   assert.equal(await cell(runtime, "return await tools.nullable({ note: null });"), "note:null");
   await assert.rejects(
     cell(runtime, "return await tools.nullable({ note: 3 });"),
-    /- note: expected string, got number/,
+    /- note: expected string \| null, got number/,
   );
 });
 
@@ -637,7 +641,8 @@ test("a resumed cell replays a settled MCP call from the journal without calling
       await host.close();
     }
   }
-  assert.equal((await readFile(log, "utf8")).trim().split("\n").length, 1, "the server ran the write once");
+  assert.equal((await readFile(log, "utf8")).split("\n").filter((line) => line.startsWith("write ")).length, 1,
+    "the server ran the write once");
   await rm(dir, { recursive: true, force: true });
 });
 
@@ -690,5 +695,230 @@ test("a bad plugin mcpServers path is a diagnostic, not a dropped plugin", async
       entry.message.includes("mcpServers")));
   } finally {
     await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("stdio servers run in the home directory or the config file's directory, never the workspace", async () => {
+  const home = await mkdtemp(join(tmpdir(), "cave-mcp-home-"));
+  const configDir = await mkdtemp(join(tmpdir(), "cave-mcp-config-"));
+  const previous = process.env.HOME;
+  process.env.HOME = home;
+  const runtime = codeRuntime();
+  const host = attach(runtime, [
+    fixture("athome"),
+    { ...fixture("relative", {}, { cwd: "." }), baseDir: configDir },
+  ]);
+  try {
+    host.start();
+    const { realpath } = await import("node:fs/promises");
+    assert.equal(await realpath(await cell(runtime, "return JSON.parse((await tools.mcp__athome__env({})).content[0].text).FIXTURE_CWD;")), await realpath(home));
+    assert.equal(await realpath(await cell(runtime, "return JSON.parse((await tools.mcp__relative__env({})).content[0].text).FIXTURE_CWD;")), await realpath(configDir));
+    assert.notEqual(await realpath(home), await realpath(process.cwd()));
+    assert.equal(await cell(runtime, "return JSON.parse((await tools.mcp__athome__env({})).content[0].text).PWD;"), home, "PWD matches the cwd");
+  } finally {
+    process.env.HOME = previous;
+    await host.close();
+    await rm(home, { recursive: true, force: true });
+    await rm(configDir, { recursive: true, force: true });
+  }
+});
+
+test("hostile server schemas cannot stall validation on the main thread", async () => {
+  const { argumentErrors } = await import("../dist/programmatic-catalog.js");
+  const { Value } = await import("typebox/value");
+  const runtime = codeRuntime();
+  const host = attach(runtime, [fixture("evil", { FIXTURE_HOSTILE: "1" })]);
+  try {
+    host.start();
+    await settled(host);
+    const { registry } = programmaticToolMetadata(runtime.definition.tools[0]);
+    const lookup = registry.get("mcp__evil__lookup");
+    const nested = registry.get("mcp__evil__nested");
+    const combined = registry.get("mcp__evil__combined");
+    const refs = registry.get("mcp__evil__refs");
+    const search = registry.get("mcp__evil__search");
+    assert.doesNotMatch(JSON.stringify(lookup.input), /pattern/, "pattern and patternProperties are stripped");
+    assert.doesNotMatch(JSON.stringify(refs.input), /\$ref|\$defs/, "$ref graphs are stripped");
+    assert.deepEqual(Object.keys(search.input.properties), ["path", "pattern"], "a property named pattern stays");
+    const evil = { key: `${"a".repeat(29)}!` };
+    let deep = { z: 1 };
+    for (let depth = 0; depth < 22; depth++) deep = { a: deep };
+    for (const [definition, value] of [[lookup, evil], [nested, deep], [combined, {}], [refs, {}]]) {
+      const started = performance.now();
+      argumentErrors(definition.input, value);
+      Value.Check(definition.input, value);
+      assert.ok(performance.now() - started < 100, `${definition.name} validation took too long`);
+    }
+    assert.equal(await cell(runtime, `return (await tools.mcp__evil__lookup(${JSON.stringify(evil)})).content[0].text;`), "ok");
+    assert.equal(await cell(runtime, 'return (await tools.mcp__evil__search({ path: ".", pattern: "*.ts" })).content[0].text;'), "ok");
+    // A 32-member union divides the 256 KiB argument limit by 32.
+    await assert.rejects(cell(runtime, 'return await tools.mcp__evil__pick({ k: 1, pad: "x".repeat(9000) });'), /takes at most 8 KiB/);
+    assert.equal(await cell(runtime, 'return (await tools.mcp__evil__pick({ k: 1, pad: "x".repeat(7000) })).content[0].text;'), "ok");
+  } finally {
+    await host.close();
+  }
+  // Raw 22-level type-list chain straight into the code-cell checker.
+  let schema = { type: ["object", "object"], properties: {}, additionalProperties: false };
+  let value = { z: 1 };
+  for (let depth = 0; depth < 22; depth++) {
+    schema = { type: ["object", "object"], properties: { a: schema } };
+    value = { a: value };
+  }
+  const started = performance.now();
+  assert.equal(argumentErrors(schema, value).length, 1);
+  assert.ok(performance.now() - started < 100);
+});
+
+test("HTTP transport refuses redirects, so configured headers never follow one", async () => {
+  const seen = [];
+  const target = createServer((request, response) => {
+    seen.push(request.headers["x-api-key"] ?? null);
+    response.end("{}");
+  });
+  await new Promise((done) => target.listen(0, "127.0.0.1", done));
+  const origin = createServer((_request, response) => {
+    response.writeHead(307, { location: `http://localhost:${target.address().port}/mcp` });
+    response.end();
+  });
+  await new Promise((done) => origin.listen(0, "127.0.0.1", done));
+  const host = attach(codeRuntime(), [{
+    name: "moved",
+    source: "test",
+    config: { url: `http://127.0.0.1:${origin.address().port}/mcp`, headers: { Authorization: "Bearer x", "X-Api-Key": "SECRET" } },
+  }]);
+  try {
+    host.start();
+    await settled(host);
+    assert.equal(host.status()[0].state, "failed");
+    assert.match(host.status()[0].error, /mcp_http_redirect_refused:307:http:\/\/localhost:\d+\/mcp/);
+    assert.deepEqual(seen, [], "the redirect target never received the request");
+  } finally {
+    await host.close();
+    origin.close();
+    target.close();
+  }
+});
+
+test("an invalid resolved header value is reported by name only", async () => {
+  const host = attach(codeRuntime(), [{
+    name: "hdr",
+    source: "test",
+    config: { url: "http://127.0.0.1:9/mcp", headers: { Authorization: "${TOKEN}" } },
+  }], { resolveValue: async () => "Bearer leaked-secret\r\nX-Injected: 1" });
+  try {
+    host.start();
+    await settled(host);
+    assert.equal(host.status()[0].state, "failed");
+    assert.match(host.status()[0].error, /mcp_header_invalid:hdr:Authorization/);
+    assert.doesNotMatch(host.status()[0].error, /leaked-secret/);
+  } finally {
+    await host.close();
+  }
+});
+
+test("shutdown closes the server's stdin before any signal", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "cave-mcp-eof-"));
+  const log = join(dir, "calls.log");
+  const runtime = codeRuntime();
+  const host = attach(runtime, [fixture("fx", { FIXTURE_LOG: log })]);
+  try {
+    host.start();
+    await settled(host);
+    await host.close();
+    assert.match(await readFile(log, "utf8"), /^eof \d+$/m, "the server saw EOF and exited on its own");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("OAuth fetches require https (loopback http only for a loopback server), cap bodies, and ignore cross-origin challenges", async () => {
+  const { oauthFetch, trustedChallenge } = await import("../dist/mcp-guards.js");
+  await assert.rejects(oauthFetch("https://mcp.example/mcp")("http://auth.example/.well-known/oauth-authorization-server"), /mcp_fetch_insecure_url/);
+  // A remote server's metadata cannot point registration or token requests at a local service.
+  await assert.rejects(oauthFetch("https://mcp.example/mcp")("http://127.0.0.1:9/register"), /mcp_fetch_insecure_url:http:\/\/127\.0\.0\.1:9/);
+  await assert.rejects(oauthFetch("https://mcp.example/mcp")("http://localhost:9/token"), /mcp_fetch_insecure_url/);
+  const OAUTH_FETCH = oauthFetch("http://127.0.0.1:1/mcp");
+  const server = createServer((_request, response) => {
+    // An event-stream content type must not bypass the cap.
+    response.writeHead(200, { "content-type": "text/event-stream" });
+    response.end("x".repeat(2 * 1024 * 1024));
+  });
+  await new Promise((done) => server.listen(0, "127.0.0.1", done));
+  try {
+    await assert.rejects(OAUTH_FETCH(`http://127.0.0.1:${server.address().port}/token`), /mcp_response_too_large/);
+  } finally {
+    server.close();
+  }
+  const same = { resourceMetadataUrl: new URL("https://mcp.example/.well-known/oauth-protected-resource"), scope: "a" };
+  assert.equal(trustedChallenge(same, "https://mcp.example/mcp"), same);
+  assert.deepEqual(trustedChallenge({ ...same, resourceMetadataUrl: new URL("https://evil.example/m") }, "https://mcp.example/mcp"), { scope: "a" });
+});
+
+test("a provider token reaches only an https or loopback resolved URL", async () => {
+  const host = attach(codeRuntime(), [{
+    name: "prov",
+    source: "test",
+    config: { url: "https://${HOST}/mcp", auth: { provider: "openai" } },
+  }], { resolveValue: async () => "http://evil.example/mcp", providerToken: async () => "tok" });
+  try {
+    host.start();
+    await settled(host);
+    assert.equal(host.status()[0].state, "failed");
+    assert.match(host.status()[0].error, /mcp_server_url_insecure:prov/);
+  } finally {
+    await host.close();
+  }
+});
+
+test("validation work stays bounded: wide unions are dropped and MCP argument size scales with fanout", async () => {
+  const { sanitizeServerSchema, schemaFanout } = await import("../dist/mcp-guards.js");
+  const { argumentErrors } = await import("../dist/programmatic-catalog.js");
+  const { Value } = await import("typebox/value");
+  const union = (width, member) => Array.from({ length: width }, (_, i) => member(i));
+  const object = (i) => ({ type: "object", properties: { z: { const: i } }, required: ["z"] });
+  // The review PoC: a 64-member union per array element is dropped.
+  const wide = sanitizeServerSchema({ type: "object", properties: { k: { type: "array", items: { anyOf: union(64, object) } } } });
+  assert.deepEqual(wide.properties.k.items, {});
+  assert.deepEqual(sanitizeServerSchema({ type: "object", properties: Object.fromEntries(
+    union(5, (i) => [`p${i}`, { anyOf: union(30, (j) => ({ const: j })) }])) }), {}, "over 128 union members in total");
+  let nested = { type: "number" };
+  for (let depth = 0; depth < 6; depth++) nested = { anyOf: [{ type: "array", items: nested }, { type: "null" }] };
+  assert.deepEqual(sanitizeServerSchema({ type: "object", properties: { k: nested } }), {}, "fanout over 32");
+  const cases = [
+    ["32 objects per element, last matches", { type: "object", properties: { k: { type: "array", items: { anyOf: union(32, object) } } } },
+      (limit) => ({ k: Array.from({ length: Math.floor((limit - 10) / 9) }, () => ({ z: 31 })) })],
+    ["32 constants per element, last matches", { type: "object", properties: { k: { type: "array", items: { anyOf: union(32, (i) => ({ const: i })) } } } },
+      (limit) => ({ k: Array.from({ length: Math.floor((limit - 10) / 3) }, () => 31) })],
+    ["32 members each walking the array", { type: "object", properties: { k: { anyOf: union(32, (i) => ({
+      type: "array", items: { type: "object", properties: { [`f${i}`]: { type: "string" } } } })) } } },
+      (limit) => ({ k: [...Array.from({ length: Math.floor((limit - 400) / 3) }, () => ({})), Object.fromEntries(union(32, (i) => [`f${i}`, 1]))] })],
+    ["plain numbers at the full limit", { type: "object", properties: { k: { type: "array", items: { type: "number" } } } },
+      (limit) => ({ k: Array.from({ length: Math.floor((limit - 10) / 2) }, () => 1) })],
+  ];
+  for (const [label, raw, make] of cases) {
+    const schema = sanitizeServerSchema(raw);
+    const limit = Math.floor(256 * 1024 / schemaFanout(schema));
+    const value = make(limit);
+    assert.ok(JSON.stringify(value).length <= limit, `${label} fits the limit`);
+    const started = performance.now();
+    argumentErrors(schema, value);
+    Value.Check(schema, value);
+    assert.ok(performance.now() - started < 100, `${label} took ${Math.round(performance.now() - started)} ms`);
+  }
+
+  // Over the limit, a call is refused before any check and never reaches the server.
+  const dir = await mkdtemp(join(tmpdir(), "cave-mcp-size-"));
+  const log = join(dir, "calls.log");
+  const runtime = codeRuntime();
+  const host = attach(runtime, [fixture("fx", { FIXTURE_LOG: log })]);
+  try {
+    host.start();
+    await settled(host);
+    await assert.rejects(cell(runtime, `return await tools.mcp__fx__echo({ text: "x".repeat(300 * 1024) });`),
+      /cave_program_tool_arguments_too_large:mcp__fx__echo: this MCP tool takes at most 256 KiB/);
+    await assert.rejects(readFile(log, "utf8"), { code: "ENOENT" });
+  } finally {
+    await host.close();
+    await rm(dir, { recursive: true, force: true });
   }
 });

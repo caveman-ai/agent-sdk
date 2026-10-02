@@ -157,15 +157,39 @@ export function invalidArgumentsMessage(definition: ToolDefinition, errors: read
 export function argumentErrors(schema: unknown, value: unknown, path = ""): string[] {
   const at = path === "" ? "args" : path;
   if (!isRecord(schema)) return [`${at}: schema cannot be checked`];
+  // JSON Schema allows a list of types, for example ["string", "null"]. Only
+  // the member matching the value's kind is checked, so a nested list stays
+  // linear instead of re-checking the subtree once per member.
+  // Resolved before anyOf/allOf so those run once per node, not twice.
+  if (Array.isArray(schema.type)) {
+    const kind = valueKind(value);
+    const types = schema.type.filter((type): type is string => typeof type === "string");
+    const type = kind === "number"
+      ? types.find((candidate) => candidate === "number") ?? types.find((candidate) => candidate === "integer")
+      : types.find((candidate) => candidate === kind);
+    if (type === undefined) return [`${at}: expected ${types.join(" | ")}, got ${kind}`];
+    return argumentErrors({ ...schema, type }, value, path);
+  }
   if (Array.isArray(schema.anyOf)) {
-    const branches = schema.anyOf.map((item) => argumentErrors(item, value, path));
-    if (!branches.some((errors) => errors.length === 0)) {
-      // The closest union member explains the mistake better than "no match".
-      return branches.reduce((best, errors) => errors.length < best.length ? errors : best);
+    // The first matching member settles it; otherwise the closest member
+    // explains the mistake better than "no match".
+    let closest: string[] | undefined;
+    for (const item of schema.anyOf) {
+      const errors = argumentErrors(item, value, path);
+      if (errors.length === 0) {
+        closest = undefined;
+        break;
+      }
+      if (closest === undefined || errors.length < closest.length) closest = errors;
     }
+    if (closest !== undefined) return closest;
   }
   if (Array.isArray(schema.allOf)) {
-    const errors = schema.allOf.flatMap((item) => argumentErrors(item, value, path));
+    const errors: string[] = [];
+    for (const item of schema.allOf) {
+      if (errors.length >= MAX_ARGUMENT_ERRORS) break;
+      errors.push(...argumentErrors(item, value, path));
+    }
     if (errors.length > 0) return errors;
   }
   if ("const" in schema && !Object.is(schema.const, value)) {
@@ -175,12 +199,6 @@ export function argumentErrors(schema: unknown, value: unknown, path = ""): stri
     return [`${at}: expected one of ${schema.enum.map((item) => JSON.stringify(item)).join(", ")}`];
   }
   if (schema.type === undefined) return [];
-  // JSON Schema allows a list of types, for example ["string", "null"].
-  if (Array.isArray(schema.type)) {
-    const branches = schema.type.map((type) => argumentErrors({ ...schema, type }, value, path));
-    return branches.find((errors) => errors.length === 0) ??
-      branches.reduce((best, errors) => errors.length < best.length ? errors : best, branches[0] ?? []);
-  }
   const mismatch = () => [`${at}: expected ${String(schema.type)}, got ${valueKind(value)}`];
   if (schema.type === "null") return value === null ? [] : mismatch();
   if (schema.type === "boolean") return typeof value === "boolean" ? [] : mismatch();
@@ -218,9 +236,14 @@ export function argumentErrors(schema: unknown, value: unknown, path = ""): stri
     if (typeof schema.maxItems === "number" && value.length > schema.maxItems) {
       return [`${at}: allows at most ${schema.maxItems} items`];
     }
-    return schema.items === undefined
-      ? []
-      : value.flatMap((item, index) => argumentErrors(schema.items, item, `${at}[${index}]`));
+    const errors: string[] = [];
+    if (schema.items === undefined) return errors;
+    // Only the first few errors are shown, so stop checking once they are found.
+    for (const [index, item] of value.entries()) {
+      if (errors.length >= MAX_ARGUMENT_ERRORS) break;
+      errors.push(...argumentErrors(schema.items, item, `${at}[${index}]`));
+    }
+    return errors;
   }
   if (schema.type !== "object" || !isRecord(value)) return mismatch();
   const properties = isRecord(schema.properties) ? schema.properties : {};
@@ -229,6 +252,7 @@ export function argumentErrors(schema: unknown, value: unknown, path = ""): stri
     .filter((name): name is string => typeof name === "string" && !(name in value))
     .map((name) => `${child(name)}: required`);
   for (const [name, field] of Object.entries(value)) {
+    if (errors.length >= MAX_ARGUMENT_ERRORS) break;
     if (name === "__proto__" || name === "prototype" || name === "constructor") {
       errors.push(`${child(name)}: forbidden key`);
       continue;

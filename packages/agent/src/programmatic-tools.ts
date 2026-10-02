@@ -10,6 +10,7 @@ import {
   NestedToolRegistry,
   type ProgrammaticToolNamespace,
 } from "./programmatic-catalog.js";
+import { schemaFanout } from "./mcp-guards.js";
 import { PROGRAMMATIC_WORKER_SOURCE } from "./programmatic-worker.js";
 import { withoutCodingToolGuidance } from "./coding-guidance.js";
 import { toolScriptCompanions, type ToolScriptCompanions } from "./tool-internal.js";
@@ -31,6 +32,12 @@ const PROGRAM_CAPTURE_MAX_BYTES = 4 * 1024 * 1024;
 const PROGRAM_MAX_DISCOVERY_CALLS = 32;
 const PROGRAM_MAX_TOOL_CALLS = 8;
 const PROGRAM_MAX_REPEAT_CALLS = 3;
+/**
+ * MCP schemas come from the server. Checking work grows with argument size
+ * times the schema's union fanout, so the limit is this divided by the fanout.
+ */
+const MCP_MAX_ARGUMENT_BYTES = 256 * 1024;
+const TOOL_IMPLEMENTATION_SOURCE = Symbol.for("@caveman-ai/agent:tool-implementation-source");
 const PROGRAM_TIMEOUT_MS = 120_000;
 const PROGRAM_SYNC_TIMEOUT_MS = 2_000;
 const SPECULATION_MAX_INFLIGHT = 4;
@@ -848,6 +855,15 @@ async function runProgram(
         }
         const definition = registry.get(message.name);
         if (definition === undefined) throw new Error(`cave_program_unknown_tool:${message.name}`);
+        const mcpLimit = String(Reflect.get(definition, TOOL_IMPLEMENTATION_SOURCE)).startsWith("mcp:")
+          ? Math.floor(MCP_MAX_ARGUMENT_BYTES / schemaFanout(definition.input)) : Infinity;
+        // Before any schema check: the size is what bounds their cost.
+        if (mcpLimit !== Infinity && Buffer.byteLength(JSON.stringify(message.args) ?? "") > mcpLimit) {
+          throw new Error(
+            `cave_program_tool_arguments_too_large:${definition.name}: this MCP tool takes at most ` +
+            `${Math.floor(mcpLimit / 1024)} KiB of JSON arguments. Send less per call, or pass a file path the server can read.`,
+          );
+        }
         const errors = isRecord(message.args)
           ? argumentErrors(definition.input, message.args)
           : [`args: expected object, got ${message.args === null ? "null" : typeof message.args}`];
