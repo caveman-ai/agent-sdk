@@ -1,3 +1,15 @@
+import {
+  DEFAULT_MAX_AGENT_RETRY_DELAY_MS,
+  createAssistantMessageEventStream,
+  isContextOverflow,
+  isRetryableAssistantError,
+  retryDelayMs,
+  type Api,
+  type AssistantMessage,
+  type AssistantMessageEvent,
+  type AssistantMessageEventStream,
+  type Model,
+} from "@earendil-works/pi-ai";
 import { sha256, stableStringify } from "./context-ir.js";
 
 /**
@@ -48,6 +60,14 @@ export interface RunBreakers {
     readonly maxSpend: number;
     /** First backoff, doubled each attempt. Deterministic — no jitter. Defaults to 250ms. */
     readonly backoffMs?: number;
+    /** Retries per model call. Unbounded by count when omitted; `maxSpend` still binds. */
+    readonly maxRetries?: number;
+    /**
+     * Cap on any one wait, Pi's `retry.maxAgentDelayMs`. A thrown provider
+     * error's Retry-After above it fails the call instead of sleeping.
+     * Defaults to 60s.
+     */
+    readonly maxAgentDelayMs?: number;
   };
 }
 
@@ -58,6 +78,8 @@ export interface NormalizedBreakers {
   readonly maxToolCallsPerTurn: number;
   readonly retryMaxSpend: number | undefined;
   readonly retryBackoffMs: number;
+  readonly retryMaxRetries: number;
+  readonly retryMaxAgentDelayMs: number;
 }
 
 const DEFAULT_REPEATED_TOOL_CALLS = 3;
@@ -93,7 +115,10 @@ export function normalizeRunBreakers(
     throw new Error("cave_breaker_retry_spend_invalid");
   }
   const retryBackoffMs = breakers.retry?.backoffMs ?? DEFAULT_RETRY_BACKOFF_MS;
-  if (!Number.isSafeInteger(retryBackoffMs) || retryBackoffMs < 0) {
+  const retryMaxRetries = breakers.retry?.maxRetries ?? Number.MAX_SAFE_INTEGER;
+  const retryMaxAgentDelayMs = breakers.retry?.maxAgentDelayMs ?? DEFAULT_MAX_AGENT_RETRY_DELAY_MS;
+  if ([retryBackoffMs, retryMaxRetries, retryMaxAgentDelayMs]
+    .some((value) => !Number.isSafeInteger(value) || value < 0)) {
     throw new Error("cave_breaker_retry_backoff_invalid");
   }
   return Object.freeze({
@@ -103,6 +128,8 @@ export function normalizeRunBreakers(
     maxToolCallsPerTurn,
     retryMaxSpend: breakers.retry?.maxSpend,
     retryBackoffMs,
+    retryMaxRetries,
+    retryMaxAgentDelayMs,
   });
 }
 
@@ -265,7 +292,7 @@ export class BreakerState {
     if (!Number.isFinite(amount) || amount <= 0) return false;
     const exposed = this.events.reduce((total, event) =>
       event.kind === "retry_attempted" ? total + (event.reservedSpend ?? 0) : total, 0);
-    if (exposed + amount > allowance) {
+    if (exposed + amount > allowance || attempt > this.config.retryMaxRetries) {
       this.events.push(Object.freeze({
         kind: "retry_exhausted",
         tool: undefined,
@@ -322,12 +349,97 @@ export class BreakerState {
     (event as { measuredSpend?: number; spendBasis?: BreakerEvent["spendBasis"] }).spendBasis = spendBasis;
   }
 
-  /** Deterministic exponential backoff. No jitter: a breaker must be reproducible. */
-  backoffMs(attempt: number): number {
-    return this.config.retryBackoffMs * 2 ** Math.max(0, attempt - 1);
+  /**
+   * Deterministic exponential backoff capped at `maxAgentDelayMs`, raised to a
+   * server Retry-After when one is known. Undefined when the server asks for
+   * longer than the cap: the call fails rather than sleeping past it.
+   */
+  backoffMs(attempt: number, serverDelayMs?: number): number | undefined {
+    const cap = this.config.retryMaxAgentDelayMs;
+    if (serverDelayMs !== undefined && serverDelayMs > cap) return undefined;
+    const own = retryDelayMs({ baseDelayMs: this.config.retryBackoffMs, maxAgentDelayMs: cap }, attempt);
+    return Math.max(own, serverDelayMs ?? 0);
   }
+}
+
+/** Server-requested wait on a thrown provider error (`retry-after-ms`, then `retry-after`), as pi-ai reads it. */
+export function serverRetryDelayMs(error: unknown): number | undefined {
+  const headers = (error as { headers?: unknown } | null | undefined)?.headers;
+  const header = (name: string): string | undefined => {
+    const value = headers instanceof Headers ? headers.get(name)
+      : typeof headers === "object" && headers !== null ? (headers as Record<string, unknown>)[name] : undefined;
+    return typeof value === "string" && value.trim() !== "" ? value : undefined;
+  };
+  const millis = Number.parseFloat(header("retry-after-ms") ?? "");
+  if (Number.isFinite(millis)) return Math.max(0, millis);
+  const after = header("retry-after");
+  if (after === undefined) return undefined;
+  const seconds = Number.parseFloat(after);
+  const delay = Number.isNaN(seconds) ? Date.parse(after) - Date.now() : seconds * 1000;
+  return Number.isFinite(delay) ? Math.max(0, delay) : undefined;
 }
 
 export function callSignature(toolName: string, args: unknown): string {
   return sha256(stableStringify({ tool: toolName, args: args ?? null }));
+}
+
+/** An empty, zero-usage assistant turn: a refused call's `stop`, or a broken stream's `error`. */
+function emptyTurn(model: Model<Api>, stopReason: "stop" | "error", errorMessage?: string): AssistantMessage {
+  return {
+    role: "assistant", content: [], api: model.api, provider: model.provider, model: model.id,
+    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+    stopReason, ...(errorMessage === undefined ? {} : { errorMessage }), timestamp: Date.now(),
+  };
+}
+
+/**
+ * Pi delivers provider failures as an `error` event, not a throw. One that
+ * arrives first, before any output or usage, is the same unbilled pre-stream
+ * failure as a throw, so a transient one (pi-ai's classifier) is thrown for
+ * the retry loop. Everything else streams on unchanged; a source that breaks
+ * mid-stream ends as an error turn, never retried.
+ */
+export async function failFastPreStream(
+  source: AssistantMessageEventStream,
+  model: Model<Api>,
+): Promise<AssistantMessageEventStream> {
+  const iterator = source[Symbol.asyncIterator]();
+  const replay = createAssistantMessageEventStream();
+  const broken = (error: unknown) => replay.push({ type: "error", reason: "error",
+    error: emptyTurn(model, "error", error instanceof Error ? error.message : String(error)) });
+  let first: IteratorResult<AssistantMessageEvent>;
+  try {
+    first = await iterator.next();
+  } catch (error) {
+    broken(error);
+    replay.end();
+    return replay;
+  }
+  if (!first.done) replay.push(first.value);
+  void (async () => {
+    try {
+      for (let next = await iterator.next(); !next.done; next = await iterator.next()) replay.push(next.value);
+    } catch (error) {
+      broken(error);
+    }
+    // A no-op after a terminal event; without one, result() would never settle.
+    broken(new Error("cave_stream_ended_without_terminal"));
+    replay.end();
+  })();
+  const failed = !first.done && first.value.type === "error" ? first.value.error : undefined;
+  if (failed !== undefined && !(failed.usage.input || failed.usage.output || failed.usage.cacheRead ||
+      failed.usage.cacheWrite) && isRetryableAssistantError(failed) && !isContextOverflow(failed)) {
+    throw Object.assign(new Error(failed.errorMessage ?? "cave_provider_error"), { replay });
+  }
+  return replay;
+}
+
+/** The refused call's turn: empty, zero usage, `stop`. finishTurn ends the run on it. */
+export function stoppedTurnStream(model: Model<Api>) {
+  const stream = createAssistantMessageEventStream();
+  const message = emptyTurn(model, "stop");
+  stream.push({ type: "done", reason: "stop", message });
+  stream.end(message);
+  return stream;
 }

@@ -38,6 +38,8 @@ export interface ReceiptPrintCall {
   readonly cacheWriteTokens: number;
   readonly reasoningTokens: number;
   readonly unpriced: boolean;
+  /** A cache warm is spend, not a turn. */
+  readonly purpose?: "cache_warm" | undefined;
 }
 
 /** The call tree the print aggregates over. Structurally satisfied by RunReceipt. */
@@ -123,6 +125,8 @@ function coldEstimate(
   | { kind: "drop" } {
   let total = 0;
   for (const { call, fromSubagent } of calls) {
+    // Without a cache there is nothing to keep warm: the counterfactual omits it.
+    if (call.purpose === "cache_warm") continue;
     const cost = catalogCost({
       provider: call.provider,
       model: call.model,
@@ -147,7 +151,7 @@ function coldEstimate(
 
 export function renderReceipt(receipt: ReceiptLike): string {
   const calls = allCalls(receipt);
-  const turns = calls.length;
+  const turns = calls.filter(({ call }) => call.purpose === undefined).length;
   const seconds = (receipt.durationMs / 1000).toFixed(1);
   // A stopped run never claims completion. Fail closed on the wording: any
   // reason other than the natural end renders as a stop, named in plain words.

@@ -522,6 +522,8 @@ export interface ReceiptCall {
   readonly usageBasis: "provider_reported" | "unavailable";
   /** The output allowance this call was given when the budget lowered it below the configured cap. */
   readonly clampedOutputTokens: number | undefined;
+  /** Set on a prompt-cache refresh, which is metered but is not working-call progress. */
+  readonly purpose?: "cache_warm";
 }
 
 /**
@@ -679,7 +681,7 @@ export class ReceiptRecorder {
     this.workingCallCount++;
   }
 
-  /** Record a summarizer provider call without counting it as post-compaction work. */
+  /** Record a summarizer or cache-warm call without counting it as post-compaction work. */
   recordCompactionCall(call: ReceiptCall): void {
     this.recordCallEntry(call);
   }
@@ -699,6 +701,7 @@ export class ReceiptRecorder {
       ...(call.clampedOutputTokens === undefined
         ? {}
         : { clampedOutputTokens: call.clampedOutputTokens }),
+      ...(call.purpose === undefined ? {} : { purpose: call.purpose }),
     }) as ReceiptCall);
   }
 

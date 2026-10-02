@@ -191,3 +191,19 @@ export function validateProviderUsage(
     catalogCostUsd: priced.priced ? priced.usd : 0,
   });
 }
+
+/** The receipt and journal record of one settled call; unreadable usage is an unpriced zero. */
+export function providerCallRecord(
+  model: { readonly provider: string; readonly id: string },
+  usage: ValidatedProviderUsage | undefined,
+) {
+  return usage === undefined ? {
+    provider: model.provider, model: model.id, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0,
+    cacheWriteTokens: 0, reasoningTokens: 0, estimatedUsd: 0, unpriced: true, usageBasis: "unavailable" as const,
+  } : {
+    provider: usage.provider, model: usage.model, inputTokens: usage.inputTokens, outputTokens: usage.outputTokens,
+    cacheReadTokens: usage.cacheReadTokens, cacheWriteTokens: usage.cacheWriteTokens,
+    reasoningTokens: usage.reasoningTokens, estimatedUsd: usage.catalogCostUsd, unpriced: !usage.priced,
+    usageBasis: "provider_reported" as const,
+  };
+}
