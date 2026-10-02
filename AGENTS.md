@@ -39,9 +39,11 @@ must never land here. Only Apache-2.0 protocol remains in this repository.
   refused: it doubles the maintenance and pins us to a second contract that
   drifts from the one we exact-pin.
 - Agent Plugins v1 and OpenPlugin support is declarative-only: skills and
-  markdown slash commands. Recognize MCP, hooks, and custom agents, but never
-  execute them. Executable integrations stay host-owned and require separate
-  environment-allowlist and lifecycle contracts.
+  markdown slash commands. Plugin loading parses MCP and recognizes hooks and
+  custom agents, but never executes them. MCP servers launch only when a host
+  passes explicit entries to `McpHost` (`packages/agent/src/mcp.ts`): stdio with
+  `inheritEnv: false` and the coding env allowlist plus the entry's own `env`,
+  tools nested in the code tool (never declared), never retried or speculated.
 
 ## Checks
 

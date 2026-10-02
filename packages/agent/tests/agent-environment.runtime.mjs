@@ -117,6 +117,13 @@ test("environment loads Agent Plugins v1 and OpenPlugin skills and commands", as
       ["vercel-plugin", "open-plugin"],
     ]);
     assert.equal(environment.plugins.every((entry) => entry.hasMcp), true);
+    // Plugin MCP is parsed for hosts to report; plugin loading never launches it.
+    assert.deepEqual(environment.plugins.map((entry) => entry.mcpServers.map((server) => [server.name, server.config.url])), [
+      [],
+      [["vercel", "https://mcp.vercel.com"]],
+    ]);
+    assert.ok(environment.diagnostics.some((entry) =>
+      entry.message === "plugin MCP servers parsed (1) but never launched by plugin loading"));
     assert.equal(
       environment.diagnostics.some((entry) => entry.code === "agent_environment_unsupported_plugin_field"),
       true,

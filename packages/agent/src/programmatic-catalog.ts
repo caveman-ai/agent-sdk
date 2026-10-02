@@ -12,6 +12,8 @@ import { toolSchemaSemanticsVerified } from "./tool-internal.js";
 export interface ProgrammaticToolNamespace {
   readonly name: string;
   readonly description?: string;
+  /** Longer guidance (for example tool-server instructions), returned only by `describeNamespace()`. */
+  readonly instructions?: string;
 }
 
 export interface RegisteredTool {
@@ -47,7 +49,8 @@ export class NestedToolRegistry {
   register(definitions: readonly ToolDefinition[], namespace?: ProgrammaticToolNamespace): void {
     if (namespace !== undefined && (typeof namespace.name !== "string" ||
         !/^[A-Za-z][A-Za-z0-9_.-]{0,63}$/.test(namespace.name) ||
-        (namespace.description !== undefined && typeof namespace.description !== "string"))) {
+        (namespace.description !== undefined && typeof namespace.description !== "string") ||
+        (namespace.instructions !== undefined && typeof namespace.instructions !== "string"))) {
       throw new Error("cave_program_namespace_invalid");
     }
     const frozenNamespace = namespace === undefined ? undefined : Object.freeze({ ...namespace });
@@ -172,6 +175,12 @@ export function argumentErrors(schema: unknown, value: unknown, path = ""): stri
     return [`${at}: expected one of ${schema.enum.map((item) => JSON.stringify(item)).join(", ")}`];
   }
   if (schema.type === undefined) return [];
+  // JSON Schema allows a list of types, for example ["string", "null"].
+  if (Array.isArray(schema.type)) {
+    const branches = schema.type.map((type) => argumentErrors({ ...schema, type }, value, path));
+    return branches.find((errors) => errors.length === 0) ??
+      branches.reduce((best, errors) => errors.length < best.length ? errors : best, branches[0] ?? []);
+  }
   const mismatch = () => [`${at}: expected ${String(schema.type)}, got ${valueKind(value)}`];
   if (schema.type === "null") return value === null ? [] : mismatch();
   if (schema.type === "boolean") return typeof value === "boolean" ? [] : mismatch();
@@ -277,6 +286,7 @@ export function discoverTools(entries: readonly RegisteredTool[], name: string, 
     return {
       name: namespace.name,
       ...(namespace.description === undefined ? {} : { description: namespace.description }),
+      ...(namespace.instructions === undefined ? {} : { instructions: namespace.instructions }),
       tools: members.map((entry) => entry.definition.name),
     };
   }

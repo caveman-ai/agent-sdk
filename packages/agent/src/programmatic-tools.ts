@@ -55,6 +55,9 @@ export interface ProgrammaticToolStats {
 
 export type { ProgrammaticToolNamespace };
 
+/** Runs before each cell; must bound its own wait and honor `signal`. */
+export type ProgrammaticCellGate = (code: string, signal: AbortSignal | undefined) => Promise<void>;
+
 export interface ProgrammaticToolRuntime {
   readonly definition: AgentDefinition;
   wrapModels(models: Models): Models;
@@ -67,6 +70,8 @@ export interface ProgrammaticToolRuntime {
    * stays byte-stable while tool servers connect.
    */
   registerNestedTools(tools: readonly ToolDefinition[], namespace?: ProgrammaticToolNamespace): void;
+  /** Await `gate(code)` before each cell, e.g. so servers a cell names can finish connecting. */
+  setCellGate(gate: ProgrammaticCellGate | undefined): void;
   close(): void;
 }
 
@@ -166,7 +171,7 @@ export function createProgrammaticToolRuntime(
   const counters: MutableStats = { launched: 0, claimed: 0, missed: 0, abandoned: 0 };
   const enabled = options.speculate ?? true;
   const codeTool = createCodeTool(definitions, enabled, counters, toolName);
-  const registry = PROGRAMMATIC_METADATA.get(codeTool)!.registry;
+  const { registry, cellGate } = PROGRAMMATIC_METADATA.get(codeTool)!;
   const definition = Object.freeze({
     ...directDefinition,
     // Declarations carry each tool's description, so the coding prompt's
@@ -196,6 +201,10 @@ export function createProgrammaticToolRuntime(
     registerNestedTools(tools: readonly ToolDefinition[], namespace?: ProgrammaticToolNamespace) {
       registry.register(tools, namespace);
     },
+    setCellGate(gate: ProgrammaticCellGate | undefined) {
+      if (gate !== undefined && typeof gate !== "function") throw new Error("cave_program_cell_gate_invalid");
+      cellGate.current = gate;
+    },
     close() {},
   });
 }
@@ -217,6 +226,7 @@ function createCodeTool(
       .map((definition) => definition.name)
     : [];
   const registry = new NestedToolRegistry(toolName, definitions);
+  const cellGate: { current?: ProgrammaticCellGate | undefined } = {};
   // Oversized cell output spills into the agent's retained-output store. Its
   // reader stays callable from cells even when the direct surface omits it.
   const spill = definitions.map(toolScriptCompanions)
@@ -251,6 +261,7 @@ function createCodeTool(
           `${PROGRAM_MAX_SOURCE_BYTES}. Split the work across several smaller cells.`,
         );
       }
+      await cellGate.current?.(input.code, signal);
       return capProgramOutput(
         await runProgram(input.code, registry, definitions, new Set(speculativeTools), signal, context, spill),
         spill,
@@ -262,6 +273,7 @@ function createCodeTool(
     toolName,
     definitions: new Map(definitions.map((item) => [item.name, item])),
     registry,
+    cellGate,
     speculativeNames: new Set(speculativeTools),
     counters,
   }));
@@ -274,6 +286,7 @@ type ProgrammaticMetadata = {
   readonly definitions: ReadonlyMap<string, ToolDefinition>;
   /** Every tool cells may call, including tools registered after construction. */
   readonly registry: NestedToolRegistry;
+  readonly cellGate: { current?: ProgrammaticCellGate | undefined };
   readonly speculativeNames: ReadonlySet<string>;
   readonly counters: MutableStats;
 };

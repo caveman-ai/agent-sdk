@@ -20,6 +20,15 @@ classifications.
 | `packages/adapters/` | Apache-2.0 | Framework adapters and all subdirectories. |
 
 Unlisted paths inherit the root Apache-2.0 license. Third-party dependencies
-remain under their own terms. Proprietary Pebble product implementation lives
+remain under their own terms.
+
+## Third-party runtime notices
+
+`@caveman-ai/agent` depends on `@earendil-works/pi-mcp` 1.0.0 (MIT,
+Copyright (c) 2025 Mario Zechner), which ships MIT-licensed code adapted from
+the Model Context Protocol TypeScript SDK (Copyright (c) 2024 Anthropic, PBC;
+see its `LICENSES/` directory), and on its one dependency `cross-spawn` 7.0.6
+(MIT, Copyright (c) 2018 Made With MOXY Lda) with `which` and `isexe` (ISC),
+`path-key`, `shebang-command`, and `shebang-regex` (MIT). Proprietary Pebble product implementation lives
 only in private sibling repository `caveman-coding-agent` under commercial
 terms and must not be copied here.

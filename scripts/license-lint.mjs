@@ -233,6 +233,15 @@ export function collectOffenders(rootDir) {
     offenders.push('repository root LICENSE must remain canonical Apache-2.0');
   }
 
+  // Runtime dependencies that ship third-party notices must be attributed.
+  const agentManifest = join(root, 'packages', 'agent', 'package.json');
+  if (existsSync(agentManifest) &&
+      JSON.parse(readFileSync(agentManifest, 'utf8')).dependencies?.['@earendil-works/pi-mcp'] !== undefined) {
+    for (const required of ['@earendil-works/pi-mcp', 'Copyright (c) 2024 Anthropic, PBC', '`cross-spawn` 7.0.6']) {
+      if (!tableRaw.includes(required)) offenders.push(`LICENSING.md third-party notices missing: ${required}`);
+    }
+  }
+
   const rows = parseLicensingTable(tableRaw);
   if (rows.length === 0) {
     offenders.push('LICENSING.md contains no per-directory classification rows');
