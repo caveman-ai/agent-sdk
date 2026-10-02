@@ -1,6 +1,6 @@
 export const FRAMEWORK_VERSION = "0.2.0";
 export const PI_ADAPTER_VERSION = FRAMEWORK_VERSION;
-export const PI_UPSTREAM_VERSION = "0.83.0";
+export const PI_UPSTREAM_VERSION = "1.0.0";
 /**
  * Exact contract for profile-guided builds executed by Caveman's owned Pi
  * runner. A digest of this value distinguishes real runtime evidence from a

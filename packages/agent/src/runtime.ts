@@ -18,10 +18,12 @@ import { Agent, type AgentEvent, type AgentMessage, type AgentTool, type StreamF
 import { autoCredentialModel, hostByDefault } from "./defaults.js";
 import {
   Type,
+  getCurrentSystemPrompt,
+  getCurrentTools,
+  getInitialSystemMessage,
   type Api,
   type AssistantMessage,
   type CacheRetention,
-  type Context,
   type ImageContent,
   type Model,
   type Models,
@@ -529,6 +531,33 @@ function messageHasImage(value: unknown): boolean {
     isRecord(block) && block.type === "image" &&
     typeof block.data === "string" && typeof block.mimeType === "string"
   );
+}
+
+/**
+ * Pi 1.0 carries the prompt and tool declarations as the leading transcript
+ * message. Conversation state, journals, and checkpoints never hold one: it is
+ * rebuilt from the definition every run, so a restore cannot revive a stale one.
+ */
+function withoutSystemMessages(messages: readonly AgentMessage[]): AgentMessage[] {
+  return messages.filter((message) => message.role !== "system");
+}
+
+function withoutRefusalFallback(model: Model<Api>): Model<Api> {
+  const compat = model.compat as { allowedFallbackModels?: readonly unknown[] } | undefined;
+  return compat?.allowedFallbackModels?.length
+    ? { ...model, compat: { ...compat, allowedFallbackModels: [] } } as Model<Api>
+    : model;
+}
+
+/** Same reserve basis as before Pi 1.0: prompt, conversation, tool declarations. */
+function transcriptCeiling(
+  selected: Model<Api>,
+  messages: readonly AgentMessage[],
+  outputTokenCap: number,
+  restorableBytes = 0,
+): CallCeiling {
+  return callCeilingFor(selected, getCurrentSystemPrompt(messages),
+    withoutSystemMessages(messages), getCurrentTools(messages), outputTokenCap, restorableBytes);
 }
 
 // Durable turn checkpoints admit 8 MiB of canonical message data. Keep 1 MiB
@@ -1982,7 +2011,7 @@ async function* streamAgentInternal(
         "cave_tool_sandbox_entry_required: sandboxed tools need RunOptions.entryPath; use sandbox fixture only for trusted tests",
       );
     }
-    const originalConversationMessages = conversation?.messages.slice() ?? [];
+    const originalConversationMessages = withoutSystemMessages(conversation?.messages ?? []);
     const initialConversationSegments = conversationTextSegments(originalConversationMessages);
     const initialConversationMedia = conversationMediaSegments(originalConversationMessages);
     const lowered = await lowerAgentContext(definition, {
@@ -2339,7 +2368,11 @@ async function* streamAgentInternal(
         invocationTrace,
       )
       : undefined;
-    const baseStream = options.streamFn ?? models.streamSimple.bind(models);
+    const rawStream: StreamFn = options.streamFn ?? models.streamSimple.bind(models);
+    // Anthropic's refusal fallback answers from another model than the one
+    // reserved, validated, and receipted. Fail closed: never request it.
+    const baseStream: StreamFn = (selected, context, streamOptions) =>
+      rawStream(withoutRefusalFallback(selected), context, streamOptions);
     // Native cache hints (phase 2, decision 3's "self-sufficient"): off the
     // gateway, the in-SDK cache planner adds provider-native cache markers to
     // the outgoing upstream request only. When the loopback gateway is routed
@@ -2935,11 +2968,9 @@ async function* streamAgentInternal(
         streamOptions?.maxTokens ?? definition.output?.maxTokens ?? Number.MAX_SAFE_INTEGER,
         current.maxTokens,
       );
-      const ctxTokens = callCeilingFor(
+      const ctxTokens = transcriptCeiling(
         current,
-        context.systemPrompt ?? "",
         context.messages as unknown as readonly AgentMessage[],
-        context.tools,
         outputTokenCap,
         restorableRequestBytes(conversationOriginals, instructions, originalInstructions),
       ).inputTokenCeiling;
@@ -3360,29 +3391,34 @@ async function* streamAgentInternal(
       },
       sessionId,
       streamFn,
-      transformContext: async (messages) => injectMemoryPrompt(
-        await transformConversationContext(
-          messages,
+      // Indexes below are conversation indexes: Pi's leading system message
+      // stays in front, so recall can never land before it.
+      transformContext: async (messages) => {
+        const head = getInitialSystemMessage(messages);
+        return [...(head ? [head] : []), ...injectMemoryPrompt(
+          await transformConversationContext(
+            head ? messages.slice(1) : messages,
+            originalConversationMessages.length,
+            lowered,
+            efficiencyPlan,
+            options.engineBin,
+            appliedPlan,
+            conversationOriginals,
+            options.signal,
+          ),
           originalConversationMessages.length,
-          lowered,
-          efficiencyPlan,
-          options.engineBin,
-          appliedPlan,
-          conversationOriginals,
-          options.signal,
-        ),
-        originalConversationMessages.length,
-        passiveRecall?.prompt,
-      ),
+          passiveRecall?.prompt,
+        )];
+      },
       // The between-calls point where a compaction can persist: the turn has
       // settled, no tool is in flight, and the replacement context this returns
       // is what the next call is built from.
       prepareNextTurnWithContext: async (turn) => {
         if (budgetMeter === undefined || budgetMeter.onExhausted !== "compact") return undefined;
         if (compactionsUsed >= budgetMeter.compaction.maxCompactions) return undefined;
-        // Pi runs this hook after EVERY turn, including the last one. A turn
-        // that asked for no tools is the end of the loop: no working call
-        // follows it, so a rewrite here would buy a context nothing reads.
+        // Pi runs this hook only when another call follows. A turn that asked
+        // for no tools continues only for queued input; compaction stays on
+        // the tool-loop path it is sized for.
         const requestedTools = turn.message.role === "assistant" &&
           turn.message.content.some((part) => part.type === "toolCall");
         if (!requestedTools) return undefined;
@@ -3396,10 +3432,13 @@ async function* streamAgentInternal(
           efficiencyPlan?.budgets.output ?? Number.MAX_SAFE_INTEGER,
           activeWorkingModel.maxTokens,
         );
+        // Compaction rewrites the conversation only; the head is put back.
+        const head = getInitialSystemMessage(turn.context.messages);
+        const conversationMessages = head ? turn.context.messages.slice(1) : turn.context.messages;
         const nextCall = callCeilingFor(
           activeWorkingModel,
           instructions,
-          turn.context.messages,
+          conversationMessages,
           turn.context.tools,
           outputTokenCap,
         );
@@ -3421,7 +3460,8 @@ async function* streamAgentInternal(
         }
         const compacted = await compactContext({
           generation: compactionsUsed + 1,
-          messages: turn.context.messages,
+          messages: conversationMessages,
+          head,
           systemPrompt: instructions,
           tools: turn.context.tools,
           meter: budgetMeter,
@@ -3561,7 +3601,7 @@ async function* streamAgentInternal(
           journalNewTranches();
           await journal.flush();
         }
-        return { context: { ...turn.context, messages: compacted.messages } };
+        return { context: { ...turn.context, messages: [...(head ? [head] : []), ...compacted.messages] } };
       },
       beforeToolCall: async ({ toolCall, args, assistantMessage }) => {
         accountProviderMessage(assistantMessage);
@@ -3777,7 +3817,7 @@ async function* streamAgentInternal(
             (event.message.stopReason === "error" || event.message.stopReason === "aborted")) {
           return;
         }
-        const messages = pi.state.messages;
+        const messages = withoutSystemMessages(pi.state.messages);
         if (journaledMessagesLen > 0 &&
             messages[journaledMessagesLen - 1] !== journaledMessagesTail) {
           ownJournal.emit({
@@ -3986,7 +4026,7 @@ async function* streamAgentInternal(
     let conversationCommit: Parameters<typeof commitConversation>[1] | undefined;
     let completedConversation: DurableConversationCheckpoint | undefined;
     if (conversation) {
-      const produced = pi.state.messages.slice(initialProviderMessages.length);
+      const produced = withoutSystemMessages(pi.state.messages).slice(initialProviderMessages.length);
       // The refusal turn is the runtime declining to spend, not something the
       // model said. Resuming this conversation must not replay it.
       if (refusalMessage !== undefined && produced.at(-1) === refusalMessage) produced.pop();
@@ -4016,7 +4056,7 @@ async function* streamAgentInternal(
       // Same rule as the branch above: the synthesized refusal turn is the
       // runtime declining to spend, so it must not enter the checkpoint a
       // later attached Conversation synchronizes from.
-      const produced = [...pi.state.messages];
+      const produced = withoutSystemMessages(pi.state.messages);
       if (refusalMessage !== undefined && produced.at(-1) === refusalMessage) produced.pop();
       completedConversation = durableConversationCheckpoint(
         durableResume.conversation.sessionId,
@@ -5620,8 +5660,8 @@ function providerFrozenView(payload: unknown, api: string): ProviderFrozenView |
   let messageField: ProviderFrozenView["messageField"];
   let messagePrefix: unknown[] | undefined;
   if (api === "pi-messages") {
-    // Pi Messages sends one nested Context object, not Anthropic-shaped root
-    // fields. Track provider-visible JSON fields at their real paths.
+    // Pi Messages nests a transcript: its leading system message (prompt and
+    // tools) sits in the frozen message prefix. Legacy Context fields stay tracked.
     const context = isRecord(payload.context) ? payload.context : undefined;
     if (context && "systemPrompt" in context) fields["context.systemPrompt"] = context.systemPrompt;
     if (context && "tools" in context) fields["context.tools"] = context.tools;
@@ -6522,7 +6562,9 @@ export function callCeilingFor(
  * accepted.
  */
 async function compactContext(input: {
+  /** Conversation after Pi's leading system message, which `head` carries. */
   messages: readonly AgentMessage[];
+  head: AgentMessage | undefined;
   systemPrompt: string;
   tools: unknown;
   meter: BudgetMeter;
@@ -6685,13 +6727,14 @@ async function compactContext(input: {
       timestamp: Date.now(),
     } as AgentMessage,
   ];
+  // The working call's own leading system message, byte for byte: the summary
+  // extends the cached prefix and the prompt is sent exactly once.
+  const summarizerContext = {
+    messages: [...(input.head ? [input.head] : []), ...summarizerMessages],
+  } as unknown as Parameters<StreamFn>[1];
   const routedSummarizer = await input.routeModel(
     requestedSummarizer,
-    {
-      systemPrompt: input.systemPrompt,
-      messages: summarizerMessages as never,
-      tools: input.tools as never,
-    },
+    summarizerContext,
     { maxTokens: config.summaryMaxTokens, sessionId: input.sessionId },
   );
   const summarizerModel = routedSummarizer.selected;
@@ -6773,14 +6816,7 @@ async function compactContext(input: {
   try {
     stream = await input.baseStream(
       summarizerModel,
-      {
-        systemPrompt: input.systemPrompt,
-        messages: summarizerMessages as never,
-        // Same tool definitions as a working call. Dropping them is what makes
-        // a compaction request diverge from the cached prefix and re-send the
-        // whole history as fresh input.
-        tools: input.tools as never,
-      },
+      summarizerContext,
       {
         maxTokens: config.summaryMaxTokens,
         sessionId: input.sessionId,
@@ -7102,7 +7138,7 @@ function decideNextCall(input: {
   breakers: BreakerState | undefined;
   deadlineAt: number | undefined;
   selected: Model<Api>;
-  context: Context;
+  context: Parameters<StreamFn>[1];
   requestedOutputTokens: number | undefined;
   outputMaxTokens: number | undefined;
   planOutputTokens: number | undefined;
@@ -7144,11 +7180,9 @@ function decideNextCall(input: {
   );
   // One construction for every reserve in the runtime, so the restorable term
   // cannot be present in one place and missing in another.
-  const call = callCeilingFor(
+  const call = transcriptCeiling(
     input.selected,
-    input.context.systemPrompt ?? "",
     input.context.messages as unknown as readonly AgentMessage[],
-    input.context.tools,
     outputTokenCap,
     input.restorableBytes ?? 0,
   );

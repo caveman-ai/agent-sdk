@@ -8,7 +8,12 @@ import {
   fauxProvider as upstreamFauxProvider,
   fauxToolCall,
 } from "@earendil-works/pi-ai/providers/faux";
-import { createAssistantMessageEventStream, createModels } from "@earendil-works/pi-ai";
+import {
+  createAssistantMessageEventStream,
+  createModels,
+  getCurrentSystemPrompt,
+  getCurrentTools,
+} from "@earendil-works/pi-ai";
 import {
   CODING_RUN_BREAKERS,
   CODING_TOOL_OUTPUT_CAPS,
@@ -100,13 +105,13 @@ function payloadStreamFn(faux, seen = []) {
   return (selected, context, options) => {
     seen.push(structuredClone(context.messages));
     options.onPayload({
-      system: context.systemPrompt,
-      tools: context.tools.map((item) => ({
+      system: getCurrentSystemPrompt(context.messages),
+      tools: getCurrentTools(context.messages).map((item) => ({
         name: item.name,
         description: item.description,
         input_schema: item.parameters,
       })),
-      messages: context.messages,
+      messages: context.messages.filter((message) => message.role !== "system"),
     }, selected);
     return faux.provider.streamSimple(selected, context, { ...options, onPayload: undefined });
   };
@@ -119,13 +124,13 @@ function payloadModels(faux, seen = []) {
     streamSimple(selected, context, options) {
       seen.push(structuredClone(context.messages));
       options.onPayload({
-        system: context.systemPrompt,
-        tools: context.tools.map((item) => ({
+        system: getCurrentSystemPrompt(context.messages),
+        tools: getCurrentTools(context.messages).map((item) => ({
           name: item.name,
           description: item.description,
           input_schema: item.parameters,
         })),
-        messages: context.messages,
+        messages: context.messages.filter((message) => message.role !== "system"),
       }, selected);
       return faux.provider.streamSimple(selected, context, { ...options, onPayload: undefined });
     },

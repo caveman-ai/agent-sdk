@@ -21,7 +21,13 @@
  * produced the turn, so nothing about it can be claimed as optimized.
  */
 
-import { createAssistantMessageEventStream, type Api, type Model, type Usage } from "@earendil-works/pi-ai";
+import {
+  createAssistantMessageEventStream,
+  type Api,
+  type JsonObject,
+  type Model,
+  type Usage,
+} from "@earendil-works/pi-ai";
 import { fauxProvider } from "@earendil-works/pi-ai/providers/faux";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 
@@ -102,7 +108,7 @@ export function scriptedStream(
         type: "toolCall" as const,
         id: `scripted-${call}-${index}`,
         name: toolCall.name,
-        arguments: (toolCall.args ?? {}) as Record<string, unknown>,
+        arguments: (toolCall.args ?? {}) as JsonObject,
       })),
     ];
     const stopReason = (turn.toolCalls ?? []).length > 0 ? "toolUse" as const : "stop" as const;

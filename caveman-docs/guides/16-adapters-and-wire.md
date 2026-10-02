@@ -142,7 +142,7 @@ npm install @caveman-ai/agent @caveman-ai/adapter-eve eve@0.29.2
 
 | Lane | Package | Upstream pin | Node |
 | --- | --- | --- | --- |
-| Pi | `@caveman-ai/adapter-pi` | `@earendil-works/pi-agent-core@0.83.0` | ≥22.19 |
+| Pi | `@caveman-ai/adapter-pi` | `@earendil-works/pi-agent-core@1.0.0` | ≥22.19 |
 | Claude Agent SDK | `@caveman-ai/adapter-claude-agent-sdk` | `@anthropic-ai/claude-agent-sdk@0.3.220` | ≥22.19 |
 | Vercel AI SDK | `@caveman-ai/adapter-vercel-ai-sdk` | `ai@7.0.84` | ≥22.19 |
 | Mastra | `@caveman-ai/adapter-mastra` | `@mastra/core@1.63.2` | ≥22.19 |

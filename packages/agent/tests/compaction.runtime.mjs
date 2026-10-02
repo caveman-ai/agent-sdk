@@ -22,7 +22,11 @@ import {
   validateContextSummaryTransition,
 } from "../dist/compaction.js";
 import { fauxProvider as upstreamFauxProvider } from "@earendil-works/pi-ai/providers/faux";
-import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
+import {
+  createAssistantMessageEventStream,
+  getCurrentSystemPrompt,
+  getCurrentTools,
+} from "@earendil-works/pi-ai";
 
 const PRICED_MODEL = "claude-haiku-4-5";
 
@@ -134,8 +138,10 @@ test("a compaction rewrites the context, is metered, and lands on the receipt", 
   let working = 0;
   let summarizerSawTools;
   let summarizerSawSystemPrompt;
+  let summarizerSystemMessages;
   let summarizerMaxTokens;
   let workingSystemPrompt;
+  const workingHeads = [];
   const routeInputs = [];
   const result = await run(defined, "go", {
     ensureRuntime: false,
@@ -162,8 +168,9 @@ test("a compaction rewrites the context, is metered, and lands on the receipt", 
       if (isSummarizerRequest(context)) {
         // The summarization request is built like a working call, so it can
         // extend the same cached prefix instead of starting a second one.
-        summarizerSawTools = context.tools?.length ?? 0;
-        summarizerSawSystemPrompt = context.systemPrompt;
+        summarizerSawTools = getCurrentTools(context.messages).length;
+        summarizerSawSystemPrompt = getCurrentSystemPrompt(context.messages);
+        summarizerSystemMessages = context.messages.filter((message) => message.role === "system");
         summarizerMaxTokens = streamOptions.maxTokens;
         return pushMessage(
           selected,
@@ -173,7 +180,8 @@ test("a compaction rewrites the context, is metered, and lands on the receipt", 
         );
       }
       working++;
-      workingSystemPrompt = context.systemPrompt;
+      workingSystemPrompt = getCurrentSystemPrompt(context.messages);
+      workingHeads.push(context.messages[0]);
       if (working > 55) {
         return pushMessage(selected, [{ type: "text", text: "done" }], "stop", usage(100, 10));
       }
@@ -213,7 +221,14 @@ test("a compaction rewrites the context, is metered, and lands on the receipt", 
   assert.equal(result.receipt.spent <= result.receipt.max, true);
   // Same system prompt and same tools as a working call: shared prefix.
   assert.equal(summarizerSawSystemPrompt, workingSystemPrompt);
+  assert.equal(workingSystemPrompt.length > 0, true);
   assert.equal(summarizerSawTools > 0, true);
+  // Pi 1.0 carries the prompt as the leading transcript message: the summarizer
+  // reuses the working call's own system message, so the prompt goes once.
+  assert.equal(summarizerSystemMessages.length, 1);
+  assert.deepEqual(summarizerSystemMessages[0], workingHeads[0]);
+  // Every working call, including those after the rewrite, still leads with it.
+  assert.equal(workingHeads.every((head) => head?.role === "system"), true);
   assert.equal(summarizerMaxTokens, 2_048);
   // The summarizer call is in the receipt like any other provider call.
   assert.equal(result.receipt.calls.some((entry) => entry.outputTokens === 500), true);
@@ -910,7 +925,7 @@ async function compactionRun(id, setup) {
  * fresh window instead of buying a summary.
  */
 async function rollingRun(overrides = {}) {
-  const observed = { working: 0, summarizerRequests: 0, windows: [], contexts: [] };
+  const observed = { working: 0, summarizerRequests: 0, windows: [], contexts: [], prompts: [] };
   const result = await run(bulkyAgent("compaction-new-context"), "go", {
     ensureRuntime: false,
     model: pricedFauxModel({ id: EXPENSIVE_WORKING_MODEL }),
@@ -942,6 +957,9 @@ async function rollingRun(overrides = {}) {
       }
       observed.working++;
       observed.contexts.push(context.messages.length);
+      observed.prompts.push(context.messages[0]?.role === "system"
+        ? getCurrentSystemPrompt(context.messages)
+        : undefined);
       if (observed.working > 55) {
         return pushMessage(selected, [{ type: "text", text: "done" }], "stop", usage(100, 10));
       }
@@ -965,7 +983,7 @@ async function rollingRun(overrides = {}) {
 }
 
 test("a rollover installs a fresh window without paying a summarizer", async () => {
-  const { result, summarizerRequests, windows, contexts } = await rollingRun();
+  const { result, summarizerRequests, windows, contexts, prompts } = await rollingRun();
   const rollover = result.receipt.compactions.find((entry) => entry.tier === "new-context");
   assert.notEqual(rollover, undefined);
   // The whole point: no provider call, so nothing to meter and no summary.
@@ -979,6 +997,13 @@ test("a rollover installs a fresh window without paying a summarizer", async () 
   assert.equal(windows.length > 0, true);
   assert.equal(windows[0].generation, 1);
   assert.equal(windows[0].messages.length > 1, true);
+  // The archived window is the conversation; the system prompt is not dropped.
+  assert.equal(windows[0].messages.some((message) => message.role === "system"), false);
+  // Every working call, including those after the rollover, leads with the same
+  // system message: the fresh window keeps the prompt and tool declarations.
+  assert.equal(prompts.length > windows.length, true);
+  assert.equal(prompts.every((prompt) => prompt !== undefined && prompt === prompts[0]), true);
+  assert.equal(prompts[0].length > 0, true);
   // The window that follows a rollover is genuinely small.
   assert.equal(Math.min(...contexts.slice(1)) < Math.max(...contexts), true);
   assert.equal(result.receipt.spent <= result.receipt.max, true);
@@ -1015,8 +1040,28 @@ test("a fresh window carries pinned intent and one clamped seed", () => {
   assert.equal(fresh.at(-1).caveContextSummary, true);
   assert.equal(fresh.at(-1).content.includes("y".repeat(4_096)), true);
   assert.equal(fresh.at(-1).content.includes("y".repeat(4_097)), false);
+  // A rollover is not a summary, so its seed carries no summary schema version.
+  assert.equal(fresh.at(-1).content.includes("schema_version"), false);
   // Marked as a capsule, so the next rollover supersedes it instead of stacking.
   assert.equal(planCompaction(fresh, normalizeCompaction()).pinned.includes(fresh.length - 1), false);
+});
+
+test("a leading system message is pinned, never summarized or rolled away", () => {
+  const system = { role: "system", content: "prompt", timestamp: 0 };
+  const messages = [
+    system,
+    { role: "user", content: "fix the router" },
+    { role: "assistant", content: "x".repeat(50_000) },
+    { role: "user", content: "keep going" },
+  ];
+  const plan = planCompaction(messages, normalizeCompaction({
+    mode: "new-context",
+    newContext: () => "",
+  }));
+  assert.equal(plan.pinned.includes(0), true);
+  assert.equal(plan.summarizable.includes(0) || plan.evictable.includes(0), false);
+  assert.equal(newContextMessages(messages, plan, "seed")[0], system);
+  assert.throws(() => contextSummarySources(messages, [0]), /cave_compaction_source_system/);
 });
 
 test("compaction options fail closed on nonsense", () => {

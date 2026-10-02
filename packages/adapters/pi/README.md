@@ -5,10 +5,10 @@ it does not run a Caveman agent. The separate exact-native Pi compiler target
 and locked runner in this package are not that adapter.
 
 Caveman Pi adapter plus exact-native Pi compiler target, pinned to
-`@earendil-works/pi-agent-core@0.83.0`.
+`@earendil-works/pi-agent-core@1.0.0`.
 
 ```bash
-npm install @caveman-ai/agent @caveman-ai/adapter-pi @earendil-works/pi-agent-core@0.83.0
+npm install @caveman-ai/agent @caveman-ai/adapter-pi @earendil-works/pi-agent-core@1.0.0
 ```
 
 ```js
