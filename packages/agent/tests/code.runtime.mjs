@@ -897,14 +897,14 @@ test("caveman_code drives command sessions through canonical nested dispatch", a
       ].join("");
       const code = [
         `const started=await bash(${JSON.stringify({ command, yieldTimeMs: 10 })});`,
-        "const sessionId=started.match(/session (cmd_[a-f0-9]{32})/)?.[1];",
-        "let cursor=Number(started.match(/next cursor (\\d+)/)?.[1]);",
+        "const sessionId=started.sessionId;",
+        "let cursor=started.cursor;",
         'if(!sessionId)throw new Error("missing command session");',
-        "let transcript=started;",
+        "let transcript=started.output;",
         "for(let reads=0;reads<3&&!transcript.includes('nested-second');reads++){",
         "const page=await bash({sessionId,action:'read',cursor,waitMs:1000});",
-        "transcript+='\\n'+page;",
-        "cursor=Number(page.match(/next cursor (\\d+)/)?.[1]);",
+        "transcript+='\\n'+page.output;",
+        "cursor=page.cursor;",
         "}",
         "if(!transcript.includes('nested-second'))throw new Error('missing resumed output');",
         "print(transcript);",
@@ -932,7 +932,7 @@ test("caveman_code drives command sessions through canonical nested dispatch", a
   });
 });
 
-test("programmatic bash formats literal search without exposing its query", async () => {
+test("programmatic bash returns literal search pages without exposing its query", async () => {
   await withWorkspace(async (workspace) => {
     const codingAgent = createCodingAgent({
       workspace,
@@ -957,18 +957,21 @@ test("programmatic bash formats literal search without exposing its query", asyn
       const result = await codeTool.execute({
         code: [
           `const started=await bash(${JSON.stringify({ command, yieldTimeMs: 10 })});`,
-          "const sessionId=/cmd_[a-f0-9]{32}/.exec(started)?.[0];",
-          'if(!sessionId)throw new Error("missing session");',
+          "const sessionId=started.sessionId;",
+          'if(!/^cmd_[a-f0-9]{32}$/.test(sessionId))throw new Error("missing session");',
           'const missed=await bash({sessionId,action:"read",cursor:0,query:"must-not-echo"});',
           'const found=await bash({sessionId,action:"read",cursor:0,query:"TARGET",waitMs:5000});',
-          'return missed+"\\n"+found;',
+          "return {missed,found};",
         ].join(""),
       }, undefined, context);
-      assert.match(result, /\(no literal match\)/);
-      assert.match(result, /still running; search again at cursor/);
       assert.doesNotMatch(result, /must-not-echo/);
-      assert.match(result, /literal match at byte 7/);
-      assert.match(result, /TARGET-tail/);
+      const { missed, found } = JSON.parse(result);
+      assert.deepEqual(
+        { output: missed.output, state: missed.state, exitCode: missed.exitCode },
+        { output: "", state: "running", exitCode: null },
+      );
+      assert.equal(found.output, "TARGET-tail");
+      assert.equal(found.cursor, 18);
     } finally {
       await codingAgent.close();
     }
@@ -1007,34 +1010,35 @@ test("successful code cells retain yielded commands until owner cancellation", a
       const first = await codeTool.execute({
         code: `return await bash(${JSON.stringify({ command, yieldTimeMs: 0, timeoutMs: 2_000 })})`,
       }, owner.signal, context);
-      const sessionId = first.match(/session (cmd_[a-f0-9]{32})/)?.[1];
-      const cursor = Number(first.match(/next cursor (\d+)/)?.[1]);
-      assert.match(first, /· running/);
-      assert.equal(typeof sessionId, "string");
+      const started = JSON.parse(first);
+      const { sessionId, cursor } = started;
+      assert.equal(started.state, "running");
+      assert.match(sessionId, /^cmd_[a-f0-9]{32}$/);
+      assert.equal(Number.isSafeInteger(cursor), true);
 
       const second = await codeTool.execute({
         code: [
           'const sessions=await bash({"action":"list"});',
-          'const sessionId=/cmd_[a-f0-9]{32}/.exec(sessions)?.[0];',
+          'const sessionId=/cmd_[a-f0-9]{32}/.exec(sessions.output)?.[0];',
           'if(!sessionId)throw new Error("missing retained session");',
           `const page=await bash({sessionId,action:"read",cursor:${cursor},waitMs:1000});`,
-          'return sessions+"\\n"+page;',
+          'return sessions.output+"\\n"+page.output+"\\nstate="+page.state;',
         ].join(""),
       }, undefined, context);
       assert.match(second, /command sessions: 1 retained · oldest first/);
       assert.match(second, new RegExp(`${sessionId} · running · stdin open`));
       assert.match(second, /cross-cell-late/);
-      assert.match(second, /· running/);
+      assert.match(second, /state=running$/);
       assert.equal(await readFile(resolve(workspace, "cross-cell-runs.txt"), "utf8"), "x");
 
       owner.abort(new Error("test_owner_cancelled"));
       const bash = nested.get("bash");
       let stopped = await bash.execute({ sessionId, action: "read" });
-      for (let reads = 0; reads < 20 && stopped.includes("· running"); reads++) {
+      for (let reads = 0; reads < 20 && stopped.state === "running"; reads++) {
         await new Promise((accept) => setTimeout(accept, 20));
         stopped = await bash.execute({ sessionId, action: "read" });
       }
-      assert.match(stopped, /· killed · killed/);
+      assert.equal(stopped.state, "killed");
     } finally {
       await codingAgent.close();
     }

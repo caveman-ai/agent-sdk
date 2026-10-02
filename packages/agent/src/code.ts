@@ -89,6 +89,7 @@ import {
   type TransformTrace,
 } from "./runtime.js";
 import { encodeRunEvent, PebbleEventEncoder } from "./pebble-stream.js";
+import { FULL_TOOL_INSTRUCTIONS, PEBBLE_V1_TOOL_INSTRUCTIONS } from "./coding-guidance.js";
 
 export { AgentRunController };
 // The tools themselves live in `./shell-tools.js`, composable by any agent;
@@ -156,24 +157,6 @@ export const OBSERVE_ONLY_BANNER = [
   "  Turn optimized mode on: npm i -g @caveman-ai/cli && caveman start",
 ].join("\n");
 
-const FULL_TOOL_INSTRUCTIONS = [
-  "- read_file prefixes each line with its number and tab. Strip prefixes before copying; preserve newlines.",
-  "- grep searches the workspace with ripgrep, falling back to grep.",
-  "- bash runs one shell command in the workspace and returns its combined output.",
-  "- write_file creates a file, or overwrites one only when overwrite is true.",
-  "- edit_file replaces an exact string in a file. Match enough surrounding text",
-  "  to make the target unique, or pass replace_all.",
-  "- read_tool_output pages or literal-searches captured output by opaque handle.",
-].join("\n");
-
-const PEBBLE_V1_TOOL_INSTRUCTIONS = [
-  "- read_file prefixes each line with its number and tab. Strip prefixes before copying; preserve newlines.",
-  "- bash runs one shell command in the workspace and returns its combined output.",
-  "- write_file creates a file, or overwrites one only when overwrite is true.",
-  "- edit_file replaces an exact string in a file. Match enough surrounding text",
-  "  to make the target unique, or pass replace_all.",
-].join("\n");
-
 function codingInstructions(toolSet: CodingToolSet): string {
   const toolInstructions = toolSet === "pebble-v1"
     ? PEBBLE_V1_TOOL_INSTRUCTIONS
@@ -195,10 +178,6 @@ function codingInstructions(toolSet: CodingToolSet): string {
     toolInstructions,
     "",
     cappedOutputInstructions,
-    "",
-    "Older turns and older tool results may arrive wrapped in <cave-compressed>",
-    "markers. Those are reversible: call cave_retrieve with the recovery_handle in",
-    "the marker to get the exact original bytes back. Retrieve before guessing.",
     "",
     "Say what you changed and why. Do not claim a command passed unless you ran it.",
   ].join("\n");

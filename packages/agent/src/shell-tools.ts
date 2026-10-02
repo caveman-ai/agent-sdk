@@ -11,6 +11,7 @@
 import { isUtf8 } from "node:buffer";
 import { randomUUID } from "node:crypto";
 import { relative } from "node:path";
+import type { Static } from "@earendil-works/pi-ai";
 import {
   schema,
   tool,
@@ -36,6 +37,7 @@ import {
   runBackendProcess,
 } from "./coding-backend.js";
 import { hostShellInvocation } from "./portable-process.js";
+import { setToolScriptCompanions } from "./tool-internal.js";
 
 /**
  * Raw output caps, applied by each tool **before** any transform runs, so a
@@ -63,6 +65,8 @@ const READ_TIMEOUT_MS = 30_000;
 export const PROCESS_CAPTURE_MAX_BYTES = 4 * 1024 * 1024;
 const STORED_TOOL_OUTPUT_MAX_BYTES = 8 * 1024 * 1024;
 const STORED_TOOL_OUTPUT_TOTAL_BYTES = 16 * 1024 * 1024;
+/** Scripts filter output locally, so they receive far more than the model-facing cap. */
+const BASH_SCRIPT_OUTPUT_MAX_BYTES = 1024 * 1024;
 
 type StoredToolOutput = {
   readonly label: string;
@@ -311,197 +315,238 @@ export function shellTools(options: ShellToolsOptions): ToolDefinition[] {
         limit: schema.optional(schema.integer()),
       }),
     ]);
-  const bashTool = tool({
-    name: "bash",
-    description: commandSessions === undefined
-      ? `Run one shell command in the workspace; hard timeout ${BASH_TIMEOUT_MS} ms; ` +
-        `output capped at ${caps.bash} bytes. Interactive sessions are unavailable.`
-      : "Run shell command in the workspace and return combined stdout/stderr. " +
-      "Set yieldTimeMs to keep a still-running command as an inspectable session. " +
-      "List sessions; read pages or use query + waitMs for literal output, write resumes " +
-      "stdin or closes it for EOF, and kill stops one. Cursors never rerun commands. " +
-      `Hard timeout is ${BASH_TIMEOUT_MS} ms; output is capped at ${caps.bash} bytes.`,
-    input: bashInput,
-    effect: "external",
-    result: "inline",
-    timeoutMs: BASH_TIMEOUT_MS,
-    async execute(input, signal) {
-      if ("command" in input) {
-        const timeoutMs = Math.min(input.timeoutMs ?? BASH_TIMEOUT_MS, BASH_TIMEOUT_MS);
-        const yieldTimeMs = "yieldTimeMs" in input ? input.yieldTimeMs : undefined;
-        validateBashWait(yieldTimeMs, "yieldTimeMs");
-        const local = localBackendInternals(executionBackend) !== undefined;
-        const env = buildCodingProcessEnv(local);
-        const shell = local
-          ? hostShellInvocation(input.command, process.platform, env)
-          : { command: "sh", args: ["-c", input.command] as readonly string[] };
-        if (commandSessions === undefined) {
-          if (yieldTimeMs !== undefined) {
-            throw new Error(local ? "cave_execution_backend_command_sessions_disabled" : "cave_execution_backend_command_sessions_local_only");
-          }
-          const run = await executionBackend.exec({
-            command: shell.command,
-            args: shell.args,
-            cwd: await workspaceRoot(),
-            env,
-            timeoutMs,
-            maxOutputBytes: PROCESS_CAPTURE_MAX_BYTES,
-            ...(signal === undefined ? {} : { signal }),
-          });
-          if (run.code === 127 || run.startFailed === true) {
-            throw new Error("caveman-code: host command shell is not available");
-          }
-          const status = run.timedOut ? `exit timeout after ${timeoutMs}ms` : `exit ${run.code}`;
-          const combined = combinedProcessOutput(run);
-          const output = combined.trim() === ""
-            ? "(no output)"
-            : combined;
-          const text = `${status}\n${capToolOutput({
-            text: output,
-            maxBytes: Math.max(1, caps.bash - Buffer.byteLength(`${status}\n`, "utf8")),
-            direction: "tail",
-            ...(recoverable ? { store: storedOutputs } : {}),
-            label: `bash:${input.command.slice(0, 60)}`,
-            complete: !run.truncated,
-          })}`;
-          record(`bash:${input.command.slice(0, 60)}`, text);
-          return text;
+  const bashDescription = commandSessions === undefined
+    ? `Run one shell command in the workspace; hard timeout ${BASH_TIMEOUT_MS} ms; ` +
+      `output capped at ${caps.bash} bytes. Interactive sessions are unavailable.`
+    : "Run shell command in the workspace and return combined stdout/stderr. " +
+    "Set yieldTimeMs to keep a still-running command as an inspectable session. " +
+    "List sessions; read pages or use query + waitMs for literal output, write resumes " +
+    "stdin or closes it for EOF, and kill stops one. Cursors never rerun commands. " +
+    `Hard timeout is ${BASH_TIMEOUT_MS} ms; output is capped at ${caps.bash} bytes.`;
+  // One implementation, two result forms: compact text for the model, and a
+  // structured record for code cells (see bashScriptResult).
+  const runBash = async (
+    input: Static<typeof bashInput>,
+    signal: AbortSignal | undefined,
+    structured: boolean,
+  ): Promise<string | BashScriptResult> => {
+    if ("command" in input) {
+      const timeoutMs = Math.min(input.timeoutMs ?? BASH_TIMEOUT_MS, BASH_TIMEOUT_MS);
+      const yieldTimeMs = "yieldTimeMs" in input ? input.yieldTimeMs : undefined;
+      validateBashWait(yieldTimeMs, "yieldTimeMs");
+      const local = localBackendInternals(executionBackend) !== undefined;
+      const env = buildCodingProcessEnv(local);
+      const shell = local
+        ? hostShellInvocation(input.command, process.platform, env)
+        : { command: "sh", args: ["-c", input.command] as readonly string[] };
+      if (commandSessions === undefined) {
+        if (yieldTimeMs !== undefined) {
+          throw new Error(local ? "cave_execution_backend_command_sessions_disabled" : "cave_execution_backend_command_sessions_local_only");
         }
-        let started;
-        try {
-          started = await commandSessions.start({
-            command: shell.command,
-            args: shell.args,
-            cwd: await workspaceRoot(),
-            env,
-            stdin: yieldTimeMs === undefined ? "closed" : "pipe",
-            timeoutMs,
-            ...(signal === undefined ? {} : { signal }),
-          });
-        } catch (error) {
-          const reason = error instanceof Error ? error.message : String(error);
-          // Only a launch/spawn failure means the shell is unavailable. A
-          // rejected argument or an exhausted session pool must say so, or the
-          // model retries forever against a healthy host.
-          throw new Error(
-            reason.startsWith("command_session_launch_invalid") ||
-              reason.startsWith("command_session_spawn_failed")
-              ? `caveman-code: host command shell is not available: ${reason}`
-              : reason === "command_session_limit_reached"
-                ? `caveman-code: all ${BASH_SESSION_MAX_SESSIONS} command sessions are still live; ` +
-                  "kill one with bash({action:\"kill\",sessionId}) before starting another"
-                : `caveman-code: bash could not start: ${reason}`,
-          );
-        }
-        const waited = await waitForCommandSession(
-          commandSessions,
-          started.sessionId,
-          yieldTimeMs ?? timeoutMs + 1_000,
-          signal,
-        );
-        if (waited.state === "running") {
-          const page = await commandSessions.read({
-            sessionId: started.sessionId,
-            cursor: 0,
-            limit: bashSessionPageLimit(caps.bash),
-            ...(signal === undefined ? {} : { signal }),
-          });
-          const text = formatCommandSessionPage(page, caps.bash);
-          record(`bash:${input.command.slice(0, 60)}`, text);
-          return text;
-        }
-        const capture = await captureCommandSession(commandSessions, started.sessionId, signal);
-        if (capture.spawnError !== undefined) {
+        const run = await executionBackend.exec({
+          command: shell.command,
+          args: shell.args,
+          cwd: await workspaceRoot(),
+          env,
+          timeoutMs,
+          maxOutputBytes: PROCESS_CAPTURE_MAX_BYTES,
+          ...(signal === undefined ? {} : { signal }),
+        });
+        if (run.code === 127 || run.startFailed === true) {
           throw new Error("caveman-code: host command shell is not available");
         }
-        const status = capture.state === "timed_out"
-          ? `exit timeout after ${timeoutMs}ms`
-          : capture.state === "killed"
-            ? "exit killed"
-            : `exit ${capture.exitCode}`;
-        const output = capture.output.trim() === ""
+        const status = run.timedOut ? `exit timeout after ${timeoutMs}ms` : `exit ${run.code}`;
+        const combined = combinedProcessOutput(run);
+        if (structured) {
+          // Cells can always page the store through read_tool_output.
+          return bashScriptResult(run.timedOut ? null : run.code, run.timedOut ? "timed_out" : "exited",
+            combined, !run.truncated, false,
+            (text, complete) => storedOutputs.put(`bash:${input.command.slice(0, 60)}`, text, complete));
+        }
+        const output = combined.trim() === ""
           ? "(no output)"
-          : capture.outputEncoding === "base64"
-            ? `[base64 command output]\n${capture.output}`
-            : capture.output;
+          : combined;
         const text = `${status}\n${capToolOutput({
           text: output,
           maxBytes: Math.max(1, caps.bash - Buffer.byteLength(`${status}\n`, "utf8")),
           direction: "tail",
           ...(recoverable ? { store: storedOutputs } : {}),
           label: `bash:${input.command.slice(0, 60)}`,
-          complete: capture.availableFrom === 0,
-          ...(recoverable
-            ? {}
-            : capture.availableFrom === 0
-              ? {
-                  recovery:
-                    `resume retained output with bash(${JSON.stringify({
-                      sessionId: started.sessionId,
-                      action: "read",
-                      cursor: 0,
-                    })})`,
-                }
-              : {
-                  source:
-                    `retained bytes ${capture.availableFrom}-${capture.availableTo}; ` +
-                    `older output discarded before absolute byte ${capture.availableFrom}`,
-                  recovery:
-                    `resume retained output with bash(${JSON.stringify({
-                      sessionId: started.sessionId,
-                      action: "read",
-                      cursor: capture.availableFrom,
-                    })})`,
-                }),
+          complete: !run.truncated,
         })}`;
         record(`bash:${input.command.slice(0, 60)}`, text);
         return text;
       }
-
-      if (commandSessions === undefined) {
-        throw new Error("cave_execution_backend_command_sessions_local_only");
-      }
-      if (input.action === "list") {
-        const text = formatCommandSessionList(commandSessions.list(), caps.bash);
-        record("bash:list", text);
-        return text;
-      }
-      validateBashSessionReadInput(input, caps.bash);
-      let prefix: string | undefined;
-      let writeOutputCursor: number | undefined;
-      let waitedForClose = false;
-      if (input.action === "write") {
-        const write = await commandSessions.write({
-          sessionId: input.sessionId,
-          input: input.input,
-          ...(input.closeStdin === undefined ? {} : { closeStdin: input.closeStdin }),
+      let started;
+      try {
+        started = await commandSessions.start({
+          command: shell.command,
+          args: shell.args,
+          cwd: await workspaceRoot(),
+          env,
+          stdin: yieldTimeMs === undefined ? "closed" : "pipe",
+          timeoutMs,
           ...(signal === undefined ? {} : { signal }),
         });
-        writeOutputCursor = write.outputCursor;
-        prefix = write.accepted
-          ? `stdin accepted ${write.bytes} bytes${input.closeStdin === true ? " · stdin closed" : ""}`
-          : `stdin not accepted · ${write.state}`;
-        if (write.accepted && input.closeStdin === true && input.waitMs !== undefined) {
-          await waitForCommandSession(commandSessions, input.sessionId, input.waitMs, signal);
-          waitedForClose = true;
-        }
-      } else if (input.action === "kill") {
-        await commandSessions.kill(input.sessionId);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        // Only a launch/spawn failure means the shell is unavailable. A
+        // rejected argument or an exhausted session pool must say so, or the
+        // model retries forever against a healthy host.
+        throw new Error(
+          reason.startsWith("command_session_launch_invalid") ||
+            reason.startsWith("command_session_spawn_failed")
+            ? `caveman-code: host command shell is not available: ${reason}`
+            : reason === "command_session_limit_reached"
+              ? `caveman-code: all ${BASH_SESSION_MAX_SESSIONS} command sessions are still live; ` +
+                "kill one with bash({action:\"kill\",sessionId}) before starting another"
+              : `caveman-code: bash could not start: ${reason}`,
+        );
       }
-      const readCursor = input.cursor ?? writeOutputCursor;
-      const page = await commandSessions.read({
-        sessionId: input.sessionId,
-        ...(readCursor === undefined ? {} : { cursor: readCursor }),
-        ...(input.action === "read" && input.query !== undefined ? { query: input.query } : {}),
-        limit: input.limit ?? bashSessionPageLimit(caps.bash),
-        ...(input.action === "kill" || input.waitMs === undefined || waitedForClose
+      const waited = await waitForCommandSession(
+        commandSessions,
+        started.sessionId,
+        yieldTimeMs ?? timeoutMs + 1_000,
+        signal,
+      );
+      if (waited.state === "running") {
+        const page = await commandSessions.read({
+          sessionId: started.sessionId,
+          cursor: 0,
+          limit: bashSessionPageLimit(caps.bash),
+          ...(signal === undefined ? {} : { signal }),
+        });
+        if (structured) return bashScriptPage(page);
+        const text = formatCommandSessionPage(page, caps.bash);
+        record(`bash:${input.command.slice(0, 60)}`, text);
+        return text;
+      }
+      const capture = await captureCommandSession(commandSessions, started.sessionId, signal);
+      if (capture.spawnError !== undefined) {
+        throw new Error("caveman-code: host command shell is not available");
+      }
+      if (structured) {
+        const result = bashScriptResult(capture.state === "exited" ? capture.exitCode : null, capture.state,
+          capture.output, capture.availableFrom === 0, capture.outputEncoding === "base64");
+        // The session keeps the retained bytes; reading from here recovers what was cut.
+        return { ...result, sessionId: started.sessionId, ...(result.truncated ? { cursor: capture.availableFrom } : {}) };
+      }
+      const status = capture.state === "timed_out"
+        ? `exit timeout after ${timeoutMs}ms`
+        : capture.state === "killed"
+          ? "exit killed"
+          : `exit ${capture.exitCode}`;
+      const output = capture.output.trim() === ""
+        ? "(no output)"
+        : capture.outputEncoding === "base64"
+          ? `[base64 command output]\n${capture.output}`
+          : capture.output;
+      const text = `${status}\n${capToolOutput({
+        text: output,
+        maxBytes: Math.max(1, caps.bash - Buffer.byteLength(`${status}\n`, "utf8")),
+        direction: "tail",
+        ...(recoverable ? { store: storedOutputs } : {}),
+        label: `bash:${input.command.slice(0, 60)}`,
+        complete: capture.availableFrom === 0,
+        ...(recoverable
           ? {}
-          : { waitMs: input.waitMs }),
+          : capture.availableFrom === 0
+            ? {
+                recovery:
+                  `resume retained output with bash(${JSON.stringify({
+                    sessionId: started.sessionId,
+                    action: "read",
+                    cursor: 0,
+                  })})`,
+              }
+            : {
+                source:
+                  `retained bytes ${capture.availableFrom}-${capture.availableTo}; ` +
+                  `older output discarded before absolute byte ${capture.availableFrom}`,
+                recovery:
+                  `resume retained output with bash(${JSON.stringify({
+                    sessionId: started.sessionId,
+                    action: "read",
+                    cursor: capture.availableFrom,
+                  })})`,
+              }),
+      })}`;
+      record(`bash:${input.command.slice(0, 60)}`, text);
+      return text;
+    }
+
+    if (commandSessions === undefined) {
+      throw new Error("cave_execution_backend_command_sessions_local_only");
+    }
+    if (input.action === "list") {
+      const text = formatCommandSessionList(commandSessions.list(), caps.bash);
+      if (structured) return { exitCode: null, state: "listed", output: text, truncated: false };
+      record("bash:list", text);
+      return text;
+    }
+    validateBashSessionReadInput(input, caps.bash);
+    let prefix: string | undefined;
+    let writeOutputCursor: number | undefined;
+    let waitedForClose = false;
+    if (input.action === "write") {
+      const write = await commandSessions.write({
+        sessionId: input.sessionId,
+        input: input.input,
+        ...(input.closeStdin === undefined ? {} : { closeStdin: input.closeStdin }),
         ...(signal === undefined ? {} : { signal }),
       });
-      const text = formatCommandSessionPage(page, caps.bash, prefix);
-      record(`bash:${input.action}:${input.sessionId}`, text);
-      return text;
+      writeOutputCursor = write.outputCursor;
+      // Scripts have no prefix line to read, so a rejected write must throw.
+      if (structured && !write.accepted) {
+        throw new Error(`caveman-code: stdin not accepted; session ${input.sessionId} is ${write.state}`);
+      }
+      prefix = write.accepted
+        ? `stdin accepted ${write.bytes} bytes${input.closeStdin === true ? " · stdin closed" : ""}`
+        : `stdin not accepted · ${write.state}`;
+      if (write.accepted && input.closeStdin === true && input.waitMs !== undefined) {
+        await waitForCommandSession(commandSessions, input.sessionId, input.waitMs, signal);
+        waitedForClose = true;
+      }
+    } else if (input.action === "kill") {
+      await commandSessions.kill(input.sessionId);
+    }
+    const readCursor = input.cursor ?? writeOutputCursor;
+    const page = await commandSessions.read({
+      sessionId: input.sessionId,
+      ...(readCursor === undefined ? {} : { cursor: readCursor }),
+      ...(input.action === "read" && input.query !== undefined ? { query: input.query } : {}),
+      limit: input.limit ?? bashSessionPageLimit(caps.bash),
+      ...(input.action === "kill" || input.waitMs === undefined || waitedForClose
+        ? {}
+        : { waitMs: input.waitMs }),
+      ...(signal === undefined ? {} : { signal }),
+    });
+    if (structured) return bashScriptPage(page);
+    const text = formatCommandSessionPage(page, caps.bash, prefix);
+    record(`bash:${input.action}:${input.sessionId}`, text);
+    return text;
+  };
+  const bashTool = tool({
+    name: "bash",
+    description: bashDescription,
+    input: bashInput,
+    effect: "external",
+    result: "inline",
+    timeoutMs: BASH_TIMEOUT_MS,
+    execute: async (input, signal) => await runBash(input, signal, false) as string,
+  });
+  const bashScriptTool = tool({
+    name: "bash",
+    description: bashDescription,
+    input: bashInput,
+    output: bashScriptOutputSchema(commandSessions !== undefined),
+    effect: "external",
+    result: "inline",
+    timeoutMs: BASH_TIMEOUT_MS,
+    async execute(input, signal) {
+      const result = await runBash(input, signal, true) as BashScriptResult;
+      record("command" in input ? `bash:${input.command.slice(0, 60)}` : `bash:${input.action}`, result.output);
+      return result;
     },
   });
 
@@ -639,7 +684,82 @@ export function shellTools(options: ShellToolsOptions): ToolDefinition[] {
     edit_file: editTool,
     read_tool_output: readToolOutput,
   };
+  // Code cells spill oversized output into this store and page it with
+  // read_tool_output, even when the direct surface leaves that tool out.
+  const retain = (label: string, text: string, complete: boolean) => storedOutputs.put(label, text, complete);
+  for (const definition of [...names.map((name) => built[name]), bashScriptTool]) {
+    setToolScriptCompanions(definition, {
+      ...(definition === bashTool ? { script: bashScriptTool } : {}),
+      retain,
+      reader: readToolOutput,
+    });
+  }
   return names.map((name) => built[name]);
+}
+
+/** What a code cell's `await bash(...)` resolves to. */
+type BashScriptResult = {
+  readonly exitCode: number | null;
+  readonly state: string;
+  readonly output: string;
+  readonly truncated: boolean;
+  readonly sessionId?: string;
+  readonly cursor?: number;
+  readonly handle?: string;
+};
+
+function bashScriptOutputSchema(sessions: boolean) {
+  return schema.object({
+    exitCode: schema.union([schema.integer(), schema.null()]),
+    state: schema.string(),
+    output: schema.string(),
+    truncated: schema.boolean(),
+    ...(sessions
+      ? { sessionId: schema.optional(schema.string()), cursor: schema.optional(schema.integer()) }
+      : { handle: schema.optional(schema.string()) }),
+  });
+}
+
+/**
+ * Keep the tail, like the text form, so test failures survive truncation. The
+ * cut lands on a UTF-8 character start, or on a 4-character base64 group.
+ */
+function bashScriptResult(
+  exitCode: number | null,
+  state: string,
+  text: string,
+  complete: boolean,
+  base64: boolean,
+  store?: (text: string, complete: boolean) => string | undefined,
+): BashScriptResult {
+  const encoded = Buffer.from(text, "utf8");
+  const cut = encoded.byteLength > BASH_SCRIPT_OUTPUT_MAX_BYTES;
+  let start = cut ? encoded.byteLength - BASH_SCRIPT_OUTPUT_MAX_BYTES : 0;
+  if (base64) start += (4 - start % 4) % 4;
+  else while (start < encoded.byteLength && (encoded[start]! & 0xc0) === 0x80) start++;
+  const truncated = !complete || cut;
+  const handle = truncated ? store?.(text, complete) : undefined;
+  const output = cut ? encoded.subarray(start).toString("utf8") : text;
+  return {
+    exitCode,
+    state,
+    output: base64 ? `[base64 command output]\n${output}` : output,
+    truncated,
+    ...(handle === undefined ? {} : { handle }),
+  };
+}
+
+function bashScriptPage(page: CommandSessionReadResult): BashScriptResult {
+  return {
+    exitCode: page.state === "exited" ? page.exitCode : null,
+    state: page.state,
+    output: page.matchStart === null
+      ? ""
+      : page.outputEncoding === "base64" ? `[base64]\n${page.output}` : page.output,
+    truncated: page.hasMore || page.truncatedBeforeCursor,
+    sessionId: page.sessionId,
+    cursor: page.nextCursor,
+  };
 }
 
 type BashSessionReadInput = {

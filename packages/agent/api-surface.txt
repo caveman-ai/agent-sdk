@@ -183,6 +183,7 @@
 .	ProgrammaticSpeculationLaunch
 .	ProgrammaticSpeculationScope
 .	ProgrammaticToolInstructionOptions
+.	ProgrammaticToolNamespace
 .	ProgrammaticToolRuntime
 .	ProgrammaticToolStats
 .	QualityGrader
@@ -820,6 +821,7 @@
 ./programmatic-tools	ProgrammaticSpeculationLaunch
 ./programmatic-tools	ProgrammaticSpeculationScope
 ./programmatic-tools	ProgrammaticToolInstructionOptions
+./programmatic-tools	ProgrammaticToolNamespace
 ./programmatic-tools	ProgrammaticToolRuntime
 ./programmatic-tools	ProgrammaticToolStats
 ./programmatic-tools	createProgrammaticToolErrorWrapper

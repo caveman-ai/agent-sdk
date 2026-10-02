@@ -2550,7 +2550,7 @@ async function* streamAgentInternal(
       parentSignal,
       turnKey: suppliedTurnKey,
     }): Promise<unknown> => {
-      const nested = parent.nestedTools?.find((item) => item.name === name);
+      const nested = parent.nestedTools?.find((item) => item.name === name) ?? programmaticToolMetadata(parent)?.registry.get(name);
       if (nested === undefined) throw new Error(`cave_nested_tool_not_allowed:${name}`);
       if (dispatchOptions?.claimSpeculation === true) {
         if (nested.effect !== "read" || nested.speculative !== true ||
@@ -5075,7 +5075,7 @@ function recoveryTool(
   return {
     name: "cave_retrieve",
     label: "cave_retrieve",
-    description: "Recover exact content omitted by an active Caveman transform. Handles are scoped to this run.",
+    description: "Recover exact content omitted by an active Caveman transform. Pass the recovery_handle from a <cave-compressed> marker; retrieve before guessing. Handles are scoped to this run.",
     parameters: Type.Object({
       recovery_handle: Type.String(),
       query: Type.Optional(Type.String()),

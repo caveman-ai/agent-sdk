@@ -702,12 +702,42 @@ export async function loadAgentEnvironment(
   });
 }
 
+/** Characters of the whole skill index; descriptions shrink to fit, skills are never dropped. */
+const MAX_AGENT_SKILLS_INDEX_CHARS = 8_192;
+/** Characters of one skill description in the index; load_skill returns the full skill. */
+const MAX_AGENT_SKILL_INDEX_DESCRIPTION_CHARS = 320;
+
+/**
+ * Stable-prefix skill index. The cap depends only on the sorted skill list, so
+ * the rendered bytes stay identical for one environment.
+ */
 export function renderAgentSkillsIndex(skills: readonly AgentSkill[]): string {
-  return [
+  const intro = [
     "Skills available to this agent. Load one only when its description matches the task.",
     'Call load_skill({"name":"<skill>"}) for instructions. Use its resource argument for referenced files.',
-    ...skills.map((skill) => `- ${skill.id}: ${skill.description}`),
+  ];
+  const heads = skills.map((skill) => `- ${skill.id}`);
+  const fixed = [...intro, ...heads].join("\n").length;
+  // Each description also costs a ": " separator.
+  const perSkill = skills.length === 0 ? 0 : Math.min(
+    MAX_AGENT_SKILL_INDEX_DESCRIPTION_CHARS,
+    Math.floor((MAX_AGENT_SKILLS_INDEX_CHARS - fixed) / skills.length) - 2,
+  );
+  return [
+    ...intro,
+    ...skills.map((skill, index) => {
+      const description = truncateIndexText(skill.description, perSkill);
+      return description === "" ? heads[index]! : `${heads[index]!}: ${description}`;
+    }),
   ].join("\n");
+}
+
+function truncateIndexText(text: string, max: number): string {
+  if (text.length <= max) return text;
+  if (max <= 1) return "";
+  // Never end on a lone high surrogate; the index lives in the stable prefix.
+  const kept = text.slice(0, max - 1).replace(/[\uD800-\uDBFF]$/u, "");
+  return `${kept.trimEnd()}…`;
 }
 
 export function renderAgentPluginCommandsIndex(

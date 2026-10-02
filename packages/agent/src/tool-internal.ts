@@ -514,3 +514,33 @@ function schemaContainsDynamicFormat(value: unknown, seen = new Set<object>()): 
     seen.delete(value);
   }
 }
+
+/**
+ * Script-facing companions of one trusted tool. Programmatic cells call
+ * `script` instead (same name and input, structured result), and spill
+ * oversized cell output through `retain` into the store that `reader` pages.
+ */
+export interface ToolScriptCompanions {
+  readonly script?: ToolDefinition;
+  readonly retain?: (label: string, text: string, complete: boolean) => string | undefined;
+  readonly reader?: ToolDefinition;
+}
+
+const TOOL_SCRIPT_COMPANIONS = new WeakMap<ToolDefinition, ToolScriptCompanions>();
+
+export function setToolScriptCompanions(
+  definition: ToolDefinition,
+  companions: ToolScriptCompanions,
+): void {
+  const script = companions.script;
+  if (script !== undefined && (script.name !== definition.name || script.effect !== definition.effect ||
+      script.speculative !== definition.speculative ||
+      JSON.stringify(script.input) !== JSON.stringify(definition.input))) {
+    throw new Error(`cave_tool_script_companion_invalid:${definition.name}`);
+  }
+  TOOL_SCRIPT_COMPANIONS.set(definition, Object.freeze({ ...companions }));
+}
+
+export function toolScriptCompanions(definition: ToolDefinition): ToolScriptCompanions | undefined {
+  return TOOL_SCRIPT_COMPANIONS.get(definition);
+}
