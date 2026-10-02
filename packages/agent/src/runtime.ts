@@ -25,6 +25,7 @@ import {
   type ImageContent,
   type Model,
   type Models,
+  type ModelThinkingLevel,
   type ProviderHeaders,
   type TextContent,
   type TSchema,
@@ -81,6 +82,7 @@ import {
 } from "./durable.js";
 import {
   BreakerState,
+  callSignature,
   normalizeRunBreakers,
   type RunBreakers,
 } from "./breakers.js";
@@ -421,6 +423,18 @@ export interface ModelCallRouteInput {
   readonly ctxTokens: number;
   readonly hasImages: boolean;
   readonly toolErrorStreak: number;
+  /**
+   * Consecutive identical leaf tool calls (same tool, same normalized
+   * arguments) so far in this run. Optional for compatibility with older
+   * runtimes.
+   */
+  readonly repeatedToolCallStreak?: number;
+  /**
+   * An efficiency plan fixed this run's reasoning level before it started; a
+   * decision that changes `reasoning` is rejected. Optional for compatibility
+   * with older runtimes.
+   */
+  readonly reasoningLocked?: boolean;
   readonly previousUsage?: {
     readonly model: string;
     /** Uncached provider input. Optional for compatibility with older routers. */
@@ -435,6 +449,30 @@ export interface ModelCallRouteDecision {
   readonly model: string;
   readonly reason: string;
   readonly signals: readonly string[];
+  /**
+   * Reasoning effort for this working call only. `off` removes the caller's
+   * level; absent keeps it. Compaction calls ignore it.
+   */
+  readonly reasoning?: ModelThinkingLevel;
+}
+
+const MODEL_THINKING_LEVELS: readonly ModelThinkingLevel[] = [
+  "off", "minimal", "low", "medium", "high", "xhigh", "max",
+];
+
+/** Apply a route decision's reasoning to one call's stream options. */
+function withRoutedReasoning<T extends { readonly reasoning?: unknown } | undefined>(
+  streamOptions: T,
+  decision: ModelCallRouteDecision | undefined,
+): T {
+  const level = decision?.reasoning;
+  if (level === undefined) return streamOptions;
+  if (level === "off") {
+    if (streamOptions === undefined) return streamOptions;
+    const { reasoning: _removed, ...rest } = streamOptions;
+    return rest as T;
+  }
+  return { ...(streamOptions ?? {}), reasoning: level } as T;
 }
 
 export type ModelCallRouter = (
@@ -518,7 +556,8 @@ function validateModelRouteDecision(decision: ModelCallRouteDecision): void {
       typeof decision.model !== "string" || decision.model.trim() === "" ||
       typeof decision.reason !== "string" || decision.reason.trim() === "" ||
       !Array.isArray(decision.signals) ||
-      decision.signals.some((signal) => typeof signal !== "string" || signal.trim() === "")) {
+      decision.signals.some((signal) => typeof signal !== "string" || signal.trim() === "") ||
+      (decision.reasoning !== undefined && !MODEL_THINKING_LEVELS.includes(decision.reasoning))) {
     throw new Error("cave_model_route_decision_invalid");
   }
 }
@@ -2423,6 +2462,15 @@ async function* streamAgentInternal(
     let lastCallCacheState: "warm" | "cold" | "unknown" = "unknown";
     let activeWorkingModel = routedModel;
     let toolErrorStreak = 0;
+    // Leaf calls only: a composite tool's own call changes every time, so it
+    // neither extends nor resets the streak of the calls nested inside it.
+    let repeatedToolCallStreak = 0;
+    let lastLeafCallSignature: string | undefined;
+    const observeLeafCall = (toolName: string, args: unknown): void => {
+      const signature = callSignature(toolName, args);
+      repeatedToolCallStreak = signature === lastLeafCallSignature ? repeatedToolCallStreak + 1 : 1;
+      lastLeafCallSignature = signature;
+    };
     let previousRouteUsage: ModelCallRouteInput["previousUsage"];
     const queued: CavemanRunEvent[] = [];
     let wake: (() => void) | undefined;
@@ -2574,6 +2622,7 @@ async function* streamAgentInternal(
         if (toolBudgetCallCount > maxToolCalls) {
           throw new Error("cave_tool_call_budget_exceeded");
         }
+        if (nested.allowRepeat !== true) observeLeafCall(nested.name, args);
         if (breakers !== undefined) {
           const decision = breakers.observeToolCall({
             toolCallId: nestedToolCallId,
@@ -2769,7 +2818,7 @@ async function* streamAgentInternal(
         !((message.stopReason === "error" || message.stopReason === "aborted") &&
           budgetReservation === undefined && !carriedUsage);
       try {
-        if (definition.reasoning !== "off" && callModel.reasoning === true &&
+        if ((pendingCall?.reasoning ?? definition.reasoning) !== "off" && callModel.reasoning === true &&
             message.usage.reasoning === undefined) {
           reasoningUsageUnavailable = true;
         }
@@ -2951,9 +3000,17 @@ async function* streamAgentInternal(
         ctxTokens,
         hasImages,
         toolErrorStreak,
+        repeatedToolCallStreak,
+        reasoningLocked: efficiencyPlan !== undefined,
         ...(previousRouteUsage === undefined ? {} : { previousUsage: previousRouteUsage }),
       });
       validateModelRouteDecision(decision);
+      // A locked or candidate plan fixed the reasoning level before the run;
+      // a router may not vary it per call underneath that plan.
+      if (efficiencyPlan !== undefined && decision.reasoning !== undefined &&
+          decision.reasoning !== definition.reasoning) {
+        throw new Error("cave_model_route_reasoning_locked");
+      }
       const slash = decision.model.indexOf("/");
       const provider = slash < 1 ? "" : decision.model.slice(0, slash);
       const id = slash < 1 ? "" : decision.model.slice(slash + 1);
@@ -3092,6 +3149,7 @@ async function* streamAgentInternal(
       }
       const pendingCall: PendingCallRecord = {
         model: selected,
+        reasoning: routed.decision?.reasoning ?? definition.reasoning,
         reservation: decided.reservation,
         reservationMeter: budgetMeter,
         retryAttempt: undefined,
@@ -3146,7 +3204,7 @@ async function* streamAgentInternal(
           : AbortSignal.any([streamOptions.signal, options.signal]);
       const streamOnce = async () => {
         let source = await baseStream(selected, context, {
-        ...streamOptions,
+        ...withRoutedReasoning(streamOptions, routed.decision),
         ...(options.cacheRetention === undefined
           ? {}
           : { cacheRetention: options.cacheRetention }),
@@ -3598,6 +3656,9 @@ async function* streamAgentInternal(
               compositeEnvelopeTurnCount > breakers.config.maxToolCallsPerTurn) {
             return { block: true, reason: "cave_fan_out_cap_exceeded" };
           }
+        }
+        if (configured?.nestedTools === undefined && configured?.allowRepeat !== true) {
+          observeLeafCall(toolCall.name, args);
         }
         if (breakers !== undefined && configured?.nestedTools === undefined) {
           const decision = breakers.observeToolCall({
@@ -7070,6 +7131,8 @@ export function restorableRequestBytes(
 /** One in-flight provider call: its budget hold and the allowance it was given. */
 type PendingCallRecord = {
   readonly model: Model<Api>;
+  /** Reasoning level this call actually ran at: the route decision's, else the definition's. */
+  readonly reasoning: ModelThinkingLevel;
   reservation: BudgetReservation | undefined;
   reservationMeter: BudgetMeter | undefined;
   retryAttempt: number | undefined;

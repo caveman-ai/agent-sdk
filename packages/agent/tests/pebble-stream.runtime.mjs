@@ -252,3 +252,71 @@ test("kernel queue follows a streaming turn and reports exact count changes", as
     .map((event) => event.text).join(""), "firstqueued response");
   assert.deepEqual(controller.state, { queued: 0, heldAfterInterrupt: false });
 });
+
+test("a route decision pins the call's reasoning and identical leaf calls are counted", async () => {
+  const base = createCodingAgent({ workspace: tmpdir(), model: "anthropic/faux-1" });
+  // The session's own level is medium, so "off" has something to remove and
+  // an absent decision has something to keep.
+  const codingAgent = { ...base, definition: Object.freeze({ ...base.definition, reasoning: "medium" }) };
+  const routeInputs = [];
+  const session = await startCodingSession(codingAgent, {
+    cave: "off",
+    modelRouter(input) {
+      routeInputs.push(input);
+      return {
+        model: input.currentModel,
+        reason: "policy effort",
+        signals: ["policy_effort"],
+        ...(input.callIndex === 0 ? { reasoning: "low" } : input.callIndex === 1 ? { reasoning: "off" } : {}),
+      };
+    },
+  });
+  const faux = fauxProvider({ provider: "anthropic" });
+  faux.setResponses([
+    fauxAssistantMessage(fauxToolCall("read_file", { path: "missing-repeat.txt" }, { id: "read-1" })),
+    fauxAssistantMessage(fauxToolCall("read_file", { path: "missing-repeat.txt" }, { id: "read-2" })),
+    fauxAssistantMessage(fauxToolCall("read_file", { path: "other.txt" }, { id: "read-3" })),
+    fauxAssistantMessage("done"),
+  ]);
+  const efforts = [];
+  const stream = streamCodingTurn(session, "repeat the read", {
+    overrides: {
+      model: { ...faux.getModel(), api: "anthropic-messages", provider: "anthropic" },
+      streamFn: (model, context, options) => {
+        efforts.push(options?.reasoning ?? null);
+        return faux.provider.streamSimple(model, context, options);
+      },
+    },
+  });
+  for await (const _event of stream) { /* drain */ }
+  assert.deepEqual(
+    routeInputs.map((input) => [input.callIndex, input.repeatedToolCallStreak]),
+    [[0, 0], [1, 1], [2, 2], [3, 1]],
+  );
+  assert.deepEqual(efforts, ["low", null, "medium", "medium"]);
+  // No efficiency plan here, so the router is told it may vary reasoning.
+  assert.deepEqual(routeInputs.map((input) => input.reasoningLocked), [false, false, false, false]);
+});
+
+test("a route decision with an unknown reasoning level is rejected", async () => {
+  const codingAgent = createCodingAgent({ workspace: tmpdir(), model: "anthropic/faux-1" });
+  const session = await startCodingSession(codingAgent, {
+    cave: "off",
+    modelRouter(input) {
+      return { model: input.currentModel, reason: "bad", signals: ["bad"], reasoning: "turbo" };
+    },
+  });
+  const faux = fauxProvider({ provider: "anthropic" });
+  faux.setResponses([fauxAssistantMessage("never")]);
+  // Pi answers a thrown streamFn with a synthesized error turn, so the
+  // rejection surfaces as an error event rather than an iterator failure.
+  const events = [];
+  for await (const event of streamCodingTurn(session, "go", {
+    overrides: {
+      model: { ...faux.getModel(), api: "anthropic-messages", provider: "anthropic" },
+      streamFn: faux.provider.streamSimple.bind(faux.provider),
+    },
+  })) events.push(event);
+  assert.match(JSON.stringify(events), /cave_model_route_decision_invalid/);
+  assert.equal(events.some((event) => event.kind === "delta.text" && /never/.test(event.text ?? "")), false);
+});
