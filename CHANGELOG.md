@@ -15,7 +15,10 @@ Versioning policy and what counts as breaking: [docs/RELEASING.md](docs/RELEASIN
   writes and ended the run); bash's hard timeout is 600 s (was 120 s); the
   instructions name the workspace path and ask for terse progress instead of
   "say what you changed and why"; `write_file` creates parent directories; a
-  `<cave-output>` line is sent only when an output schema exists.
+  `<cave-output>` line is sent only when an output schema exists. Coding
+  sessions allow 1,000 model calls and 4,000 tool calls per run (the run
+  default of 64 ended long tasks); bash exit 127 is returned as output, not
+  reported as a missing shell.
 - Coding breakers: a successful write or external call (an edit, a command)
   resets the repeat window of every other call, so re-running the same test
   after an edit is progress, not a loop. Identical calls with nothing in
