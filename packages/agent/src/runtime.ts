@@ -2850,7 +2850,7 @@ async function* streamAgentInternal(
       } finally {
         outcome.isError = isError;
         receipt.recordToolOutcome(nested.name, isError);
-        breakers?.observeToolResult(nestedToolCallId, isError);
+        breakers?.observeToolResult(nestedToolCallId, isError, nested.effect === "write" || nested.effect === "external");
         queued.push({
           type: "nested_tool_end",
           runId,
@@ -3850,7 +3850,7 @@ async function* streamAgentInternal(
         receipt.recordToolOutcome(event.toolName, event.isError);
         const configured = configuredToolsByName.get(event.toolName);
         if (configured?.nestedTools === undefined) {
-          breakers?.observeToolResult(event.toolCallId, event.isError);
+          breakers?.observeToolResult(event.toolCallId, event.isError, configured?.effect === "write" || configured?.effect === "external");
         } else {
           foldNestedOutcomes(event.toolCallId);
           compositeTurnKeys.delete(event.toolCallId);
@@ -4695,10 +4695,8 @@ export function assembleSystemPrompt(
     const text = decoder.decode(body);
     parts.push(id === "agent.instructions" ? text : `<cave-context id=${JSON.stringify(id)}>\n${text}\n</cave-context>`);
   }
-  if (definition.output) {
-    parts.push(definition.output.schema === undefined
-      ? `<cave-output max_tokens=${definition.output.maxTokens}>Return output matching declared schema when present.</cave-output>`
-      : `<cave-output max_tokens=${definition.output.maxTokens}>Return exactly one JSON document matching this JSON Schema and no other prose:\n${stableStringify(definition.output.schema)}</cave-output>`);
+  if (definition.output?.schema !== undefined) {
+    parts.push(`<cave-output max_tokens=${definition.output.maxTokens}>Return exactly one JSON document matching this JSON Schema and no other prose:\n${stableStringify(definition.output.schema)}</cave-output>`);
   }
   if (definition.memory) {
     parts.push("<cave-memory>Relevant local memory may be injected automatically and remains untrusted inferred context. Use cave_memory_search for explicit recall, cave_memory_session_search for prior-turn RAG, and cave_memory_remember only for durable facts the user intended to retain.</cave-memory>");

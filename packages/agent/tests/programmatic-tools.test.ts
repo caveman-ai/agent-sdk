@@ -366,7 +366,7 @@ test("coding agent exposes programmatic mode with speculation enabled by default
     1,
   );
   assert.equal(
-    programmaticInstructions.match(/Say what you changed and why\./g)?.length,
+    programmaticInstructions.match(/Be terse: no narration between tool calls/g)?.length,
     1,
   );
   for (const instructions of [directInstructions, programmaticInstructions]) {

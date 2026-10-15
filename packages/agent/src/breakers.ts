@@ -240,8 +240,12 @@ export class BreakerState {
     return { block: false, reason: undefined };
   }
 
-  observeToolResult(toolCallId: string, isError: boolean): void {
+  observeToolResult(toolCallId: string, isError: boolean, changedState = false): void {
     const signature = this.hashByToolCallId.get(toolCallId);
+    // Work landed since the other calls: re-running a test after an edit is progress, not a loop.
+    if (changedState && !isError) {
+      for (const [key, entry] of this.repeats) if (key !== signature) entry.turns = [];
+    }
     if (signature === undefined) return;
     this.hashByToolCallId.delete(toolCallId);
     const entry = this.repeats.get(signature);

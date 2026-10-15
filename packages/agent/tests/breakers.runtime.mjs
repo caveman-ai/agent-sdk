@@ -615,3 +615,27 @@ test("identical calls inside the configured turn window still trip", () => {
   assert.equal(call("c").block, true);
   assert.equal(state.tripped, "loop_detected");
 });
+
+test("re-running a command after other work changed state is progress, not a loop", () => {
+  const state = new BreakerState(normalizeRunBreakers({ repeatedToolCalls: 3 }, false));
+  const call = (id, toolName = "bash", args = { command: "pytest -q" }) => state.observeToolCall({
+    toolCallId: id, toolName, args, allowRepeat: false, turnKey: id,
+  });
+  for (const id of ["t1", "t2", "t3", "t4"]) {
+    assert.equal(call(id).block, false);
+    state.observeToolResult(id, false, true);
+    // An edit between runs resets every other signature's window.
+    assert.equal(call(`${id}-edit`, "edit_file", { path: "a.py", old_string: id, new_string: `${id}x` }).block, false);
+    state.observeToolResult(`${id}-edit`, false, true);
+    state.observeTurn(id, []);
+  }
+  assert.equal(state.tripped, undefined);
+  // With nothing in between, the same command still trips.
+  for (const id of ["u1", "u2"]) {
+    assert.equal(call(id).block, false);
+    state.observeToolResult(id, false, true);
+    state.observeTurn(id, []);
+  }
+  assert.equal(call("u3").block, true);
+  assert.equal(state.tripped, "loop_detected");
+});

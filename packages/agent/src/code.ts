@@ -149,7 +149,7 @@ export const CODING_RUN_BREAKERS: RunBreakers = Object.freeze({
 
 /** Model calls per turn = 1 + ceil(retry_cascade_reserve / 256) = 64. */
 const RETRY_CASCADE_RESERVE = 16_128;
-const OUTPUT_MAX_TOKENS = 8_000;
+const OUTPUT_MAX_TOKENS = 32_000;
 
 export const OBSERVE_ONLY_BANNER = [
   "cave: OBSERVE-ONLY — the Caveman engine/gateway is not available here.",
@@ -157,7 +157,7 @@ export const OBSERVE_ONLY_BANNER = [
   "  Turn optimized mode on: npm i -g @caveman-ai/cli && caveman start",
 ].join("\n");
 
-function codingInstructions(toolSet: CodingToolSet): string {
+function codingInstructions(toolSet: CodingToolSet, workspace: string): string {
   const toolInstructions = toolSet === "pebble-v1"
     ? PEBBLE_V1_TOOL_INSTRUCTIONS
     : FULL_TOOL_INSTRUCTIONS;
@@ -170,6 +170,7 @@ function codingInstructions(toolSet: CodingToolSet): string {
       ].join("\n");
   return [
     "You are a coding agent working inside one workspace directory.",
+    `Workspace: ${workspace}`,
     "",
     "Work like an engineer: read before you edit, prefer the smallest change that",
     "solves the task, and verify with a command when a command can verify it.",
@@ -179,7 +180,8 @@ function codingInstructions(toolSet: CodingToolSet): string {
     "",
     cappedOutputInstructions,
     "",
-    "Say what you changed and why. Do not claim a command passed unless you ran it.",
+    "Be terse: no narration between tool calls; end with what changed in a line or two.",
+    "Do not claim a command passed unless you ran it.",
   ].join("\n");
 }
 
@@ -203,6 +205,8 @@ export interface CodingAgentOptions {
   toolMode?: CodingToolMode;
   /** Safe read speculation in programmatic mode. Defaults on; ignored by direct mode. */
   speculativeToolCalls?: boolean;
+  /** Directory file tools may touch; defaults to `workspace`. `/` leaves them uncontained, like bash. */
+  fileRoot?: string;
   /** Optional bounded disk retention for command output evicted from memory. */
   commandSessionSpill?: CommandSessionSpillOptions;
   /** Interactive bash sessions. Defaults on locally and off for non-local backends. */
@@ -315,8 +319,8 @@ export function createCodingAgent(options: CodingAgentOptions = {}): CodingAgent
   const baseDefinition = agent({
     id,
     instructions: options.instructions === undefined
-      ? codingInstructions(toolSet)
-      : `${codingInstructions(toolSet)}\n\n${options.instructions}`,
+      ? codingInstructions(toolSet, workspace)
+      : `${codingInstructions(toolSet, workspace)}\n\n${options.instructions}`,
     model: modelID,
     reasoning: "off",
     sandbox: "host",
@@ -335,6 +339,7 @@ export function createCodingAgent(options: CodingAgentOptions = {}): CodingAgent
         ? ["read_file", "bash", "write_file", "edit_file"]
         : ["read_file", "grep", "bash", "write_file", "edit_file", "read_tool_output"],
       outputCaps: caps,
+      ...(options.fileRoot === undefined ? {} : { fileRoot: options.fileRoot }),
       ...(commandSessions === undefined ? {} : { commandSessions }),
       onOutput: record,
     }),

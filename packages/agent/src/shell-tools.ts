@@ -55,7 +55,7 @@ export const CODING_TOOL_OUTPUT_CAPS = Object.freeze({
 });
 
 const GREP_MAX_MATCHES = 200;
-export const BASH_TIMEOUT_MS = 120_000;
+export const BASH_TIMEOUT_MS = 600_000;
 export const BASH_SESSION_MAX_SESSIONS = 8;
 export const BASH_SESSION_MAX_WAIT_MS = 30_000;
 export const BASH_SESSION_MAX_INPUT_BYTES = 64 * 1024;
@@ -136,6 +136,7 @@ export interface ShellToolsOptions {
   commandSessions?: CommandSessionRuntime;
   /** Observes every capped tool output. */
   onOutput?: (label: string, text: string) => void;
+  /** Directory file tools may touch (default `workspace`); relative paths resolve against `workspace`. */ fileRoot?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -179,7 +180,7 @@ export function shellTools(options: ShellToolsOptions): ToolDefinition[] {
     workspace,
   ));
   const contained = async (candidate: string) =>
-    backendContainedPath(executionBackend, await workspaceRoot(), candidate);
+    backendContainedPath(executionBackend, await workspaceRoot(), candidate, options.fileRoot);
 
   const readFileTool = tool({
     name: "read_file",
@@ -553,8 +554,8 @@ export function shellTools(options: ShellToolsOptions): ToolDefinition[] {
   const writeTool = tool({
     name: "write_file",
     description:
-      "Create a UTF-8 file in the workspace. Refuses an existing path unless overwrite is true. " +
-      "Parent directory must already exist.",
+      "Create a UTF-8 file in the workspace, creating parent directories. " +
+      "Refuses an existing path unless overwrite is true.",
     input: schema.object({
       path: schema.string(),
       content: schema.string(),

@@ -79,6 +79,8 @@ test("file tools read line ranges, refuse clobbering, and replace exactly once",
     assert.equal(page, "2\tbeta");
 
     await tools.write_file.execute({ path: "made.txt", content: "first\n" });
+    await tools.write_file.execute({ path: "new/dir/made.txt", content: "nested\n" });
+    assert.equal(await readFile(resolve(workspace, "new/dir/made.txt"), "utf8"), "nested\n");
     await assert.rejects(
       () => tools.write_file.execute({ path: "made.txt", content: "lost\n" }),
       /EEXIST/,
@@ -225,5 +227,19 @@ test("any agent can compose shell tools beside its own domain tools", async () =
       result.receipt.tools.map((item) => [item.name, item.calls, item.errors]).sort(),
       [["bash", 1, 0], ["lookup_ticket", 1, 0]],
     );
+  });
+});
+
+test("fileRoot widens where file tools reach while relative paths stay in the workspace", async () => {
+  await withWorkspace(async (outer) => {
+    const workspace = resolve(outer, "repo");
+    await mkdir(workspace);
+    const contained = byName(shellTools({ workspace }));
+    await assert.rejects(() => contained.write_file.execute({ path: "../out.txt", content: "x" }), /path escapes the workspace/);
+    const wide = byName(shellTools({ workspace, fileRoot: outer }));
+    await wide.write_file.execute({ path: "in.txt", content: "in\n" });
+    assert.equal(await readFile(resolve(workspace, "in.txt"), "utf8"), "in\n");
+    await wide.write_file.execute({ path: resolve(outer, "etc/out.txt"), content: "out\n" });
+    assert.match(await wide.read_file.execute({ path: "../etc/out.txt" }), /^1\tout/);
   });
 });
