@@ -144,6 +144,39 @@ export interface CapturedStandardSchema {
   readonly converter?: (...args: never[]) => unknown;
 }
 
+/**
+ * Context key, present only when a run compresses tool results: a tool that
+ * capped its output hands the whole text here, so compression and Keep read
+ * all of it and the cap applies to what compression returns.
+ */
+export const TOOL_FULL_OUTPUT = Symbol.for("@caveman-ai/agent:tool-full-output");
+/** The runtime holds at most this much of one tool's whole output. */
+export const FULL_TOOL_OUTPUT_MAX_BYTES = 1024 * 1024;
+
+export interface FullToolOutput {
+  /** Kept verbatim ahead of the compressed text, e.g. bash's exit line. */
+  readonly prefix: string;
+  readonly text: string;
+  /** The tool's cap for `text`, applied after compression. */
+  readonly maxBytes: number;
+  readonly direction: "head" | "tail";
+}
+
+export function reportFullToolOutput(context: ToolExecutionContext | undefined, output: FullToolOutput): void {
+  const sink = (context as { [TOOL_FULL_OUTPUT]?: (output: FullToolOutput) => void } | undefined)?.[TOOL_FULL_OUTPUT];
+  sink?.(output);
+}
+
+/** At most `maxBytes` of `text` from its head or tail, then `marker`, which counts toward it. */
+export function capUtf8(text: string, maxBytes: number, direction: "head" | "tail", marker: string): string {
+  const encoded = new TextEncoder().encode(text);
+  const keep = Math.max(0, maxBytes - new TextEncoder().encode(marker).byteLength);
+  const preview = direction === "head"
+    ? encoded.subarray(0, keep)
+    : encoded.subarray(Math.max(0, encoded.byteLength - keep));
+  return `${new TextDecoder().decode(preview)}${marker}`;
+}
+
 /** Invoke one SDK-created tool without its public result validator. */
 export function executeRawTool(
   definition: ToolDefinition,

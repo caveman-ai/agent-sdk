@@ -29,6 +29,9 @@ if (command === "compress") {
       delete parsed.input.default;
     }
     process.stdout.write(JSON.stringify(parsed));
+  } else if (input.includes("FAKE_ENGINE_HALF")) {
+    // A weak compression: what comes back is still over a tool's cap.
+    process.stdout.write(input.subarray(0, input.length >> 1));
   } else {
     process.stdout.write("compressed summary");
   }

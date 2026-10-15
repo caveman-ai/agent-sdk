@@ -663,6 +663,39 @@ test("a local session compresses tool results with the engine and no gateway, ke
   });
 });
 
+test("a capped tool output reaches the engine whole, and the cap applies to what compression returns", async () => {
+  await withWorkspace(async (workspace) => {
+    const store = process.env.CAVE_FAKE_ENGINE_STORE;
+    const codingAgent = createCodingAgent({ workspace, model: "anthropic/faux-1", outputCaps: { bash: 2_048 } });
+    const session = await startCodingSession(codingAgent, { cave: "local", engineBin: FAKE_ENGINE });
+    const faux = fauxAnthropic();
+    const model = { ...faux.getModel(), api: "anthropic-messages", provider: "anthropic" };
+    const seen = [];
+    const command = `node -e 'process.stdout.write("HEAD_SENTINEL FAKE_ENGINE_HALF\\n" + "x".repeat(20000) + "\\nTAIL_SENTINEL\\n")'`;
+    faux.setResponses([
+      fauxAssistantMessage(fauxToolCall("bash", { command }, { id: "bash-1" })),
+      fauxAssistantMessage("done"),
+    ]);
+    const turn = await runCodingTurn(session, "why does the head say what it says?", {
+      model,
+      models: payloadModels(faux, seen),
+      providerPayloadContract: "pi-on-payload-v1",
+    });
+    assert.equal(turn.text, "done");
+    // The engine read the whole output, head included: the tool's tail cap did not run first.
+    const inputs = await Promise.all((await readdir(store)).filter((name) => name.startsWith("ccr_"))
+      .map((name) => readFile(resolve(store, name), "utf8")));
+    assert.equal(inputs.some((input) => input.includes("HEAD_SENTINEL") && input.includes("TAIL_SENTINEL")), true);
+    // What reaches the model is the compression, capped at the tool's cap, after the exit line.
+    const result = seen[1].find((message) => message.role === "toolResult").content[0].text;
+    assert.match(result, /^exit 0\n<cave-compressed /);
+    assert.match(result, /compressed output capped from 10\d{3} bytes/);
+    assert.equal(Buffer.byteLength(result) <= 2_048 + 256, true);
+    // The transcript keeps the capped tool output, which a cache-drift fallback restores.
+    assert.equal(turn.bill.transformFailures.length, 0);
+  });
+});
+
 test("a long local run is not stopped by the gateway trace header's 64-entry limit", async () => {
   await withWorkspace(async (workspace) => {
     const codingAgent = createCodingAgent({ workspace, model: "anthropic/faux-1" });

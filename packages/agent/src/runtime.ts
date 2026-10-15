@@ -159,9 +159,13 @@ import {
   type ToolExecutionContext,
 } from "./primitives.js";
 import {
+  capUtf8,
   executeRawTool,
+  FULL_TOOL_OUTPUT_MAX_BYTES,
   settleToolOutput,
   settledToolOutputFromTransport,
+  TOOL_FULL_OUTPUT,
+  type FullToolOutput,
   type SettledToolOutput,
 } from "./tool-internal.js";
 import {
@@ -1236,6 +1240,9 @@ type InternalExecutionContext = {
   readonly durableTools?: DurableToolCoordinator;
 };
 
+/** A capped tool result's whole output, keyed by tool call; `capped` is what the transcript holds. */
+type DeferredToolOutput = FullToolOutput & { readonly capped: string };
+
 type AppliedPlan = {
   bodies: Map<string, Uint8Array>;
   evaluatedTransformIDs: string[];
@@ -1449,7 +1456,7 @@ export function createHarnessToolExecutor(input: {
     new Set<string>(),
     input.engineBin,
     input.providerDefinition,
-    input.deferLockedToolResult,
+    input.deferLockedToolResult === true ? new Map() : undefined,
   );
   return (params, signal) => executor.execute("cave_harness_tool", params, signal);
 }
@@ -2143,6 +2150,7 @@ async function* streamAgentInternal(
     const sandboxSourceFiles = sandboxSourceSnapshot?.sourceFiles ?? [];
     const sandboxStagingRoot = sandboxSourceSnapshot?.stagingRoot;
     const conversationOriginals = new Map<string, string>();
+    const deferredToolOutputs = new Map<string, DeferredToolOutput>();
     const initialProviderMessages = replaceConversationSegments(
       originalConversationMessages,
       initialConversationSegments,
@@ -2358,7 +2366,7 @@ async function* streamAgentInternal(
           recoveryHandles,
           options.engineBin,
           providerTool,
-          hasToolResultRoute,
+          hasToolResultRoute ? deferredToolOutputs : undefined,
           item.nestedTools === undefined
             ? undefined
             : (request) => {
@@ -3560,6 +3568,7 @@ async function* streamAgentInternal(
             options.engineBin,
             appliedPlan,
             conversationOriginals,
+            deferredToolOutputs,
             options.signal,
           ),
           originalConversationMessages.length,
@@ -4584,6 +4593,7 @@ async function transformConversationContext(
   engineBin: string | undefined,
   applied: AppliedPlan,
   originals: Map<string, string>,
+  deferredOutputs: ReadonlyMap<string, DeferredToolOutput>,
   signal?: AbortSignal,
 ): Promise<AgentMessage[]> {
   if (!plan) return messages;
@@ -4606,9 +4616,16 @@ async function transformConversationContext(
       if (!applied.failures.includes(failure)) applied.failures.push(failure);
       continue;
     }
-    const body = new TextEncoder().encode(descriptor.text);
+    // A capped tool result whose tool handed over its whole output: compress
+    // all of it and cap what comes back. The capped text stays the transcript
+    // and is what a cache-drift fallback restores.
+    const toolCallId = (messages[descriptor.messageIndex] as { toolCallId?: unknown }).toolCallId;
+    const deferred = typeof toolCallId === "string" ? deferredOutputs.get(toolCallId) : undefined;
+    const whole = deferred?.capped === descriptor.text ? deferred : undefined;
+    const source = whole?.text ?? descriptor.text;
+    const body = new TextEncoder().encode(source);
     const segment = appendRuntimeContextSegment(lowered, {
-      id: descriptor.id,
+      id: whole === undefined ? descriptor.id : runtimeSegmentId(descriptor.kind, source),
       kind: descriptor.kind,
       body,
     });
@@ -4617,7 +4634,7 @@ async function transformConversationContext(
     const existing = applied.bodies.get(segment.bodyHandle);
     if (existing) {
       if (bytesEqual(existing, body)) continue;
-      const replacement = new TextDecoder().decode(existing);
+      const replacement = `${whole?.prefix ?? ""}${new TextDecoder().decode(existing)}`;
       setConversationText(output, descriptor, replacement);
       originals.set(replacement, descriptor.text);
       continue;
@@ -4628,11 +4645,16 @@ async function transformConversationContext(
     }, {
       ...plan,
       segment_routes: [routes[0]!],
-    }, engineBin, signal, query);
+    }, engineBin, signal, query, whole);
+    // Savings count against the capped output the model would have read, not
+    // bytes the cap drops anyway.
+    for (const item of whole === undefined ? [] : dynamic.trace) {
+      if (item.outcome === "applied") item.beforeTokens = Math.ceil(new TextEncoder().encode(descriptor.text).byteLength / 4);
+    }
     mergeAppliedPlan(applied, dynamic, plan);
     const replacementBody = dynamic.bodies.get(segment.bodyHandle);
     if (!replacementBody || bytesEqual(replacementBody, body)) continue;
-    const replacement = new TextDecoder().decode(replacementBody);
+    const replacement = `${whole?.prefix ?? ""}${new TextDecoder().decode(replacementBody)}`;
     applied.bodies.set(segment.bodyHandle, replacementBody);
     setConversationText(output, descriptor, replacement);
     originals.set(replacement, descriptor.text);
@@ -4784,6 +4806,8 @@ async function applyEfficiencyPlan(
   engineBin: string | undefined,
   signal?: AbortSignal,
   query?: string,
+  /** A tool's cap, applied to what the engine returns rather than to its input. */
+  outputCap?: Pick<FullToolOutput, "maxBytes" | "direction">,
 ): Promise<AppliedPlan> {
   const bodies = new Map(lowered.bodies);
   if (!plan || plan.segment_routes.length === 0) {
@@ -4883,11 +4907,15 @@ async function applyEfficiencyPlan(
           });
           continue;
         }
+        const compressed = new TextDecoder().decode(transformed.output);
         const providerBody = segment.kind === "tool_schema"
           ? validatedToolSchemaBytes(transformed.output, segment.id)
           : new TextEncoder().encode([
             `<cave-compressed transform=${JSON.stringify(route.transform_id)} recovery_handle=${JSON.stringify(transformed.handle)}>`,
-            new TextDecoder().decode(transformed.output),
+            outputCap === undefined || transformed.output.byteLength <= outputCap.maxBytes
+              ? compressed
+              : capUtf8(compressed, outputCap.maxBytes, outputCap.direction,
+                `\n[caveman: compressed output capped from ${transformed.output.byteLength} bytes]`),
             "Use cave_retrieve for omitted detail.",
             "</cave-compressed>",
           ].join("\n"));
@@ -6129,7 +6157,8 @@ function toPiTool(
   recoveryHandles?: Set<string>,
   engineBin?: string,
   providerDefinition?: { description: string; input: TSchema },
-  deferLockedToolResult = false,
+  /** Present when a locked route transforms tool results later: capped tools hand their whole output here. */
+  deferredOutputs?: Map<string, DeferredToolOutput>,
   nestedDispatch?: (input: {
     parentToolCallId: string;
     name: string;
@@ -6160,7 +6189,13 @@ function toPiTool(
       const nestedInvocations: Promise<unknown>[] = [];
       let directEffectSettlement: Promise<unknown> | undefined;
       let acceptingNestedCalls = true;
+      let fullOutput: FullToolOutput | undefined;
       const context: ToolExecutionContext = Object.freeze({
+          ...(deferredOutputs === undefined ? {} : {
+            [TOOL_FULL_OUTPUT]: (output: FullToolOutput) => {
+              if (new TextEncoder().encode(output.text).byteLength <= FULL_TOOL_OUTPUT_MAX_BYTES) fullOutput = output;
+            },
+          }),
           toolCallId,
           ...(durable === undefined ? {} : { durable }),
           parentToolCallId: toolCallId,
@@ -6269,8 +6304,9 @@ function toPiTool(
       const maxInlineBytes = definition.artifact === undefined
         ? 32_768
         : definition.artifact.maxInlineTokens * 4;
-      if (deferLockedToolResult) {
+      if (deferredOutputs !== undefined) {
         if (raw.byteLength > 16 * 1024 * 1024) throw new Error("cave_tool_result_limit");
+        if (fullOutput !== undefined && text !== undefined) deferredOutputs.set(toolCallId, { ...fullOutput, capped: text });
         return {
           content: [{ type: "text", text: text ?? "null" }],
           details: { effect: definition.effect, resultPolicy: definition.result, lockedRoutePending: true },

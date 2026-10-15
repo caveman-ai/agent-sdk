@@ -14,6 +14,7 @@
     "packages/agent/src/memory.ts": 1132,
     "packages/agent/src/programmatic-tools.ts": 1249,
     "packages/agent/src/runtime.ts": 7719,
+    "packages/agent/src/shell-tools.ts": 1005,
     "packages/agent/src/source-graph.ts": 1075,
     "packages/evals/src/index.ts": 1987,
     "packages/pebble-protocol/src/sequence.ts": 1072

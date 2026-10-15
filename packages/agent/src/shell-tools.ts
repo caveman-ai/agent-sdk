@@ -16,6 +16,7 @@ import {
   schema,
   tool,
   type ToolDefinition,
+  type ToolExecutionContext,
 } from "./primitives.js";
 import type {
   CommandSessionReadResult,
@@ -37,7 +38,7 @@ import {
   runBackendProcess,
 } from "./coding-backend.js";
 import { hostShellInvocation } from "./portable-process.js";
-import { setToolScriptCompanions } from "./tool-internal.js";
+import { capUtf8, reportFullToolOutput, setToolScriptCompanions } from "./tool-internal.js";
 
 /**
  * Raw output caps, applied by each tool **before** any transform runs, so a
@@ -201,7 +202,7 @@ export function shellTools(options: ShellToolsOptions): ToolDefinition[] {
     speculative: true,
     result: "inline",
     timeoutMs: READ_TIMEOUT_MS,
-    async execute(input) {
+    async execute(input, _signal, context) {
       const target = await contained(input.path);
       if (!await backendIsFile(executionBackend, target)) {
         throw new Error(`caveman-code: not a file: ${input.path}`);
@@ -225,7 +226,7 @@ export function shellTools(options: ShellToolsOptions): ToolDefinition[] {
         ...(recoverable ? { store: storedOutputs } : {}),
         label: `read_file:${input.path}`,
         complete: true,
-      });
+      }, context);
       record(`read_file:${input.path}`, text);
       return text;
     },
@@ -245,7 +246,7 @@ export function shellTools(options: ShellToolsOptions): ToolDefinition[] {
     speculative: true,
     result: "inline",
     timeoutMs: READ_TIMEOUT_MS,
-    async execute(input, signal) {
+    async execute(input, signal, context) {
       const root = await workspaceRoot();
       const scope = input.path === undefined ? root : await contained(input.path);
       const relativeScope = scope === root ? "." : relative(root, scope);
@@ -272,7 +273,7 @@ export function shellTools(options: ShellToolsOptions): ToolDefinition[] {
         ...(recoverable ? { store: storedOutputs } : {}),
         label: `grep:${input.pattern}`,
         complete: run.captureComplete,
-      });
+      }, context);
       record(`grep:${input.pattern}`, text);
       return text;
     },
@@ -330,6 +331,7 @@ export function shellTools(options: ShellToolsOptions): ToolDefinition[] {
     input: Static<typeof bashInput>,
     signal: AbortSignal | undefined,
     structured: boolean,
+    context?: ToolExecutionContext,
   ): Promise<string | BashScriptResult> => {
     if ("command" in input) {
       const timeoutMs = Math.min(input.timeoutMs ?? BASH_TIMEOUT_MS, BASH_TIMEOUT_MS);
@@ -367,14 +369,15 @@ export function shellTools(options: ShellToolsOptions): ToolDefinition[] {
         const output = combined.trim() === ""
           ? "(no output)"
           : combined;
-        const text = `${status}\n${capToolOutput({
+        const text = capToolOutput({
+          prefix: `${status}\n`,
           text: output,
-          maxBytes: Math.max(1, caps.bash - Buffer.byteLength(`${status}\n`, "utf8")),
+          maxBytes: caps.bash,
           direction: "tail",
           ...(recoverable ? { store: storedOutputs } : {}),
           label: `bash:${input.command.slice(0, 60)}`,
           complete: !run.truncated,
-        })}`;
+        }, context);
         record(`bash:${input.command.slice(0, 60)}`, text);
         return text;
       }
@@ -442,9 +445,10 @@ export function shellTools(options: ShellToolsOptions): ToolDefinition[] {
         : capture.outputEncoding === "base64"
           ? `[base64 command output]\n${capture.output}`
           : capture.output;
-      const text = `${status}\n${capToolOutput({
+      const text = capToolOutput({
+        prefix: `${status}\n`,
         text: output,
-        maxBytes: Math.max(1, caps.bash - Buffer.byteLength(`${status}\n`, "utf8")),
+        maxBytes: caps.bash,
         direction: "tail",
         ...(recoverable ? { store: storedOutputs } : {}),
         label: `bash:${input.command.slice(0, 60)}`,
@@ -471,7 +475,7 @@ export function shellTools(options: ShellToolsOptions): ToolDefinition[] {
                     cursor: capture.availableFrom,
                   })})`,
               }),
-      })}`;
+      }, context);
       record(`bash:${input.command.slice(0, 60)}`, text);
       return text;
     }
@@ -534,7 +538,7 @@ export function shellTools(options: ShellToolsOptions): ToolDefinition[] {
     effect: "external",
     result: "inline",
     timeoutMs: BASH_TIMEOUT_MS,
-    execute: async (input, signal) => await runBash(input, signal, false) as string,
+    execute: async (input, signal, context) => await runBash(input, signal, false, context) as string,
   });
   const bashScriptTool = tool({
     name: "bash",
@@ -961,6 +965,8 @@ export function capOutput(text: string, maxBytes: number): string {
 }
 
 function capToolOutput(input: {
+  /** Kept ahead of the capped text and outside its budget, e.g. bash's exit line. */
+  prefix?: string;
   text: string;
   maxBytes: number;
   direction: "head" | "tail";
@@ -969,9 +975,13 @@ function capToolOutput(input: {
   complete: boolean;
   source?: string;
   recovery?: string;
-}): string {
+}, context?: ToolExecutionContext): string {
+  const prefix = input.prefix ?? "";
+  const maxBytes = Math.max(1, input.maxBytes - Buffer.byteLength(prefix, "utf8"));
   const encoded = Buffer.from(input.text, "utf8");
-  if (encoded.byteLength <= input.maxBytes && input.complete) return input.text;
+  if (encoded.byteLength <= maxBytes && input.complete) return `${prefix}${input.text}`;
+  // A run that compresses tool results compresses all of it, then caps.
+  if (encoded.byteLength > maxBytes) reportFullToolOutput(context, { prefix, text: input.text, maxBytes, direction: input.direction });
   const handle = input.store?.put(input.label, input.text, input.complete);
   const source = input.source ?? (
     input.complete ? "captured bytes" : "captured bytes; later process output unavailable"
@@ -984,11 +994,7 @@ function capToolOutput(input: {
         : `use read_tool_output with handle ${handle}`
   );
   const marker = `\n[caveman-code: output capped from ${encoded.byteLength} ${source}; ${recovery}]`;
-  const previewBytes = Math.max(0, input.maxBytes - Buffer.byteLength(marker, "utf8"));
-  const preview = input.direction === "head"
-    ? encoded.subarray(0, previewBytes)
-    : encoded.subarray(Math.max(0, encoded.byteLength - previewBytes));
-  return `${preview.toString("utf8")}${marker}`;
+  return `${prefix}${capUtf8(input.text, maxBytes, input.direction, marker)}`;
 }
 
 function firstLines(text: string, limit: number): string {

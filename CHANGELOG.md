@@ -43,6 +43,16 @@ Versioning policy and what counts as breaking: [docs/RELEASING.md](docs/RELEASIN
 
 ### Fixed
 
+- `@caveman-ai/agent` coding tools on a plan run that compresses tool results:
+  `read_file`, `grep` and `bash` used to cut their output to the tool cap
+  (24 KB for bash) before the engine saw it, so compression and Keep read only
+  the tail of a long log and never its head. A capped tool now hands its whole
+  output (up to 1 MiB) to the runtime, the engine compresses all of it with the
+  ask as Keep's query, and the tool's cap applies to what the engine returns.
+  The transcript still holds the capped output, which is what a cache-drift
+  fallback restores, and savings are counted against the capped output, not
+  bytes the cap would have dropped anyway. Runs without the engine are
+  unchanged.
 - `@caveman-ai/agent` plan runs: a segment the engine declined (too small to
   shrink) is remembered like a compressed one. It used to be re-sent to the
   engine on every request, so engine calls and the transform trace grew with
