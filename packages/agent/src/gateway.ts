@@ -79,7 +79,7 @@ function announceObserveOnly(gatewayURL: string): void {
 export async function resolveCaveRoute(
   gatewayURL: string,
   options: {
-    cave?: "auto" | "off";
+    cave?: "auto" | "off" | "local";
     ensureRuntime?: boolean;
     fetch?: typeof globalThis.fetch;
     caveRoute?: ResolvedCaveRoute;
@@ -100,6 +100,8 @@ export async function resolveCaveRoute(
       providerBilling: identity?.providerBilling ?? "unknown",
     };
   }
+  // `local` applies the plan in process with the local engine; nothing to route.
+  if (options.cave === "local") return { useGateway: false, providerBilling: "unknown" };
   if (options.cave === "off") {
     if (planPresent) {
       throw new Error(

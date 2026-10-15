@@ -43,6 +43,10 @@ Versioning policy and what counts as breaking: [docs/RELEASING.md](docs/RELEASIN
 
 ### Fixed
 
+- `@caveman-ai/agent`: a `cave_retrieve` result is no longer compressed again
+  by the plan, so the model gets the detail it asked for. The coding plan's
+  reasoning budget is run-wide 4,000,000 tokens (was 64,000, which a long run
+  passes and which then stopped the run).
 - `@caveman-ai/agent` compaction (budgeted too) on a real provider payload: the
   request after a compaction opens a new cache epoch. The prefix guard used to
   "restore" it to the pre-compaction messages, so the summary never reached
@@ -61,6 +65,13 @@ Versioning policy and what counts as breaking: [docs/RELEASING.md](docs/RELEASIN
 
 ### Added
 
+- `cave: "local"` (runs and coding sessions): apply the efficiency plan in
+  process with the local `caveman-engine` and no gateway. Tool results and
+  history are compressed with recovery through `cave_retrieve`; the run still
+  reports `mode: "observe-only"` because no gateway measured it. A coding
+  session in `local` mode stays optimized instead of degrading.
+- Keep (trim-1): plan transforms pass the newest user message as the engine's
+  `--query`, so query-aware line selection runs. Without a query it never did.
 - `run({ turnRetry })`: Pi's turn retry. A transient provider error turn,
   mid-stream or before it, is dropped from the context and the loop continues
   after 2 s, 4 s, 8 s (3 retries, capped at 60 s); a success starts a fresh

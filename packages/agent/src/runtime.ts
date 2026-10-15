@@ -291,8 +291,10 @@ export interface RunResult<TOutput = unknown> {
    * or `cave: "off"`, or the model's provider is not one the gateway proxies
    * (only anthropic, openai, and google are). A mixed graph reports
    * `observe-only`; the label under-claims rather than averaging, because the
-   * gateway measured nothing about the calls that bypassed it. Local results are
-   * estimates in both modes; no provider savings claim is made.
+   * gateway measured nothing about the calls that bypassed it. `cave: "local"`
+   * applies its transforms in process and still reports `observe-only`; they
+   * show in `transformTrace`. Local results are estimates in both modes; no
+   * provider savings claim is made.
    */
   mode: "optimized" | "observe-only";
   provider: string;
@@ -763,8 +765,10 @@ export interface RunOptions {
    * `RunResult.mode: "observe-only"`. `off` never contacts or starts the
    * gateway. A run carrying a Cave Build lock or candidate plan never degrades
    * silently — it fails with `cave_gateway_required_for_locked_plan` instead.
+   * `local` never contacts the gateway but still applies a plan in process with
+   * the local `caveman-engine`: transforms and recovery, no gateway telemetry.
    */
-  cave?: "auto" | "off";
+  cave?: "auto" | "off" | "local";
   /**
    * Best-effort local spend cap for this run, in USD at public catalog list
    * prices. It is not financial enforcement: no provider invoice, no
@@ -4566,6 +4570,9 @@ function setConversationText(
   if (content?.type === "text") content.text = replacement;
 }
 
+/** Bound on the Keep query passed on the engine's argv. */
+const KEEP_QUERY_CHARS = 2_000;
+
 async function transformConversationContext(
   messages: AgentMessage[],
   currentPromptIndex: number,
@@ -4578,9 +4585,15 @@ async function transformConversationContext(
 ): Promise<AgentMessage[]> {
   if (!plan) return messages;
   const descriptors = conversationTextSegments(messages, currentPromptIndex);
+  // The current ask: the newest user message, so Keep trims toward it.
+  const ask = messages.findLast((message) => message.role === "user");
+  const query = (typeof ask?.content === "string" ? ask.content : Array.isArray(ask?.content)
+    ? ask.content.map((part) => part.type === "text" ? part.text : "").join("\n") : "").slice(0, KEEP_QUERY_CHARS);
   const output = structuredClone(messages) as AgentMessage[];
   for (const descriptor of descriptors) {
     if (descriptor.text.startsWith("<cave-compressed ")) continue;
+    // A recovery result is the detail the model asked for: never compress it again.
+    if ((messages[descriptor.messageIndex] as { toolName?: unknown }).toolName === "cave_retrieve") continue;
     const routes = plan.segment_routes.filter((route) =>
       route.segment_kind === descriptor.kind &&
       (route.segment_id === undefined || route.segment_id === descriptor.id));
@@ -4609,7 +4622,7 @@ async function transformConversationContext(
     }, {
       ...plan,
       segment_routes: [routes[0]!],
-    }, engineBin, signal);
+    }, engineBin, signal, query);
     mergeAppliedPlan(applied, dynamic, plan);
     const replacementBody = dynamic.bodies.get(segment.bodyHandle);
     if (!replacementBody || bytesEqual(replacementBody, body)) continue;
@@ -4764,6 +4777,7 @@ async function applyEfficiencyPlan(
   plan: CavePlan | undefined,
   engineBin: string | undefined,
   signal?: AbortSignal,
+  query?: string,
 ): Promise<AppliedPlan> {
   const bodies = new Map(lowered.bodies);
   if (!plan || plan.segment_routes.length === 0) {
@@ -4829,7 +4843,7 @@ async function applyEfficiencyPlan(
         continue;
       }
       try {
-        const transformed = await engineCompress(original, engineBin, engineContentType(route.transform_id), signal);
+        const transformed = await engineCompress(original, engineBin, engineContentType(route.transform_id), signal, query);
         if (!transformed.handle) {
           trace.push({
             segmentKind: segment.kind,
@@ -4923,8 +4937,11 @@ async function engineCompress(
   engineBin: string | undefined,
   contentType = "text",
   signal?: AbortSignal,
+  query?: string,
 ): Promise<{ output: Uint8Array; handle?: string; tokensBefore?: number; tokensAfter?: number }> {
-  const result = await runEngine(engineBin, ["compress", "--type", contentType], input, signal);
+  // A query turns on Keep (trim-1): the engine keeps the lines relevant to the ask.
+  const result = await runEngine(engineBin, ["compress", "--type", contentType,
+    ...(query === undefined || query.trim() === "" ? [] : ["--query", query])], input, signal);
   const lastLine = result.stderr.trim().split("\n").pop() ?? "{}";
   const report = JSON.parse(lastLine) as {
     recovery_handle?: unknown;

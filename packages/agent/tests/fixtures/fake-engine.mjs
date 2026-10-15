@@ -6,6 +6,7 @@ import { resolve } from "node:path";
 const [command, handle, contentType] = process.argv.slice(2);
 const store = process.env.CAVE_FAKE_ENGINE_STORE;
 if (!store) throw new Error("CAVE_FAKE_ENGINE_STORE missing");
+await writeFile(resolve(store, "argv.jsonl"), `${JSON.stringify(process.argv.slice(2))}\n`, { flag: "a" });
 
 if (command === "compress") {
   const chunks = [];

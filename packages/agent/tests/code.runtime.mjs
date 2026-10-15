@@ -605,6 +605,64 @@ test("bash cannot read the framework's account/provider credentials", async () =
   });
 });
 
+test("a local session compresses tool results with the engine and no gateway, keyed to the ask", async () => {
+  await withWorkspace(async (workspace) => {
+    const body = Array.from(
+      { length: 240 },
+      (_, index) => `line ${index}: the quick brown fox jumps over the lazy dog repeatedly`,
+    ).join("\n");
+    await writeFile(resolve(workspace, "big.txt"), body, "utf8");
+    const argvLog = resolve(process.env.CAVE_FAKE_ENGINE_STORE, "argv.jsonl");
+    const codingAgent = createCodingAgent({ workspace, model: "anthropic/faux-1" });
+    // No gateway, nothing probed: a gateway fetch would fail the test.
+    const session = await startCodingSession(codingAgent, {
+      cave: "local",
+      engineBin: FAKE_ENGINE,
+      fetch: async () => { throw new Error("local mode must not contact the gateway"); },
+    });
+    assert.equal(session.mode, "optimized");
+    assert.deepEqual(session.notices, []);
+    const faux = fauxAnthropic();
+    const model = { ...faux.getModel(), api: "anthropic-messages", provider: "anthropic" };
+    const seen = [];
+    faux.setResponses([
+      fauxAssistantMessage(fauxToolCall("read_file", { path: "big.txt" }, { id: "read-1" })),
+      fauxAssistantMessage(fauxToolCall("read_file", { path: "big.txt" }, { id: "read-2" })),
+      (context) => {
+        const handle = JSON.stringify(context.messages).match(/recovery_handle=\\"(ccr_[0-9a-f]+)\\"/)[1];
+        return fauxAssistantMessage(fauxToolCall("cave_retrieve", { recovery_handle: handle }, { id: "get-1" }));
+      },
+      fauxAssistantMessage("big.txt is a repeated pangram"),
+    ]);
+    const turn = await runCodingTurn(session, "which line mentions the lazy dog?", {
+      model,
+      models: payloadModels(faux, seen),
+      providerPayloadContract: "pi-on-payload-v1",
+    });
+    // Transforms ran in process; with no gateway telemetry the label stays observe-only.
+    assert.equal(turn.bill.mode, "observe-only");
+    assert.deepEqual(turn.bill.transformFailures, []);
+    assert.equal(turn.bill.recoveryResolved, true);
+    assert.equal(turn.bill.transformIDs.includes("caveman.engine.terminal.v1"), true);
+    assert.match(JSON.stringify(seen[1]), /cave-compressed/);
+    // The compressed result is reused byte for byte on the next call.
+    const first = seen[1].find((message) => message.role === "toolResult");
+    assert.deepEqual(seen[2].find((message) => message.role === "toolResult"), first);
+    // The recovered original reaches the model as it is, never compressed again.
+    const recovered = seen[3].find((message) => message.role === "toolResult" && message.toolName === "cave_retrieve");
+    assert.match(JSON.stringify(recovered), /line 239: the quick brown fox/);
+    assert.doesNotMatch(JSON.stringify(recovered), /cave-compressed/);
+    // Keep (trim-1) gets the current ask as its query.
+    const calls = (await readFile(argvLog, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+    const compress = calls.filter((argv) => argv[0] === "compress");
+    assert.equal(compress.length > 0, true);
+    for (const argv of compress) {
+      assert.deepEqual(argv.slice(argv.indexOf("--query"), argv.indexOf("--query") + 2),
+        ["--query", "which line mentions the lazy dog?"]);
+    }
+  });
+});
+
 test("tools refuse to leave the workspace", async () => {
   await withWorkspace(async (workspace) => {
     const codingAgent = createCodingAgent({ workspace, model: "anthropic/faux-1" });

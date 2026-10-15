@@ -280,7 +280,7 @@ export function defaultCodingPlan(modelID: string, namespace: string): CavePlan 
       memory: 8_000,
       history: 4_000_000,
       results_artifacts: 4_000_000,
-      reasoning: 64_000,
+      reasoning: 4_000_000, // run-wide, not per call: a long sol run reasons far past 64k
       output: 512_000,
       retry_cascade_reserve: RETRY_CASCADE_RESERVE,
     },
@@ -626,7 +626,7 @@ export type SessionMode = "optimized" | "observe-only";
 
 export interface CodingSessionOptions {
   conversation?: ConversationState;
-  cave?: "auto" | "off";
+  cave?: "auto" | "off" | "local"; // local: the coding plan with the local engine, no gateway
   gatewayURL?: string;
   engineBin?: string;
   workflow?: string;
@@ -791,7 +791,7 @@ export async function startCodingSession(
     turns: [],
     proofShown: false,
   };
-  if (!route.useGateway) degrade(session);
+  if (!route.useGateway && options.cave !== "local") degrade(session);
   return session;
 }
 
