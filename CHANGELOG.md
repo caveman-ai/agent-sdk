@@ -43,6 +43,14 @@ Versioning policy and what counts as breaking: [docs/RELEASING.md](docs/RELEASIN
 
 ### Fixed
 
+- `@caveman-ai/agent` plan runs: a segment the engine declined (too small to
+  shrink) is remembered like a compressed one. It used to be re-sent to the
+  engine on every request, so engine calls and the transform trace grew with
+  the square of the run's length (2,555 engine calls for a 70-turn run, now
+  140), and the trace hit its 64-entry limit after about 12 turns, which ended
+  the run. The `x-cave-transform-trace` header is built only for the gateway,
+  and an error turn no longer counts as missing reasoning usage (that masked
+  the real error behind `cave_reasoning_usage_unavailable`).
 - `@caveman-ai/agent`: a `cave_retrieve` result is no longer compressed again
   by the plan, so the model gets the detail it asked for. The coding plan's
   reasoning budget is run-wide 4,000,000 tokens (was 64,000, which a long run

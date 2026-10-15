@@ -2948,8 +2948,9 @@ async function* streamAgentInternal(
         !((message.stopReason === "error" || message.stopReason === "aborted") &&
           budgetReservation === undefined && !carriedUsage && turnRetry?.retryable(message) !== true);
       try {
+        // An error turn reports no usage at all; that is not missing reasoning detail.
         if ((pendingCall?.reasoning ?? definition.reasoning) !== "off" && callModel.reasoning === true &&
-            message.usage.reasoning === undefined) {
+            message.usage.reasoning === undefined && message.stopReason !== "error" && message.stopReason !== "aborted") {
           reasoningUsageUnavailable = true;
         }
         const usage = validateProviderUsage({
@@ -3292,7 +3293,9 @@ async function* streamAgentInternal(
         throw spendFailure;
       }
       pendingSpendReservations.push(spendReservations);
-      const transformTrace = serializeTransformTrace(appliedPlan.trace);
+      // A gateway header, bounded for the gateway: a local run never sends it, so
+      // a long local run is not stopped by its 64-entry limit.
+      const transformTrace = headers === undefined ? "" : serializeTransformTrace(appliedPlan.trace);
       const requestHeaders = mergeHeaders(
         streamOptions?.headers,
         headers === undefined ? {} : {
@@ -4609,8 +4612,11 @@ async function transformConversationContext(
       kind: descriptor.kind,
       body,
     });
+    // Decided on an earlier request, kept or declined: one engine call per segment
+    // per run, not one per segment per request.
     const existing = applied.bodies.get(segment.bodyHandle);
-    if (existing && !bytesEqual(existing, body)) {
+    if (existing) {
+      if (bytesEqual(existing, body)) continue;
       const replacement = new TextDecoder().decode(existing);
       setConversationText(output, descriptor, replacement);
       originals.set(replacement, descriptor.text);

@@ -12,6 +12,12 @@ if (command === "compress") {
   const chunks = [];
   for await (const chunk of process.stdin) chunks.push(chunk);
   const input = Buffer.concat(chunks);
+  // Like the real engine, a tiny input is declined: unchanged, no recovery handle.
+  if (input.length < 16) {
+    process.stdout.write(input);
+    process.stderr.write(`${JSON.stringify({ method: "none", ratio: 0 })}\n`);
+    process.exit(0);
+  }
   const digest = createHash("sha256").update(input).digest("hex");
   const recoveryHandle = `ccr_${digest}`;
   await writeFile(resolve(store, recoveryHandle), input);

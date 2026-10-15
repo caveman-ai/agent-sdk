@@ -663,6 +663,34 @@ test("a local session compresses tool results with the engine and no gateway, ke
   });
 });
 
+test("a long local run is not stopped by the gateway trace header's 64-entry limit", async () => {
+  await withWorkspace(async (workspace) => {
+    const codingAgent = createCodingAgent({ workspace, model: "anthropic/faux-1" });
+    const session = await startCodingSession(codingAgent, { cave: "local", engineBin: FAKE_ENGINE });
+    const faux = fauxAnthropic();
+    const model = { ...faux.getModel(), api: "anthropic-messages", provider: "anthropic" };
+    faux.setResponses([
+      ...Array.from({ length: 70 }, (_, index) =>
+        // Writes change state, so the no-progress breaker stays out of it.
+        // A short text per turn: a history segment the engine cannot shrink.
+        fauxAssistantMessage([{ type: "text", text: `file ${index}` },
+          fauxToolCall("write_file", { path: `out-${index}.txt`, content: "x".repeat(400) }, { id: `write-${index}` })])),
+      fauxAssistantMessage("wrote seventy files"),
+    ]);
+    const turn = await runCodingTurn(session, "write seventy files", {
+      model,
+      models: payloadModels(faux),
+      providerPayloadContract: "pi-on-payload-v1",
+    });
+    assert.equal(turn.text, "wrote seventy files");
+    assert.equal(turn.bill.transformIDs.includes("caveman.engine.terminal.v1"), true);
+    // Each segment is decided once per run, kept or not: no engine call per segment per request.
+    const argv = (await readFile(resolve(process.env.CAVE_FAKE_ENGINE_STORE, "argv.jsonl"), "utf8")).trim().split("\n");
+    // 70 tool results + 70 short texts; per request instead it was 2,555.
+    assert.equal(argv.filter((line) => line.startsWith('["compress"')).length, 140);
+  });
+});
+
 test("tools refuse to leave the workspace", async () => {
   await withWorkspace(async (workspace) => {
     const codingAgent = createCodingAgent({ workspace, model: "anthropic/faux-1" });
