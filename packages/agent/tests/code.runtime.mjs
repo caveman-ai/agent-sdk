@@ -117,12 +117,13 @@ function payloadStreamFn(faux, seen = []) {
   };
 }
 
-function payloadModels(faux, seen = []) {
+function payloadModels(faux, seen = [], streamOptions = []) {
   const models = createModels();
   models.setProvider({
     ...faux.provider,
     streamSimple(selected, context, options) {
       seen.push(structuredClone(context.messages));
+      streamOptions.push({ reasoning: options?.reasoning });
       options.onPayload({
         system: getCurrentSystemPrompt(context.messages),
         tools: getCurrentTools(context.messages).map((item) => ({
@@ -693,6 +694,34 @@ test("a capped tool output reaches the engine whole, and the cap applies to what
     assert.equal(Buffer.byteLength(result) <= 2_048 + 256, true);
     // The transcript keeps the capped tool output, which a cache-drift fallback restores.
     assert.equal(turn.bill.transformFailures.length, 0);
+  });
+});
+
+test("a local plan run lets the model router set each call's reasoning", async () => {
+  await withWorkspace(async (workspace) => {
+    const codingAgent = createCodingAgent({ workspace, model: "anthropic/faux-1" });
+    const locked = [];
+    const session = await startCodingSession(codingAgent, {
+      cave: "local",
+      engineBin: FAKE_ENGINE,
+      modelRouter: (input) => {
+        locked.push(input.reasoningLocked);
+        return { model: input.currentModel, reason: "test", signals: [], reasoning: "xhigh" };
+      },
+    });
+    const faux = fauxAnthropic();
+    const model = { ...faux.getModel(), api: "anthropic-messages", provider: "anthropic" };
+    const streamOptions = [];
+    faux.setResponses([fauxAssistantMessage("done")]);
+    const turn = await runCodingTurn(session, "think hard", {
+      model,
+      models: payloadModels(faux, [], streamOptions),
+      providerPayloadContract: "pi-on-payload-v1",
+    });
+    assert.equal(turn.text, "done");
+    // No gateway priced the plan, so nothing locks the level: the router's level is sent.
+    assert.deepEqual(locked, [false]);
+    assert.deepEqual(streamOptions.map((options) => options.reasoning), ["xhigh"]);
   });
 });
 

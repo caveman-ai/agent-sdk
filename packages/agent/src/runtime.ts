@@ -3069,13 +3069,14 @@ async function* streamAgentInternal(
         hasImages,
         toolErrorStreak,
         repeatedToolCallStreak,
-        reasoningLocked: efficiencyPlan !== undefined,
+        reasoningLocked: efficiencyPlan !== undefined && gatewayActive,
         ...(previousRouteUsage === undefined ? {} : { previousUsage: previousRouteUsage }),
       });
       validateModelRouteDecision(decision);
       // A locked or candidate plan fixed the reasoning level before the run;
-      // a router may not vary it per call underneath that plan.
-      if (efficiencyPlan !== undefined && decision.reasoning !== undefined &&
+      // a router may not vary it per call underneath that plan. A plan applied
+      // locally was priced by no one, so a local run's router may.
+      if (efficiencyPlan !== undefined && gatewayActive && decision.reasoning !== undefined &&
           decision.reasoning !== definition.reasoning) {
         throw new Error("cave_model_route_reasoning_locked");
       }

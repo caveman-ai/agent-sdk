@@ -43,6 +43,12 @@ Versioning policy and what counts as breaking: [docs/RELEASING.md](docs/RELEASIN
 
 ### Fixed
 
+- `@caveman-ai/agent` model routers on a local plan run (`cave: "local"`, no
+  gateway) may set each call's `reasoning`. The lock that rejected a routed
+  reasoning change (`cave_model_route_reasoning_locked`) exists because a
+  gateway prices a plan at one level before the run; a plan applied locally was
+  priced by no one, so the engine being on no longer pins effort.
+  `ModelCallRouteInput.reasoningLocked` is true only on gateway plan runs.
 - `@caveman-ai/agent` coding tools on a plan run that compresses tool results:
   `read_file`, `grep` and `bash` used to cut their output to the tool cap
   (24 KB for bash) before the engine saw it, so compression and Keep read only
