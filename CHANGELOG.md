@@ -58,7 +58,9 @@ Versioning policy and what counts as breaking: [docs/RELEASING.md](docs/RELEASIN
   The transcript still holds the capped output, which is what a cache-drift
   fallback restores, and savings are counted against the capped output, not
   bytes the cap would have dropped anyway. Runs without the engine are
-  unchanged.
+  unchanged. Because an original can now run to 1 MiB, one `cave_retrieve`
+  returns at most 32 KiB (the inline tool-result ceiling) and says to pass a
+  narrower query for the rest.
 - `@caveman-ai/agent` plan runs: a segment the engine declined (too small to
   shrink) is remembered like a compressed one. It used to be re-sent to the
   engine on every request, so engine calls and the transform trace grew with

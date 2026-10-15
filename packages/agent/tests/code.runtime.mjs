@@ -672,9 +672,13 @@ test("a capped tool output reaches the engine whole, and the cap applies to what
     const faux = fauxAnthropic();
     const model = { ...faux.getModel(), api: "anthropic-messages", provider: "anthropic" };
     const seen = [];
-    const command = `node -e 'process.stdout.write("HEAD_SENTINEL FAKE_ENGINE_HALF\\n" + "x".repeat(20000) + "\\nTAIL_SENTINEL\\n")'`;
+    const command = `node -e 'process.stdout.write("HEAD_SENTINEL FAKE_ENGINE_HALF\\n" + "x".repeat(40000) + "\\nTAIL_SENTINEL\\n")'`;
     faux.setResponses([
       fauxAssistantMessage(fauxToolCall("bash", { command }, { id: "bash-1" })),
+      (context) => {
+        const handle = JSON.stringify(context.messages).match(/recovery_handle=\\"(ccr_[0-9a-f]+)\\"/)[1];
+        return fauxAssistantMessage(fauxToolCall("cave_retrieve", { recovery_handle: handle }, { id: "get-1" }));
+      },
       fauxAssistantMessage("done"),
     ]);
     const turn = await runCodingTurn(session, "why does the head say what it says?", {
@@ -690,10 +694,14 @@ test("a capped tool output reaches the engine whole, and the cap applies to what
     // What reaches the model is the compression, capped at the tool's cap, after the exit line.
     const result = seen[1].find((message) => message.role === "toolResult").content[0].text;
     assert.match(result, /^exit 0\n<cave-compressed /);
-    assert.match(result, /compressed output capped from 10\d{3} bytes/);
+    assert.match(result, /compressed output capped from 20\d{3} bytes/);
     assert.equal(Buffer.byteLength(result) <= 2_048 + 256, true);
-    // The transcript keeps the capped tool output, which a cache-drift fallback restores.
     assert.equal(turn.bill.transformFailures.length, 0);
+    // Recovering the whole original returns at most the 32 KiB inline ceiling, and says so.
+    const recovered = seen[2].find((message) => message.toolName === "cave_retrieve").content[0].text;
+    assert.match(recovered, /^HEAD_SENTINEL/);
+    assert.match(recovered, /cave_retrieve: first part of 40046 bytes; pass a narrower query/);
+    assert.equal(Buffer.byteLength(recovered) <= 32_768, true);
   });
 });
 

@@ -5245,8 +5245,12 @@ function recoveryTool(
       for (const item of trace ?? []) {
         if (item.recoveryHandle === input.recovery_handle) item.recoveryUsed = true;
       }
+      // A capped tool's original runs to 1 MiB; one retrieval returns at most
+      // the 32 KiB inline tool-result ceiling, and says how to get the rest.
+      const text = new TextDecoder().decode(value);
       return {
-        content: [{ type: "text", text: new TextDecoder().decode(value) }],
+        content: [{ type: "text", text: value.byteLength <= 32_768 ? text : capUtf8(text, 32_768, "head",
+          `\n[cave_retrieve: first part of ${value.byteLength} bytes; pass a narrower query for the rest]`) }],
         details: { recovery: input.query ? "query" : "exact" },
       };
     },
