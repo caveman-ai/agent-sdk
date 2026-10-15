@@ -1240,8 +1240,11 @@ type InternalExecutionContext = {
   readonly durableTools?: DurableToolCoordinator;
 };
 
-/** A capped tool result's whole output, keyed by tool call; `capped` is what the transcript holds. */
-type DeferredToolOutput = FullToolOutput & { readonly capped: string };
+/**
+ * A capped tool result, keyed by tool call: its whole output until the engine
+ * has decided it once, then the decision (the replacement, or null to keep it).
+ */
+type DeferredToolOutput = { readonly capped: string; output?: FullToolOutput; decision?: string | null };
 
 type AppliedPlan = {
   bodies: Map<string, Uint8Array>;
@@ -3069,14 +3072,14 @@ async function* streamAgentInternal(
         hasImages,
         toolErrorStreak,
         repeatedToolCallStreak,
-        reasoningLocked: efficiencyPlan !== undefined && gatewayActive,
+        reasoningLocked: efficiencyPlan !== undefined && options.cave !== "local",
         ...(previousRouteUsage === undefined ? {} : { previousUsage: previousRouteUsage }),
       });
       validateModelRouteDecision(decision);
       // A locked or candidate plan fixed the reasoning level before the run;
       // a router may not vary it per call underneath that plan. A plan applied
       // locally was priced by no one, so a local run's router may.
-      if (efficiencyPlan !== undefined && gatewayActive && decision.reasoning !== undefined &&
+      if (efficiencyPlan !== undefined && options.cave !== "local" && decision.reasoning !== undefined &&
           decision.reasoning !== definition.reasoning) {
         throw new Error("cave_model_route_reasoning_locked");
       }
@@ -4599,8 +4602,9 @@ async function transformConversationContext(
 ): Promise<AgentMessage[]> {
   if (!plan) return messages;
   const descriptors = conversationTextSegments(messages, currentPromptIndex);
-  // The current ask: the newest user message, so Keep trims toward it.
-  const ask = messages.findLast((message) => message.role === "user");
+  // The current ask: the newest user message (not a compaction summary), so Keep trims toward it.
+  const ask = messages.findLast((message) => message.role === "user" &&
+    (message as { caveContextSummary?: unknown }).caveContextSummary !== true);
   const query = (typeof ask?.content === "string" ? ask.content : Array.isArray(ask?.content)
     ? ask.content.map((part) => part.type === "text" ? part.text : "").join("\n") : "").slice(0, KEEP_QUERY_CHARS);
   const output = structuredClone(messages) as AgentMessage[];
@@ -4617,25 +4621,35 @@ async function transformConversationContext(
       if (!applied.failures.includes(failure)) applied.failures.push(failure);
       continue;
     }
-    // A capped tool result whose tool handed over its whole output: compress
-    // all of it and cap what comes back. The capped text stays the transcript
-    // and is what a cache-drift fallback restores.
-    const toolCallId = (messages[descriptor.messageIndex] as { toolCallId?: unknown }).toolCallId;
-    const deferred = typeof toolCallId === "string" ? deferredOutputs.get(toolCallId) : undefined;
-    const whole = deferred?.capped === descriptor.text ? deferred : undefined;
-    const source = whole?.text ?? descriptor.text;
-    const body = new TextEncoder().encode(source);
+    const body = new TextEncoder().encode(descriptor.text);
     const segment = appendRuntimeContextSegment(lowered, {
-      id: whole === undefined ? descriptor.id : runtimeSegmentId(descriptor.kind, source),
+      id: descriptor.id,
       kind: descriptor.kind,
       body,
     });
+    // A capped tool result whose tool handed over its whole output: the engine
+    // reads all of it, once per tool call, and its answer is capped. The capped
+    // text stays the transcript, the bill and the cache-drift restore form.
+    const toolCallId = (messages[descriptor.messageIndex] as { toolCallId?: unknown }).toolCallId;
+    const deferred = typeof toolCallId === "string" ? deferredOutputs.get(toolCallId) : undefined;
+    if (deferred?.capped === descriptor.text) {
+      if (deferred.decision === undefined && deferred.output !== undefined) {
+        deferred.decision = await compressWholeOutput(deferred.output, segment, plan, routes[0]!, engineBin, applied,
+          signal, query);
+        delete deferred.output;
+      }
+      if (typeof deferred.decision === "string") {
+        setConversationText(output, descriptor, deferred.decision);
+        originals.set(deferred.decision, descriptor.text);
+      }
+      continue;
+    }
     // Decided on an earlier request, kept or declined: one engine call per segment
     // per run, not one per segment per request.
     const existing = applied.bodies.get(segment.bodyHandle);
     if (existing) {
       if (bytesEqual(existing, body)) continue;
-      const replacement = `${whole?.prefix ?? ""}${new TextDecoder().decode(existing)}`;
+      const replacement = new TextDecoder().decode(existing);
       setConversationText(output, descriptor, replacement);
       originals.set(replacement, descriptor.text);
       continue;
@@ -4646,21 +4660,38 @@ async function transformConversationContext(
     }, {
       ...plan,
       segment_routes: [routes[0]!],
-    }, engineBin, signal, query, whole);
-    // Savings count against the capped output the model would have read, not
-    // bytes the cap drops anyway.
-    for (const item of whole === undefined ? [] : dynamic.trace) {
-      if (item.outcome === "applied") item.beforeTokens = Math.ceil(new TextEncoder().encode(descriptor.text).byteLength / 4);
-    }
+    }, engineBin, signal, query);
     mergeAppliedPlan(applied, dynamic, plan);
     const replacementBody = dynamic.bodies.get(segment.bodyHandle);
     if (!replacementBody || bytesEqual(replacementBody, body)) continue;
-    const replacement = `${whole?.prefix ?? ""}${new TextDecoder().decode(replacementBody)}`;
+    const replacement = new TextDecoder().decode(replacementBody);
     applied.bodies.set(segment.bodyHandle, replacementBody);
     setConversationText(output, descriptor, replacement);
     originals.set(replacement, descriptor.text);
   }
   return output;
+}
+
+/**
+ * The engine reads a capped tool's whole output and its answer is capped; the
+ * replacement for the capped text, or null to keep it. Trace and bill count the
+ * capped text the model would otherwise read, not bytes the cap drops anyway.
+ */
+async function compressWholeOutput(whole: FullToolOutput, capped: ReturnType<typeof appendRuntimeContextSegment>,
+  plan: CavePlan, route: CavePlan["segment_routes"][number], engineBin: string | undefined, applied: AppliedPlan,
+  signal: AbortSignal | undefined, query: string): Promise<string | null> {
+  const body = new TextEncoder().encode(whole.text);
+  const scratch: LoweredContext = { ir: { schemaVersion: 1, segments: [] }, bodies: new Map() };
+  const segment = {
+    ...appendRuntimeContextSegment(scratch, { id: runtimeSegmentId("tool_result", whole.text), kind: "tool_result", body }),
+    tokenCount: capped.tokenCount,
+  };
+  const dynamic = await applyEfficiencyPlan({ ir: { schemaVersion: 1, segments: [segment] }, bodies: scratch.bodies },
+    { ...plan, segment_routes: [route] }, engineBin, signal, query, whole);
+  const replacement = dynamic.bodies.get(segment.bodyHandle);
+  mergeAppliedPlan(applied, { ...dynamic, bodies: new Map() }, plan);
+  return replacement === undefined || bytesEqual(replacement, body)
+    ? null : `${whole.prefix}${new TextDecoder().decode(replacement)}`;
 }
 
 /** Runtime-only live-zone injection. Never enters append-only conversation state. */
@@ -6311,7 +6342,7 @@ function toPiTool(
         : definition.artifact.maxInlineTokens * 4;
       if (deferredOutputs !== undefined) {
         if (raw.byteLength > 16 * 1024 * 1024) throw new Error("cave_tool_result_limit");
-        if (fullOutput !== undefined && text !== undefined) deferredOutputs.set(toolCallId, { ...fullOutput, capped: text });
+        if (fullOutput?.capped === text) deferredOutputs.set(toolCallId, { capped: text, output: fullOutput });
         return {
           content: [{ type: "text", text: text ?? "null" }],
           details: { effect: definition.effect, resultPolicy: definition.result, lockedRoutePending: true },

@@ -43,20 +43,24 @@ Versioning policy and what counts as breaking: [docs/RELEASING.md](docs/RELEASIN
 
 ### Fixed
 
-- `@caveman-ai/agent` model routers on a local plan run (`cave: "local"`, no
-  gateway) may set each call's `reasoning`. The lock that rejected a routed
-  reasoning change (`cave_model_route_reasoning_locked`) exists because a
-  gateway prices a plan at one level before the run; a plan applied locally was
-  priced by no one, so the engine being on no longer pins effort.
-  `ModelCallRouteInput.reasoningLocked` is true only on gateway plan runs.
+- `@caveman-ai/agent` model routers on a local plan run (`cave: "local"`) may
+  set each call's `reasoning`. The lock that rejected a routed reasoning change
+  (`cave_model_route_reasoning_locked`) exists because a gateway prices a plan
+  at one level before the run; a plan applied locally was priced by no one, so
+  the engine being on no longer pins effort there. Every other plan run keeps
+  the lock, and `ModelCallRouteInput.reasoningLocked` says which. A locked Cave
+  Build is refused in local mode (`cave_gateway_required_for_locked_plan`): its
+  evidence is the gateway's. Keep's query skips a compaction summary and uses
+  the newest real user message.
 - `@caveman-ai/agent` coding tools on a plan run that compresses tool results:
   `read_file`, `grep` and `bash` used to cut their output to the tool cap
   (24 KB for bash) before the engine saw it, so compression and Keep read only
   the tail of a long log and never its head. A capped tool now hands its whole
-  output (up to 1 MiB) to the runtime, the engine compresses all of it with the
-  ask as Keep's query, and the tool's cap applies to what the engine returns.
-  The transcript still holds the capped output, which is what a cache-drift
-  fallback restores, and savings are counted against the capped output, not
+  output (up to 1 MiB) to the runtime, the engine compresses all of it once per
+  tool call with the ask as Keep's query, and the tool's cap applies to what the
+  engine returns; the whole text is then released. The transcript still holds
+  the capped output, which is what a cache-drift fallback restores, and the
+  context bill, the plan budgets and the savings count the capped output, not
   bytes the cap would have dropped anyway. Runs without the engine are
   unchanged. Because an original can now run to 1 MiB, one `cave_retrieve`
   returns at most 32 KiB (the inline tool-result ceiling) and says to pass a

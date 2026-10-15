@@ -160,6 +160,8 @@ export interface FullToolOutput {
   /** The tool's cap for `text`, applied after compression. */
   readonly maxBytes: number;
   readonly direction: "head" | "tail";
+  /** What the tool returns instead; the runtime substitutes only a result that is exactly this. */
+  readonly capped: string;
 }
 
 export function reportFullToolOutput(context: ToolExecutionContext | undefined, output: FullToolOutput): void {

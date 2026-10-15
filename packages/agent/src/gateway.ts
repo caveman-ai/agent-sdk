@@ -80,6 +80,8 @@ export async function resolveCaveRoute(
   gatewayURL: string,
   options: {
     cave?: "auto" | "off" | "local";
+    /** A locked Cave Build's evidence is the gateway's, so it never runs locally. */
+    lockedBuild?: unknown;
     ensureRuntime?: boolean;
     fetch?: typeof globalThis.fetch;
     caveRoute?: ResolvedCaveRoute;
@@ -101,7 +103,12 @@ export async function resolveCaveRoute(
     };
   }
   // `local` applies the plan in process with the local engine; nothing to route.
-  if (options.cave === "local") return { useGateway: false, providerBilling: "unknown" };
+  if (options.cave === "local") {
+    if (options.lockedBuild !== undefined) {
+      throw new Error("cave_gateway_required_for_locked_plan: a locked Cave Build routes through the Caveman gateway");
+    }
+    return { useGateway: false, providerBilling: "unknown" };
+  }
   if (options.cave === "off") {
     if (planPresent) {
       throw new Error(

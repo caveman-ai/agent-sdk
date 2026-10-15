@@ -697,6 +697,9 @@ test("a capped tool output reaches the engine whole, and the cap applies to what
     assert.match(result, /compressed output capped from 20\d{3} bytes/);
     assert.equal(Buffer.byteLength(result) <= 2_048 + 256, true);
     assert.equal(turn.bill.transformFailures.length, 0);
+    // The bill and the trace count the capped output the model would otherwise read, not the whole.
+    assert.equal(turn.bill.contextBill.tool_result <= 600, true);
+    assert.equal(turn.bill.transformedTokensBefore <= 600, true);
     // Recovering the whole original returns at most the 32 KiB inline ceiling, and says so.
     const recovered = seen[2].find((message) => message.toolName === "cave_retrieve").content[0].text;
     assert.match(recovered, /^HEAD_SENTINEL/);
@@ -730,6 +733,32 @@ test("a local plan run lets the model router set each call's reasoning", async (
     // No gateway priced the plan, so nothing locks the level: the router's level is sent.
     assert.deepEqual(locked, [false]);
     assert.deepEqual(streamOptions.map((options) => options.reasoning), ["xhigh"]);
+  });
+});
+
+test("a gateway plan run still pins reasoning: a router may not change it", async () => {
+  await withWorkspace(async (workspace) => {
+    const codingAgent = createCodingAgent({ workspace, model: "anthropic/faux-1" });
+    const locked = [];
+    const session = await startCodingSession(codingAgent, {
+      ensureRuntime: false,
+      engineBin: FAKE_ENGINE,
+      fetch: healthzOnly,
+      modelRouter: (input) => {
+        locked.push(input.reasoningLocked);
+        return { model: input.currentModel, reason: "test", signals: [], reasoning: "xhigh" };
+      },
+    });
+    assert.equal(session.mode, "optimized");
+    const faux = fauxAnthropic();
+    const model = { ...faux.getModel(), api: "anthropic-messages", provider: "anthropic" };
+    faux.setResponses([fauxAssistantMessage("done")]);
+    await assert.rejects(runCodingTurn(session, "think hard", {
+      model,
+      models: payloadModels(faux),
+      providerPayloadContract: "pi-on-payload-v1",
+    }), /cave_model_route_reasoning_locked/);
+    assert.deepEqual(locked, [true]);
   });
 });
 

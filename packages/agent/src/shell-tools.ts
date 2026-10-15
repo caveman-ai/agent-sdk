@@ -980,8 +980,6 @@ function capToolOutput(input: {
   const maxBytes = Math.max(1, input.maxBytes - Buffer.byteLength(prefix, "utf8"));
   const encoded = Buffer.from(input.text, "utf8");
   if (encoded.byteLength <= maxBytes && input.complete) return `${prefix}${input.text}`;
-  // A run that compresses tool results compresses all of it, then caps.
-  if (encoded.byteLength > maxBytes) reportFullToolOutput(context, { prefix, text: input.text, maxBytes, direction: input.direction });
   const handle = input.store?.put(input.label, input.text, input.complete);
   const source = input.source ?? (
     input.complete ? "captured bytes" : "captured bytes; later process output unavailable"
@@ -994,7 +992,10 @@ function capToolOutput(input: {
         : `use read_tool_output with handle ${handle}`
   );
   const marker = `\n[caveman-code: output capped from ${encoded.byteLength} ${source}; ${recovery}]`;
-  return `${prefix}${capUtf8(input.text, maxBytes, input.direction, marker)}`;
+  const capped = `${prefix}${capUtf8(input.text, maxBytes, input.direction, marker)}`;
+  // A run that compresses tool results compresses all of it, then caps.
+  if (encoded.byteLength > maxBytes) reportFullToolOutput(context, { prefix, text: input.text, maxBytes, direction: input.direction, capped });
+  return capped;
 }
 
 function firstLines(text: string, limit: number): string {
