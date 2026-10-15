@@ -43,6 +43,16 @@ Versioning policy and what counts as breaking: [docs/RELEASING.md](docs/RELEASIN
 
 ### Fixed
 
+- `@caveman-ai/agent` compressed tool results, from a measured TB4 trajectory
+  diff (engine-on runs were about half again as long; the agent re-read data in
+  pieces and retrieved fragments when Keep had cut rows it needed):
+  `read_file` results and tool outputs under 8 KiB reach the model as they are
+  (the agent asked for that exact content); the `<cave-compressed>` wrapper says
+  how many lines it kept and that `cave_retrieve` with no query returns all of
+  it; `cave_retrieve` pages the whole original 32,000 bytes at a time (`offset`)
+  instead of cutting it; and a plan run that compresses tool results adds one
+  fixed line to the system prompt explaining `<cave-compressed>`, identical on
+  every call.
 - `@caveman-ai/agent` Keep's query (the user's ask) no longer goes on the
   engine's command line, where every local user can read it with `ps`. It is
   written to a mode-0600 file in a private temporary directory, passed as

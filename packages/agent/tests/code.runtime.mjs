@@ -627,8 +627,8 @@ test("a local session compresses tool results with the engine and no gateway, ke
     const model = { ...faux.getModel(), api: "anthropic-messages", provider: "anthropic" };
     const seen = [];
     faux.setResponses([
-      fauxAssistantMessage(fauxToolCall("read_file", { path: "big.txt" }, { id: "read-1" })),
-      fauxAssistantMessage(fauxToolCall("read_file", { path: "big.txt" }, { id: "read-2" })),
+      fauxAssistantMessage(fauxToolCall("bash", { command: "cat big.txt" }, { id: "read-1" })),
+      fauxAssistantMessage(fauxToolCall("bash", { command: "cat big.txt" }, { id: "read-2" })),
       (context) => {
         const handle = JSON.stringify(context.messages).match(/recovery_handle=\\"(ccr_[0-9a-f]+)\\"/)[1];
         return fauxAssistantMessage(fauxToolCall("cave_retrieve", { recovery_handle: handle }, { id: "get-1" }));
@@ -688,6 +688,10 @@ test("a capped tool output reaches the engine whole, and the cap applies to what
         const handle = JSON.stringify(context.messages).match(/recovery_handle=\\"(ccr_[0-9a-f]+)\\"/)[1];
         return fauxAssistantMessage(fauxToolCall("cave_retrieve", { recovery_handle: handle }, { id: "get-1" }));
       },
+      (context) => {
+        const handle = JSON.stringify(context.messages).match(/recovery_handle=\\"(ccr_[0-9a-f]+)\\"/)[1];
+        return fauxAssistantMessage(fauxToolCall("cave_retrieve", { recovery_handle: handle, offset: 32_000 }, { id: "get-2" }));
+      },
       fauxAssistantMessage("done"),
     ]);
     const turn = await runCodingTurn(session, "why does the head say what it says?", {
@@ -704,16 +708,21 @@ test("a capped tool output reaches the engine whole, and the cap applies to what
     const result = seen[1].find((message) => message.role === "toolResult").content[0].text;
     assert.match(result, /^exit 0\n<cave-compressed /);
     assert.match(result, /compressed output capped from 20\d{3} bytes/);
-    assert.equal(Buffer.byteLength(result) <= 2_048 + 256, true);
+    // Over the cap only by the wrapper: its tag and the line that says what was cut.
+    assert.equal(Buffer.byteLength(result) <= 2_048 + 320, true);
     assert.equal(turn.bill.transformFailures.length, 0);
     // The bill and the trace count the capped output the model would otherwise read, not the whole.
     assert.equal(turn.bill.contextBill.tool_result <= 600, true);
     assert.equal(turn.bill.transformedTokensBefore <= 600, true);
-    // Recovering the whole original returns at most the 32 KiB inline ceiling, and says so.
+    // The marker says what was cut and how to get all of it back.
+    assert.match(result, /Kept \d+ of 3 lines for the task; cave_retrieve with this recovery_handle and no query returns all of it/);
+    // Recovering the whole original is paged under the 32 KiB inline ceiling, with the next offset.
     const recovered = seen[2].find((message) => message.toolName === "cave_retrieve").content[0].text;
     assert.match(recovered, /^HEAD_SENTINEL/);
-    assert.match(recovered, /cave_retrieve: first part of 40046 bytes; pass a narrower query/);
+    assert.match(recovered, /\[cave_retrieve: bytes 0-32000 of 40046; pass offset 32000 for the next page\]$/);
     assert.equal(Buffer.byteLength(recovered) <= 32_768, true);
+    const rest = seen[3].findLast((message) => message.toolName === "cave_retrieve").content[0].text;
+    assert.match(rest, /TAIL_SENTINEL\n\n\[cave_retrieve: bytes 32000-40046 of 40046\]$/);
   });
 });
 
@@ -782,7 +791,7 @@ test("an engine without --query-file compresses without Keep; the ask never goes
     const model = { ...faux.getModel(), api: "anthropic-messages", provider: "anthropic" };
     const seen = [];
     faux.setResponses([
-      fauxAssistantMessage(fauxToolCall("read_file", { path: "big.txt" }, { id: "read-1" })),
+      fauxAssistantMessage(fauxToolCall("bash", { command: "cat big.txt" }, { id: "read-1" })),
       fauxAssistantMessage("done"),
     ]);
     await runCodingTurn(session, "which line mentions the lazy dog?", {
@@ -795,6 +804,39 @@ test("an engine without --query-file compresses without Keep; the ask never goes
     const refused = argv.filter((line) => line.includes("--query-file")).length;
     assert.equal(refused > 0, true);
     assert.equal(argv.filter((line) => line.startsWith('["compress"')).length, 2 * refused);
+  });
+});
+
+test("file reads and short outputs reach the model as they are; the prompt explains compressed results once", async () => {
+  await withWorkspace(async (workspace) => {
+    await writeFile(resolve(workspace, "big.txt"), Array.from({ length: 240 }, (_, index) =>
+      `line ${index}: the quick brown fox jumps over the lazy dog repeatedly`).join("\n"), "utf8");
+    const codingAgent = createCodingAgent({ workspace, model: "anthropic/faux-1" });
+    const session = await startCodingSession(codingAgent, { cave: "local", engineBin: FAKE_ENGINE });
+    const faux = fauxAnthropic();
+    const model = { ...faux.getModel(), api: "anthropic-messages", provider: "anthropic" };
+    const seen = [];
+    faux.setResponses([
+      fauxAssistantMessage(fauxToolCall("read_file", { path: "big.txt" }, { id: "read-1" })),
+      fauxAssistantMessage(fauxToolCall("bash", { command: "head -c 4000 big.txt" }, { id: "short-1" })),
+      fauxAssistantMessage(fauxToolCall("bash", { command: "cat big.txt" }, { id: "long-1" })),
+      fauxAssistantMessage("done"),
+    ]);
+    await runCodingTurn(session, "which line mentions the lazy dog?", {
+      model, models: payloadModels(faux, seen), providerPayloadContract: "pi-on-payload-v1",
+    });
+    const results = Object.fromEntries(seen.at(-1).filter((message) => message.role === "toolResult")
+      .map((message) => [message.toolCallId, message.content[0].text]));
+    // The agent asked for exactly this file, or the output is short enough to read whole.
+    assert.match(results["read-1"], /^1\tline 0: the quick brown fox/);
+    assert.match(results["short-1"], /^exit 0\nline 0: the quick brown fox/);
+    assert.doesNotMatch(`${results["read-1"]}${results["short-1"]}`, /cave-compressed/);
+    assert.match(results["long-1"], /^<cave-compressed /);
+    // One fixed line explains compressed results, byte for byte the same on every call.
+    const systems = seen.map((messages) => getCurrentSystemPrompt(messages));
+    assert.equal(systems.length, 4);
+    assert.match(systems[0], /A tool result inside <cave-compressed> was shortened by Caveman/);
+    assert.equal(new Set(systems).size, 1);
   });
 });
 
@@ -866,7 +908,7 @@ test("optimized turn bills token counts from run telemetry and proves recovery",
 
     const seen = [];
     faux.setResponses([
-      fauxAssistantMessage(fauxToolCall("read_file", { path: "big.txt" }, { id: "read-1" })),
+      fauxAssistantMessage(fauxToolCall("bash", { command: "cat big.txt" }, { id: "read-1" })),
       fauxAssistantMessage("big.txt is a repeated pangram"),
     ]);
     const turn = await runCodingTurn(session, "read big.txt and summarize it", {
@@ -919,7 +961,7 @@ test("optimized turn bills token counts from run telemetry and proves recovery",
     const proof = await proveRecovery(session);
     assert.equal(proof.outcome, "recovered");
     assert.equal(proof.originalSHA256, proof.recoveredSHA256);
-    assert.match(proof.segment, /^read_file:big\.txt$/);
+    assert.match(proof.segment, /^bash:cat big\.txt$/);
     assert.match(formatRecoveryProof(proof), /round-trip OK \(sha256 match/);
   });
 });

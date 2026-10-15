@@ -164,9 +164,20 @@ export interface FullToolOutput {
   readonly capped: string;
 }
 
+/** The agent asked for this exact result (a file read, a short output): transforms leave it as it is. */
+export interface VerbatimToolResult {
+  readonly verbatim: true;
+  readonly capped: string;
+}
+
+type ToolResultSink = (report: FullToolOutput | VerbatimToolResult) => void;
+
 export function reportFullToolOutput(context: ToolExecutionContext | undefined, output: FullToolOutput): void {
-  const sink = (context as { [TOOL_FULL_OUTPUT]?: (output: FullToolOutput) => void } | undefined)?.[TOOL_FULL_OUTPUT];
-  sink?.(output);
+  (context as { [TOOL_FULL_OUTPUT]?: ToolResultSink } | undefined)?.[TOOL_FULL_OUTPUT]?.(output);
+}
+
+export function reportVerbatimToolResult(context: ToolExecutionContext | undefined, capped: string): void {
+  (context as { [TOOL_FULL_OUTPUT]?: ToolResultSink } | undefined)?.[TOOL_FULL_OUTPUT]?.({ verbatim: true, capped });
 }
 
 /** At most `maxBytes` of `text` from its head or tail, then `marker`, which counts toward it. */

@@ -38,7 +38,7 @@ import {
   runBackendProcess,
 } from "./coding-backend.js";
 import { hostShellInvocation } from "./portable-process.js";
-import { capUtf8, reportFullToolOutput, setToolScriptCompanions } from "./tool-internal.js";
+import { capUtf8, reportFullToolOutput, reportVerbatimToolResult, setToolScriptCompanions } from "./tool-internal.js";
 
 /**
  * Raw output caps, applied by each tool **before** any transform runs, so a
@@ -56,6 +56,8 @@ export const CODING_TOOL_OUTPUT_CAPS = Object.freeze({
 });
 
 const GREP_MAX_MATCHES = 200;
+/** An output this short is read whole: a run that compresses tool results leaves it as it is. */
+const VERBATIM_OUTPUT_BYTES = 8 * 1024;
 export const BASH_TIMEOUT_MS = 600_000;
 export const BASH_SESSION_MAX_SESSIONS = 8;
 export const BASH_SESSION_MAX_WAIT_MS = 30_000;
@@ -226,7 +228,9 @@ export function shellTools(options: ShellToolsOptions): ToolDefinition[] {
         ...(recoverable ? { store: storedOutputs } : {}),
         label: `read_file:${input.path}`,
         complete: true,
-      }, context);
+      });
+      // The agent asked for exactly this file and range: no compression, no Keep.
+      reportVerbatimToolResult(context, text);
       record(`read_file:${input.path}`, text);
       return text;
     },
@@ -979,7 +983,10 @@ function capToolOutput(input: {
   const prefix = input.prefix ?? "";
   const maxBytes = Math.max(1, input.maxBytes - Buffer.byteLength(prefix, "utf8"));
   const encoded = Buffer.from(input.text, "utf8");
-  if (encoded.byteLength <= maxBytes && input.complete) return `${prefix}${input.text}`;
+  if (encoded.byteLength <= maxBytes && input.complete) {
+    if (encoded.byteLength < VERBATIM_OUTPUT_BYTES) reportVerbatimToolResult(context, `${prefix}${input.text}`);
+    return `${prefix}${input.text}`;
+  }
   const handle = input.store?.put(input.label, input.text, input.complete);
   const source = input.source ?? (
     input.complete ? "captured bytes" : "captured bytes; later process output unavailable"

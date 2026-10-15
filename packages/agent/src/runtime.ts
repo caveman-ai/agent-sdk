@@ -167,6 +167,7 @@ import {
   TOOL_FULL_OUTPUT,
   type FullToolOutput,
   type SettledToolOutput,
+  type VerbatimToolResult,
 } from "./tool-internal.js";
 import {
   ProgrammaticSpeculationScope,
@@ -2409,7 +2410,12 @@ async function* streamAgentInternal(
         journalPath,
       )),
     ];
-    const originalInstructions = assembleSystemPrompt(definition, lowered);
+    // One fixed line, the same on every call, tells the model what a compressed tool result is.
+    const compressedNote = hasToolResultRoute
+      ? "\n\nA tool result inside <cave-compressed> was shortened by Caveman: it says how many lines it kept, and " +
+        "cave_retrieve with its recovery_handle and no query returns the whole original, page by page."
+      : "";
+    const originalInstructions = assembleSystemPrompt(definition, lowered) + compressedNote;
     const ambiguousCustomAdapter = options.streamFn !== undefined &&
       options.providerPayloadContract !== "pi-on-payload-v1" &&
       appliedPlan.appliedTransformIDs.length > 0;
@@ -2418,7 +2424,7 @@ async function* streamAgentInternal(
     }
     const instructions = ambiguousCustomAdapter
       ? originalInstructions
-      : assembleSystemPrompt(definition, lowered, appliedPlan.bodies);
+      : assembleSystemPrompt(definition, lowered, appliedPlan.bodies) + compressedNote;
     const prefixDigest = sha256(stableStringify({
       instructions,
       tools: piTools.map((item) => ({
@@ -4940,15 +4946,20 @@ async function applyEfficiencyPlan(
           continue;
         }
         const compressed = new TextDecoder().decode(transformed.output);
+        const shown = outputCap === undefined || transformed.output.byteLength <= outputCap.maxBytes
+          ? compressed
+          : capUtf8(compressed, outputCap.maxBytes, outputCap.direction,
+            `\n[caveman: compressed output capped from ${transformed.output.byteLength} bytes]`);
+        // What was cut, and how to get all of it back: the model must not have to guess either.
+        const total = new TextDecoder().decode(original).replace(/\n$/, "").split("\n").length;
+        const kept = shown.replace(/\n$/, "").split("\n").filter((line) => !/^… .* …$/.test(line)).length;
         const providerBody = segment.kind === "tool_schema"
           ? validatedToolSchemaBytes(transformed.output, segment.id)
           : new TextEncoder().encode([
             `<cave-compressed transform=${JSON.stringify(route.transform_id)} recovery_handle=${JSON.stringify(transformed.handle)}>`,
-            outputCap === undefined || transformed.output.byteLength <= outputCap.maxBytes
-              ? compressed
-              : capUtf8(compressed, outputCap.maxBytes, outputCap.direction,
-                `\n[caveman: compressed output capped from ${transformed.output.byteLength} bytes]`),
-            "Use cave_retrieve for omitted detail.",
+            shown,
+            `Kept ${kept} of ${total} lines${query?.trim() ? " for the task" : ""}; cave_retrieve with this ` +
+              `recovery_handle and no query returns all of it, ${RECOVERY_PAGE_BYTES} bytes per call (offset pages on).`,
             "</cave-compressed>",
           ].join("\n"));
         bodies.set(segment.bodyHandle, providerBody);
@@ -5278,6 +5289,9 @@ async function runEngine(
   });
 }
 
+/** One cave_retrieve page: under the 32 KiB inline tool-result ceiling with its marker line. */
+const RECOVERY_PAGE_BYTES = 32_000;
+
 function recoveryTool(
   handles: ReadonlySet<string>,
   engineBin: string | undefined,
@@ -5286,25 +5300,32 @@ function recoveryTool(
   return {
     name: "cave_retrieve",
     label: "cave_retrieve",
-    description: "Recover exact content omitted by an active Caveman transform. Pass the recovery_handle from a <cave-compressed> marker; retrieve before guessing. Handles are scoped to this run.",
+    description: "Recover content omitted by an active Caveman transform. Pass the recovery_handle from a " +
+      `<cave-compressed> marker. With no query it returns the whole original, ${RECOVERY_PAGE_BYTES} bytes per call ` +
+      "(pass offset for the next page); a query returns only the matching sections. Retrieve before guessing. " +
+      "Handles are scoped to this run.",
     parameters: Type.Object({
       recovery_handle: Type.String(),
       query: Type.Optional(Type.String()),
+      offset: Type.Optional(Type.Integer({ minimum: 0 })),
     }),
     executionMode: "parallel",
     async execute(_toolCallId, params) {
-      const input = params as { recovery_handle: string; query?: string };
+      const input = params as { recovery_handle: string; query?: string; offset?: number };
       if (!handles.has(input.recovery_handle)) throw new Error("cave_recovery_handle_out_of_scope");
       const value = await engineRetrieve(input.recovery_handle, input.query, engineBin);
       for (const item of trace ?? []) {
         if (item.recoveryHandle === input.recovery_handle) item.recoveryUsed = true;
       }
-      // A capped tool's original runs to 1 MiB; one retrieval returns at most
-      // the 32 KiB inline tool-result ceiling, and says how to get the rest.
-      const text = new TextDecoder().decode(value);
+      // A capped tool's original runs to 1 MiB: one retrieval is one page under
+      // the 32 KiB inline ceiling, cut on a character boundary, with the next offset.
+      const start = Math.min(input.offset ?? 0, value.byteLength);
+      let end = Math.min(value.byteLength, start + RECOVERY_PAGE_BYTES);
+      while (end > start && end < value.byteLength && (value[end]! & 0xc0) === 0x80) end--;
+      const text = new TextDecoder().decode(value.subarray(start, end)) + (start === 0 && end === value.byteLength ? ""
+        : `\n[cave_retrieve: bytes ${start}-${end} of ${value.byteLength}${end < value.byteLength ? `; pass offset ${end} for the next page` : ""}]`);
       return {
-        content: [{ type: "text", text: value.byteLength <= 32_768 ? text : capUtf8(text, 32_768, "head",
-          `\n[cave_retrieve: first part of ${value.byteLength} bytes; pass a narrower query for the rest]`) }],
+        content: [{ type: "text", text }],
         details: { recovery: input.query ? "query" : "exact" },
       };
     },
@@ -6249,10 +6270,12 @@ function toPiTool(
       let directEffectSettlement: Promise<unknown> | undefined;
       let acceptingNestedCalls = true;
       let fullOutput: FullToolOutput | undefined;
+      let verbatim: string | undefined;
       const context: ToolExecutionContext = Object.freeze({
           ...(deferredOutputs === undefined ? {} : {
-            [TOOL_FULL_OUTPUT]: (output: FullToolOutput) => {
-              if (new TextEncoder().encode(output.text).byteLength <= FULL_TOOL_OUTPUT_MAX_BYTES) fullOutput = output;
+            [TOOL_FULL_OUTPUT]: (report: FullToolOutput | VerbatimToolResult) => {
+              if ("verbatim" in report) verbatim = report.capped;
+              else if (new TextEncoder().encode(report.text).byteLength <= FULL_TOOL_OUTPUT_MAX_BYTES) fullOutput = report;
             },
           }),
           toolCallId,
@@ -6365,7 +6388,8 @@ function toPiTool(
         : definition.artifact.maxInlineTokens * 4;
       if (deferredOutputs !== undefined) {
         if (raw.byteLength > 16 * 1024 * 1024) throw new Error("cave_tool_result_limit");
-        if (fullOutput?.capped === text) deferredOutputs.set(toolCallId, { capped: text, output: fullOutput });
+        if (verbatim !== undefined && verbatim === text) deferredOutputs.set(toolCallId, { capped: text, decision: null });
+        else if (fullOutput?.capped === text) deferredOutputs.set(toolCallId, { capped: text, output: fullOutput });
         return {
           content: [{ type: "text", text: text ?? "null" }],
           details: { effect: definition.effect, resultPolicy: definition.result, lockedRoutePending: true },
