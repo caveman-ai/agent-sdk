@@ -1,9 +1,9 @@
 # Architecture
 
-## What this SDK owns that a tool-loop SDK does not
+## What Caveman adds to Pi
 
-Most agent SDKs stop at model calls and a tool loop. Caveman also owns the
-context lifecycle and the runtime evidence around it:
+Pi 1.0.0 owns model execution and the tool loop. Caveman adds application
+controls and evidence around that execution:
 
 - **Context lifecycle** — what enters the provider-visible prefix, what stays
   live, when it is compacted, and whether the original bytes can be recovered
@@ -40,12 +40,14 @@ packages/
 ├── coding-agent/            @caveman-ai/coding-agent   interactive coding product + caveman-code
 ├── create-caveman-agent/    @caveman-ai/create-agent   project generation only
 ├── evals/                   @caveman-ai/evals          grader taxonomy and dispatch
+├── react/                   @caveman-ai/react          browser hooks for runs and sessions
 └── pebble-protocol/         @pebble-agent/protocol     frozen wire/session contract (Apache-2.0)
 ```
 
-Directories under `packages/` that are not in the root `workspaces` array
-(`pebble`, `pebble-sessions`, `pebble-tui`, `libpebble`, `shared`) are
-supporting or internal material.
+`packages/shared` holds catalog snapshots and wire schemas rather than a
+published workspace package. Proprietary Pebble implementation lives in the
+separate `caveman-coding-agent` repository; only its Apache-2.0 protocol lives
+here. The root `package.json` defines workspace membership.
 
 ## Ownership boundaries
 
@@ -58,6 +60,7 @@ supporting or internal material.
 | `coding-agent` | Coding UX, CLI, tools, session presentation, coding benchmarks | Runtime invariants — it consumes them |
 | `create-caveman-agent` | Project generation | Anything at runtime |
 | `evals` | Grader names, option types, validation, verdict semantics | A second evaluator inside `agent` |
+| `react` | Browser state and event-stream hooks | Server credentials, tool execution, or runtime invariants |
 | `pebble-protocol` | Frozen public wire, event, and session contracts | The Pebble runtime, sessions, policy, and TUI, which live in a private sibling repository |
 
 ## Dependency direction

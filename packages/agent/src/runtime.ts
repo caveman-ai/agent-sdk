@@ -3991,7 +3991,7 @@ async function* streamAgentInternal(
       memoryEngine?.endTurn({ sessionId, text });
     }
     let output: { readonly value: unknown } | undefined;
-    if (definition.output?.schema && finalMessage !== undefined) {
+    if (definition.output?.schema && finalMessage !== undefined && stopReason === undefined) {
       let parsed: unknown;
       try {
         parsed = JSON.parse(text);

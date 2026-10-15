@@ -14,7 +14,7 @@
 `@caveman-ai/agent`: opinionated TypeScript efficiency framework over exact-pinned
 Pi. Pi is a complete agent core and this package never rebuilds it: Pi owns
 the tool loop, its lifecycle hooks (`beforeToolCall`, `afterToolCall`,
-`shouldStopAfterTurn`, post-turn injection, `transformContext`), the steering
+`finishTurn`, `prepareRequest`, post-turn injection, `transformContext`), the steering
 and follow-up queues, and the event stream — read
 `node_modules/@earendil-works/pi-agent-core/dist/types.d.ts` before adding any
 runtime capability. `runtime.ts` CONSUMES those hooks to enforce what Pi has no

@@ -886,24 +886,43 @@ test("validation work stays bounded: wide unions are dropped and MCP argument si
   assert.deepEqual(sanitizeServerSchema({ type: "object", properties: { k: nested } }), {}, "fanout over 32");
   const cases = [
     ["32 objects per element, last matches", { type: "object", properties: { k: { type: "array", items: { anyOf: union(32, object) } } } },
-      (limit) => ({ k: Array.from({ length: Math.floor((limit - 10) / 9) }, () => ({ z: 31 })) })],
+      (limit) => ({ k: Array.from({ length: Math.floor((limit - 10) / 9) }, () => ({ z: 31 })) }), 32, true],
     ["32 constants per element, last matches", { type: "object", properties: { k: { type: "array", items: { anyOf: union(32, (i) => ({ const: i })) } } } },
-      (limit) => ({ k: Array.from({ length: Math.floor((limit - 10) / 3) }, () => 31) })],
+      (limit) => ({ k: Array.from({ length: Math.floor((limit - 10) / 3) }, () => 31) }), 32, true],
     ["32 members each walking the array", { type: "object", properties: { k: { anyOf: union(32, (i) => ({
       type: "array", items: { type: "object", properties: { [`f${i}`]: { type: "string" } } } })) } } },
-      (limit) => ({ k: [...Array.from({ length: Math.floor((limit - 400) / 3) }, () => ({})), Object.fromEntries(union(32, (i) => [`f${i}`, 1]))] })],
+      (limit) => ({ k: [...Array.from({ length: Math.floor((limit - 400) / 3) }, () => ({})), Object.fromEntries(union(32, (i) => [`f${i}`, 1]))] }), 32, false],
     ["plain numbers at the full limit", { type: "object", properties: { k: { type: "array", items: { type: "number" } } } },
-      (limit) => ({ k: Array.from({ length: Math.floor((limit - 10) / 2) }, () => 1) })],
+      (limit) => ({ k: Array.from({ length: Math.floor((limit - 10) / 2) }, () => 1) }), 1, true],
   ];
-  for (const [label, raw, make] of cases) {
+  for (const [label, raw, make, expectedFanout, expectedValid] of cases) {
     const schema = sanitizeServerSchema(raw);
+    assert.equal(schemaFanout(schema), expectedFanout, label);
     const limit = Math.floor(256 * 1024 / schemaFanout(schema));
     const value = make(limit);
-    assert.ok(JSON.stringify(value).length <= limit, `${label} fits the limit`);
-    const started = performance.now();
-    argumentErrors(schema, value);
-    Value.Check(schema, value);
-    assert.ok(performance.now() - started < 100, `${label} took ${Math.round(performance.now() - started)} ms`);
+    assert.ok(Buffer.byteLength(JSON.stringify(value)) <= limit, `${label} fits the limit`);
+    // Deterministic regression bound for these fixtures and the pinned validators,
+    // not a general runtime guarantee. They currently take at most 584,166 data
+    // operations; counting avoids a wall-clock failure under test-runner contention.
+    let operations = 0;
+    const seen = new WeakMap();
+    const visit = () => assert.ok(++operations <= 1_048_576, `${label} exceeded the traversal bound`);
+    const measured = (item) => {
+      if (item === null || typeof item !== "object") return item;
+      if (seen.has(item)) return seen.get(item);
+      const proxy = new Proxy(item, {
+        get(target, key, receiver) { visit(); return measured(Reflect.get(target, key, receiver)); },
+        has(target, key) { visit(); return Reflect.has(target, key); },
+        ownKeys(target) { visit(); return Reflect.ownKeys(target); },
+        getOwnPropertyDescriptor(target, key) { visit(); return Reflect.getOwnPropertyDescriptor(target, key); },
+      });
+      seen.set(item, proxy);
+      return proxy;
+    };
+    const instrumented = measured(value);
+    assert.equal(argumentErrors(schema, instrumented).length === 0, expectedValid, label);
+    assert.equal(Value.Check(schema, instrumented), expectedValid, label);
+    assert.ok(operations > 0, `${label} traversed instrumented arguments`);
   }
 
   // Over the limit, a call is refused before any check and never reaches the server.

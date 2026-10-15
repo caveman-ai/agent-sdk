@@ -1,0 +1,11 @@
+{
+  "name": "caveman-blocks",
+  "count": 3,
+  "owner": {"login": "caveman", "id": 42},
+  "items": [
+    {"id": 1, "title": "json-peek", "effects": "read"},
+    {"id": 2, "title": "test-summary", "effects": "exec"},
+    {"id": 3, "title": "http-json", "effects": "network"}
+  ],
+  "next": null
+}

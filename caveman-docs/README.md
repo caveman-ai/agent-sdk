@@ -1,17 +1,17 @@
 # Caveman Agent SDK documentation
 
-Complete documentation for the Caveman Agent SDK monorepo: the runtime, the
-profile-guided compiler, the adapters, the coding agent, the initializer, and
-the frozen Pebble protocol.
-
-Everything here describes the code in this checkout. Where a behavior is gated,
-unproven, or deliberately incomplete, the page says so instead of rounding up.
+Build an agent first, then add the capabilities your application needs.
+These guides document the v0.2 source checkout, including features whose
+publication is still gated. Start from a built checkout rather than assuming
+the latest registry package has this API.
 
 ## Start here
 
 | If you want to… | Read |
 | --- | --- |
-| Get an agent running in five minutes | [Getting started](guides/01-getting-started.md) |
+| Run an agent, add a tool, and read its receipt | [Getting started](guides/01-getting-started.md) |
+| Choose a working application to modify | [Runnable examples](../examples/README.md) |
+| Generate a project with tools and evals | [Initializer](../packages/create-caveman-agent/README.md) |
 | Understand what the SDK actually owns | [Architecture](concepts/architecture.md) |
 | Know what "inferred", "measured", and "verified" mean | [The honesty model](concepts/honesty-model.md) |
 | Understand `optimized` vs `observe-only` | [Execution modes](concepts/execution-modes.md) |
@@ -21,7 +21,10 @@ unproven, or deliberately incomplete, the page says so instead of rounding up.
 
 ## Guides
 
-Task-shaped, in roughly the order you meet them.
+You do not need to read every guide. After getting started, choose tools and
+output for a small application, durability and serving for a background worker,
+or adapters if you already have an agent framework. Compiler and protocol
+guides are advanced topics.
 
 | # | Guide | Covers |
 | --- | --- | --- |
@@ -57,13 +60,13 @@ Task-shaped, in roughly the order you meet them.
 
 | Page | Covers |
 | --- | --- |
-| [API reference](reference/api/README.md) | Every exported symbol of every published entrypoint, generated from the built type declarations |
+| [API reference](reference/api/README.md) | Exported symbols and package entrypoints, generated from built type declarations |
 | [CLI](reference/cli.md) | `caveman-agent` and `caveman-code`, every command and flag |
 | [Environment variables](reference/environment.md) | Every variable the runtime, CLI, and sandbox read |
 | [Artifacts and files](reference/artifacts.md) | `.caveman/*`, lock envelopes, profiles, build reports, journals |
-| [Reserved `cave_` identifiers](reference/identifiers.md) | All 726 failure codes, tool names, and refusal reasons |
+| [Reserved `cave_` identifiers](reference/identifiers.md) | Failure codes, tool names, and refusal reasons |
 | [Packages](reference/packages.md) | Every workspace package, its purpose, exports, and install line |
-| [Glossary](reference/glossary.md) | Twenty-five terms — direct, session, durable store, execution backend, basis, Cave Build — each naming the file that owns it |
+| [Glossary](reference/glossary.md) | Terms such as session, durable store, execution backend, basis, and Cave Build |
 
 ## Regenerating the generated pages
 
@@ -81,8 +84,8 @@ hand-maintained.
 - Node.js `>=22.19.0` for every package except the Eve adapter, which needs `>=24`.
 - One provider credential (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or
   `GEMINI_API_KEY`/`GOOGLE_API_KEY`).
-- No Caveman account. Nothing here requires a hosted service; without the local
-  Caveman Engine a run is `observe-only` and says so.
+- No Caveman account for direct runs. `cave: "off"` skips the gateway and
+  reports `observe-only`. Locked execution has additional readiness requirements.
 
 ## License
 
