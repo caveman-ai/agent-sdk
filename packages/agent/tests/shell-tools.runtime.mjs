@@ -243,3 +243,12 @@ test("fileRoot widens where file tools reach while relative paths stay in the wo
     assert.match(await wide.read_file.execute({ path: "../etc/out.txt" }), /^1\tout/);
   });
 });
+
+test("a command that is not found returns its exit 127 and output, not a shell failure", async () => {
+  await withWorkspace(async (workspace) => {
+    const tools = byName(shellTools({ workspace }));
+    const result = await tools.bash.execute({ command: "definitely-not-a-command-xyz" });
+    assert.match(result, /^exit 127\n/);
+    assert.match(result, /not found/);
+  });
+});

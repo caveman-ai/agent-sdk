@@ -353,7 +353,7 @@ export function shellTools(options: ShellToolsOptions): ToolDefinition[] {
           maxOutputBytes: PROCESS_CAPTURE_MAX_BYTES,
           ...(signal === undefined ? {} : { signal }),
         });
-        if (run.code === 127 || run.startFailed === true) {
+        if (run.startFailed === true) {
           throw new Error("caveman-code: host command shell is not available");
         }
         const status = run.timedOut ? `exit timeout after ${timeoutMs}ms` : `exit ${run.code}`;

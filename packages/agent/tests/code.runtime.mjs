@@ -2254,3 +2254,29 @@ test("task economics refuses favorable numbers from missing or mixed evidence", 
   assert.equal(mixed.costPerCompletedTaskUsd, null);
   assert.deepEqual(mixed.issues, ["price_basis_mixed"]);
 });
+
+test("a coding turn keeps working past the 64-call run default", async () => {
+  await withWorkspace(async (workspace) => {
+    const codingAgent = createCodingAgent({ workspace, model: "anthropic/faux-1" });
+    const session = await startCodingSession(codingAgent, { cave: "off" });
+    const faux = fauxAnthropic();
+    const model = { ...faux.getModel(), api: "anthropic-messages", provider: "anthropic" };
+    const steps = 70;
+    faux.setResponses([
+      ...Array.from({ length: steps }, (_, n) =>
+        fauxAssistantMessage(fauxToolCall("bash", { command: `echo ${n}` }, { id: `bash-${n}` }))),
+      fauxAssistantMessage("done"),
+    ]);
+    let calls = 0;
+    const turn = await runCodingTurn(session, "count", {
+      model,
+      streamFn(selected, context, options) {
+        calls++;
+        return faux.provider.streamSimple(selected, context, options);
+      },
+    });
+    assert.equal(calls, steps + 1);
+    assert.equal(turn.toolCalls.length, steps);
+    assert.equal(turn.text, "done");
+  });
+});

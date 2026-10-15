@@ -147,6 +147,12 @@ export const CODING_RUN_BREAKERS: RunBreakers = Object.freeze({
   maxToolCallsPerTurn: 8,
 });
 
+/**
+ * A coding task can take hundreds of calls; the run-wide default of 64 ended
+ * long tasks mid-work. The loop and no-progress breakers stop runaway runs.
+ */
+const CODING_CALL_CEILINGS = Object.freeze({ maxModelCalls: 1_000, maxToolCalls: 4_000 });
+
 /** Model calls per turn = 1 + ceil(retry_cascade_reserve / 256) = 64. */
 const RETRY_CASCADE_RESERVE = 16_128;
 const OUTPUT_MAX_TOKENS = 32_000;
@@ -849,6 +855,7 @@ export async function runCodingTurn(
     ...(session.options.cave === undefined ? {} : { cave: session.options.cave }),
     ...(session.options.engineBin === undefined ? {} : { engineBin: session.options.engineBin }),
     cacheRetention: session.options.cacheRetention ?? "long",
+    ...CODING_CALL_CEILINGS,
     ...(session.options.maxCostUsd === undefined ? {} : { maxCostUsd: session.options.maxCostUsd }),
     ...(session.options.budget === undefined ? {} : { budget: session.options.budget }),
     ...(session.options.modelRouter === undefined ? {} : { modelRouter: session.options.modelRouter }),
@@ -978,6 +985,7 @@ export async function* streamCodingTurn(
         ...(session.options.cave === undefined ? {} : { cave: session.options.cave }),
         ...(session.options.engineBin === undefined ? {} : { engineBin: session.options.engineBin }),
         cacheRetention: session.options.cacheRetention ?? "long",
+        ...CODING_CALL_CEILINGS,
         ...(session.options.maxCostUsd === undefined ? {} : { maxCostUsd: session.options.maxCostUsd }),
         ...(session.options.budget === undefined ? {} : { budget: session.options.budget }),
         ...(session.options.modelRouter === undefined ? {} : { modelRouter: session.options.modelRouter }),
