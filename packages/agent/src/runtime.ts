@@ -4998,6 +4998,21 @@ async function applyEfficiencyPlan(
   };
 }
 
+/**
+ * The ask reaches the engine in a file only this user can read: a command line
+ * is visible to every local user (`ps`), so Keep's query never goes there.
+ */
+async function withPrivateQueryFile<T>(query: string, use: (path: string) => Promise<T>): Promise<T> {
+  const directory = await mkdtemp(resolve(tmpdir(), "cave-keep-"));
+  try {
+    const path = resolve(directory, "query");
+    await writeFile(path, query, { mode: 0o600 });
+    return await use(path);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
 async function engineCompress(
   input: Uint8Array,
   engineBin: string | undefined,
@@ -5006,8 +5021,16 @@ async function engineCompress(
   query?: string,
 ): Promise<{ output: Uint8Array; handle?: string; tokensBefore?: number; tokensAfter?: number }> {
   // A query turns on Keep (trim-1): the engine keeps the lines relevant to the ask.
-  const result = await runEngine(engineBin, ["compress", "--type", contentType,
-    ...(query === undefined || query.trim() === "" ? [] : ["--query", query])], input, signal);
+  const args = ["compress", "--type", contentType];
+  // ponytail: an engine without --query-file costs one refused spawn per call; remember it per engine sha if that matters.
+  const result = query === undefined || query.trim() === ""
+    ? await runEngine(engineBin, args, input, signal)
+    : await withPrivateQueryFile(query, (path) => runEngine(engineBin, [...args, "--query-file", path], input, signal))
+      .catch(async (error: unknown) => {
+        // An engine without --query-file runs without Keep: the ask never goes on its command line.
+        if (!String(error).includes("unknown compress flag: --query-file")) throw error;
+        return await runEngine(engineBin, args, input, signal);
+      });
   const lastLine = result.stderr.trim().split("\n").pop() ?? "{}";
   const report = JSON.parse(lastLine) as {
     recovery_handle?: unknown;

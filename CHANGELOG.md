@@ -43,6 +43,12 @@ Versioning policy and what counts as breaking: [docs/RELEASING.md](docs/RELEASIN
 
 ### Fixed
 
+- `@caveman-ai/agent` Keep's query (the user's ask) no longer goes on the
+  engine's command line, where every local user can read it with `ps`. It is
+  written to a mode-0600 file in a private temporary directory, passed as
+  `caveman-engine compress --query-file <path>`, and deleted after the call. An
+  engine without `--query-file` compresses without Keep instead; the ask is
+  never put on its command line.
 - `@caveman-ai/agent` model routers on a local plan run (`cave: "local"`) may
   set each call's `reasoning`. The lock that rejected a routed reasoning change
   (`cave_model_route_reasoning_locked`) exists because a gateway prices a plan

@@ -1,12 +1,25 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { access, readFile, stat, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 const [command, handle, contentType] = process.argv.slice(2);
 const store = process.env.CAVE_FAKE_ENGINE_STORE;
 if (!store) throw new Error("CAVE_FAKE_ENGINE_STORE missing");
 await writeFile(resolve(store, "argv.jsonl"), `${JSON.stringify(process.argv.slice(2))}\n`, { flag: "a" });
+
+const queryFile = process.argv.indexOf("--query-file");
+if (command === "compress" && queryFile > 0) {
+  // An engine from before --query-file rejects it, as the real CLI does (a marker file in the store asks for that).
+  if (await access(resolve(store, "no-query-file")).then(() => true, () => false)) {
+    process.stderr.write("caveman-engine: unknown compress flag: --query-file\n");
+    process.exit(2);
+  }
+  const path = process.argv[queryFile + 1];
+  await writeFile(resolve(store, "queries.jsonl"), `${JSON.stringify({
+    path, query: await readFile(path, "utf8"), mode: (await stat(path)).mode & 0o777,
+  })}\n`, { flag: "a" });
+}
 
 if (command === "compress") {
   const chunks = [];

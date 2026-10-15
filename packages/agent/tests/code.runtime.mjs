@@ -653,13 +653,22 @@ test("a local session compresses tool results with the engine and no gateway, ke
     const recovered = seen[3].find((message) => message.role === "toolResult" && message.toolName === "cave_retrieve");
     assert.match(JSON.stringify(recovered), /line 239: the quick brown fox/);
     assert.doesNotMatch(JSON.stringify(recovered), /cave-compressed/);
-    // Keep (trim-1) gets the current ask as its query.
+    // Keep (trim-1) gets the current ask as its query, from a file only this user can read,
+    // never on the engine's command line, and the file is gone afterwards.
     const calls = (await readFile(argvLog, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
     const compress = calls.filter((argv) => argv[0] === "compress");
     assert.equal(compress.length > 0, true);
     for (const argv of compress) {
-      assert.deepEqual(argv.slice(argv.indexOf("--query"), argv.indexOf("--query") + 2),
-        ["--query", "which line mentions the lazy dog?"]);
+      assert.equal(argv.includes("--query-file"), true);
+      assert.doesNotMatch(JSON.stringify(argv), /lazy dog/);
+    }
+    const queries = (await readFile(resolve(process.env.CAVE_FAKE_ENGINE_STORE, "queries.jsonl"), "utf8"))
+      .trim().split("\n").map((line) => JSON.parse(line));
+    assert.equal(queries.length, compress.length);
+    for (const entry of queries) {
+      assert.equal(entry.query, "which line mentions the lazy dog?");
+      assert.equal(entry.mode, 0o600);
+      await assert.rejects(stat(entry.path));
     }
   });
 });
@@ -759,6 +768,33 @@ test("a gateway plan run still pins reasoning: a router may not change it", asyn
       providerPayloadContract: "pi-on-payload-v1",
     }), /cave_model_route_reasoning_locked/);
     assert.deepEqual(locked, [true]);
+  });
+});
+
+test("an engine without --query-file compresses without Keep; the ask never goes on its command line", async () => {
+  await withWorkspace(async (workspace) => {
+    await writeFile(resolve(workspace, "big.txt"), Array.from({ length: 240 }, (_, index) =>
+      `line ${index}: the quick brown fox jumps over the lazy dog repeatedly`).join("\n"), "utf8");
+    await writeFile(resolve(process.env.CAVE_FAKE_ENGINE_STORE, "no-query-file"), "");
+    const codingAgent = createCodingAgent({ workspace, model: "anthropic/faux-1" });
+    const session = await startCodingSession(codingAgent, { cave: "local", engineBin: FAKE_ENGINE });
+    const faux = fauxAnthropic();
+    const model = { ...faux.getModel(), api: "anthropic-messages", provider: "anthropic" };
+    const seen = [];
+    faux.setResponses([
+      fauxAssistantMessage(fauxToolCall("read_file", { path: "big.txt" }, { id: "read-1" })),
+      fauxAssistantMessage("done"),
+    ]);
+    await runCodingTurn(session, "which line mentions the lazy dog?", {
+      model, models: payloadModels(faux, seen), providerPayloadContract: "pi-on-payload-v1",
+    });
+    assert.match(JSON.stringify(seen[1]), /cave-compressed/);
+    const argv = (await readFile(resolve(process.env.CAVE_FAKE_ENGINE_STORE, "argv.jsonl"), "utf8")).trim().split("\n");
+    assert.doesNotMatch(argv.join("\n"), /lazy dog/);
+    // Every --query-file attempt was refused and retried without a query.
+    const refused = argv.filter((line) => line.includes("--query-file")).length;
+    assert.equal(refused > 0, true);
+    assert.equal(argv.filter((line) => line.startsWith('["compress"')).length, 2 * refused);
   });
 });
 
