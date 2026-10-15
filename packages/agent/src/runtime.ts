@@ -2850,7 +2850,7 @@ async function* streamAgentInternal(
       } finally {
         outcome.isError = isError;
         receipt.recordToolOutcome(nested.name, isError);
-        breakers?.observeToolResult(nestedToolCallId, isError, nested.effect === "write" || nested.effect === "external");
+        breakers?.observeToolResult(nestedToolCallId, isError, nested.effect === "write" || nested.effect === "external", eventResult);
         queued.push({
           type: "nested_tool_end",
           runId,
@@ -3850,7 +3850,7 @@ async function* streamAgentInternal(
         receipt.recordToolOutcome(event.toolName, event.isError);
         const configured = configuredToolsByName.get(event.toolName);
         if (configured?.nestedTools === undefined) {
-          breakers?.observeToolResult(event.toolCallId, event.isError, configured?.effect === "write" || configured?.effect === "external");
+          breakers?.observeToolResult(event.toolCallId, event.isError, configured?.effect === "write" || configured?.effect === "external", event.result);
         } else {
           foldNestedOutcomes(event.toolCallId);
           compositeTurnKeys.delete(event.toolCallId);

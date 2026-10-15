@@ -149,7 +149,7 @@ export interface BreakerEvent {
   readonly spendBasis?: "pre_stream_no_usage" | "provider_reported" | "unavailable_worst_case";
 }
 
-type ToolRepeat = { turns: number[]; previousFailed: boolean };
+type ToolRepeat = { turns: number[]; previousFailed: boolean; lastResult?: string };
 
 /**
  * The breaker bookkeeping for one run. Every method is pure counting over
@@ -240,7 +240,7 @@ export class BreakerState {
     return { block: false, reason: undefined };
   }
 
-  observeToolResult(toolCallId: string, isError: boolean, changedState = false): void {
+  observeToolResult(toolCallId: string, isError: boolean, changedState = false, result?: unknown): void {
     const signature = this.hashByToolCallId.get(toolCallId);
     // Work landed since the other calls: re-running a test after an edit is progress, not a loop.
     if (changedState && !isError) {
@@ -249,7 +249,13 @@ export class BreakerState {
     if (signature === undefined) return;
     this.hashByToolCallId.delete(toolCallId);
     const entry = this.repeats.get(signature);
-    if (entry !== undefined) entry.previousFailed = isError;
+    if (entry === undefined) return;
+    entry.previousFailed = isError;
+    if (result === undefined) return;
+    // Same call, new answer is polling that progresses (a build, a process's RSS), not a loop.
+    const digest = sha256(stableStringify(result));
+    if (entry.lastResult !== undefined && entry.lastResult !== digest) entry.turns = entry.turns.slice(-1);
+    entry.lastResult = digest;
   }
 
   /**

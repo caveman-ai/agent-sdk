@@ -639,3 +639,19 @@ test("re-running a command after other work changed state is progress, not a loo
   assert.equal(call("u3").block, true);
   assert.equal(state.tripped, "loop_detected");
 });
+
+test("polling the same command is progress while its answer changes, a loop once it repeats", () => {
+  const state = new BreakerState(normalizeRunBreakers({ repeatedToolCalls: 3 }, false));
+  const poll = (id, rss) => {
+    const decision = state.observeToolCall({ toolCallId: id, toolName: "bash", args: { command: "ps -o rss -p 692" }, allowRepeat: false, turnKey: id });
+    if (!decision.block) state.observeToolResult(id, false, true, { content: [{ type: "text", text: `rss ${rss}` }] });
+    state.observeTurn(id, []);
+    return decision.block;
+  };
+  for (let n = 0; n < 6; n++) assert.equal(poll(`p${n}`, 1000 + n), false);
+  assert.equal(state.tripped, undefined);
+  assert.equal(poll("same-1", 2000), false);
+  assert.equal(poll("same-2", 2000), false);
+  assert.equal(poll("same-3", 2000), true);
+  assert.equal(state.tripped, "loop_detected");
+});
