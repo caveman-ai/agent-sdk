@@ -2,7 +2,7 @@
 
 ## What Caveman adds to Pi
 
-Pi 1.0.0 owns model execution and the tool loop. Caveman adds application
+Pi 1.2.0 owns model execution and the tool loop. Caveman adds application
 controls and evidence around that execution:
 
 - **Context lifecycle** — what enters the provider-visible prefix, what stays

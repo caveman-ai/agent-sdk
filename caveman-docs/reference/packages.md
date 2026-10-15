@@ -100,7 +100,7 @@ not install any of them.
 
 | Package | Upstream pin | Node | Reference |
 | --- | --- | --- | --- |
-| `@caveman-ai/adapter-pi` | `@earendil-works/pi-agent-core@1.0.0` | ≥22.19 | [pi](api/adapters-pi.md) |
+| `@caveman-ai/adapter-pi` | `@earendil-works/pi-agent-core@1.2.0` | ≥22.19 | [pi](api/adapters-pi.md) |
 | `@caveman-ai/adapter-claude-agent-sdk` | `@anthropic-ai/claude-agent-sdk@0.3.220` | ≥22.19 | [claude-agent-sdk](api/adapters-claude-agent-sdk.md) |
 | `@caveman-ai/adapter-vercel-ai-sdk` | `ai@7.0.84` | ≥22.19 | [vercel-ai-sdk](api/adapters-vercel-ai-sdk.md) |
 | `@caveman-ai/adapter-mastra` | `@mastra/core@1.63.2` | ≥22.19 | [mastra](api/adapters-mastra.md) |

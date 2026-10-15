@@ -8,7 +8,7 @@ Build TypeScript agents with tools, conversations, streaming, budgets, and a
 receipt for every run. Add durable execution and a session server when you need
 them. No Caveman account required.
 
-Pi **1.0.0** owns the model and tool loop. Caveman adds spend controls, context
+Pi **1.2.0** owns the model and tool loop. Caveman adds spend controls, context
 management, durable journals, and eval-gated builds around that loop.
 
 > **Development preview.** This private repository documents the v0.2 source

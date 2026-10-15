@@ -1,7 +1,7 @@
 # `@caveman-ai/agent`
 
 TypeScript agents with typed tools, conversations, streaming, budgets, and run
-receipts. Built on exact-pinned Pi **1.0.0**. Add persistence, sessions, memory,
+receipts. Built on exact-pinned Pi **1.2.0**. Add persistence, sessions, memory,
 and eval-gated builds as your application needs them.
 
 > **Development preview:** this README describes v0.2 source in
