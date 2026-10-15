@@ -43,6 +43,12 @@ Versioning policy and what counts as breaking: [docs/RELEASING.md](docs/RELEASIN
 
 ### Fixed
 
+- `@caveman-ai/agent` compaction (budgeted too) on a real provider payload: the
+  request after a compaction opens a new cache epoch. The prefix guard used to
+  "restore" it to the pre-compaction messages, so the summary never reached
+  the provider. Evicted messages carry a fresh timestamp, so pi-ai stops sizing
+  the summary call from the pre-eviction usage and clamping its output to 16
+  tokens.
 - `@caveman-ai/agent`: structured-output runs stopped by budgets or breakers
   return partial results and receipts without parsing tool-turn text as JSON.
 - `@caveman-ai/agent`: queued steering and follow-up messages track actual Pi
@@ -55,6 +61,20 @@ Versioning policy and what counts as breaking: [docs/RELEASING.md](docs/RELEASIN
 
 ### Added
 
+- `run({ turnRetry })`: Pi's turn retry. A transient provider error turn,
+  mid-stream or before it, is dropped from the context and the loop continues
+  after 2 s, 4 s, 8 s (3 retries, capped at 60 s); a success starts a fresh
+  series. The failed attempt stays in the receipt as its own call (usage
+  `unavailable` when the stream reported none, which marks the run's totals
+  incomplete), so nothing is charged twice. Off by default; coding sessions
+  turn it on.
+- `run({ compaction })`: window compaction without a budget. When the
+  provider-reported prompt plus the turn's new messages would leave less than
+  `reserveTokens` of the window, older history is summarized; each summary is
+  a provider call in the receipt. Requests only append between compactions,
+  and a retried turn resends the compacted window. Coding sessions use Pi's
+  settings: 16,384 reserved, 20,000 kept verbatim, summary capped at 13,107
+  tokens.
 - `npm run check:api` — golden file (`packages/agent/api-surface.txt`) over the
   published type surface of `@caveman-ai/agent`. Any added, removed, or renamed
   export is now a reviewed diff instead of a silent breaking change.

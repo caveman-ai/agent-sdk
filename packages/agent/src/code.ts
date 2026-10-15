@@ -139,7 +139,7 @@ const TOOL_RESULT_TRANSFORM = "caveman.engine.terminal.v1";
 /** Conversation history is prose plus quoted snippets. */
 const HISTORY_TRANSFORM = "caveman.engine.text.v1";
 
-/** Cost-control defaults for coding runs. No retry policy: retries require a declared budget. */
+/** Cost-control defaults for coding runs. No pre-stream retry policy: that needs a declared budget. */
 export const CODING_RUN_BREAKERS: RunBreakers = Object.freeze({
   repeatedToolCalls: 3,
   repeatedToolCallWindowTurns: 8,
@@ -152,6 +152,12 @@ export const CODING_RUN_BREAKERS: RunBreakers = Object.freeze({
  * long tasks mid-work. The loop and no-progress breakers stop runaway runs.
  */
 const CODING_CALL_CEILINGS = Object.freeze({ maxModelCalls: 1_000, maxToolCalls: 4_000 });
+
+/** Pi's long-run settings: window compaction (summary = 80% of the reserve) and turn retry. */
+const CODING_RECOVERY = Object.freeze({
+  compaction: { reserveTokens: 16_384, keepRecentTokens: 20_000, summaryMaxTokens: 13_107, maxCompactions: 64 },
+  turnRetry: {},
+});
 
 /** Model calls per turn = 1 + ceil(retry_cascade_reserve / 256) = 64. */
 const RETRY_CASCADE_RESERVE = 16_128;
@@ -856,6 +862,7 @@ export async function runCodingTurn(
     ...(session.options.engineBin === undefined ? {} : { engineBin: session.options.engineBin }),
     cacheRetention: session.options.cacheRetention ?? "long",
     ...CODING_CALL_CEILINGS,
+    ...CODING_RECOVERY,
     ...(session.options.maxCostUsd === undefined ? {} : { maxCostUsd: session.options.maxCostUsd }),
     ...(session.options.budget === undefined ? {} : { budget: session.options.budget }),
     ...(session.options.modelRouter === undefined ? {} : { modelRouter: session.options.modelRouter }),
@@ -986,6 +993,7 @@ export async function* streamCodingTurn(
         ...(session.options.engineBin === undefined ? {} : { engineBin: session.options.engineBin }),
         cacheRetention: session.options.cacheRetention ?? "long",
         ...CODING_CALL_CEILINGS,
+        ...CODING_RECOVERY,
         ...(session.options.maxCostUsd === undefined ? {} : { maxCostUsd: session.options.maxCostUsd }),
         ...(session.options.budget === undefined ? {} : { budget: session.options.budget }),
         ...(session.options.modelRouter === undefined ? {} : { modelRouter: session.options.modelRouter }),

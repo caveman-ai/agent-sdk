@@ -21,10 +21,8 @@ import {
   getCurrentSystemPrompt,
   getCurrentTools,
   getInitialSystemMessage,
-  isContextOverflow,
   type Api,
   type AssistantMessage,
-  type AssistantMessageEventStream,
   type CacheRetention,
   type ImageContent,
   type Model,
@@ -88,9 +86,7 @@ import {
 import {
   BreakerState,
   callSignature,
-  failFastPreStream,
   normalizeRunBreakers,
-  serverRetryDelayMs,
   stoppedTurnStream,
   type RunBreakers,
 } from "./breakers.js";
@@ -118,13 +114,17 @@ import {
   latestContextSummary,
   messagesTokens,
   newContextMessages,
+  normalizeCompaction,
   parseContextSummary,
   planCompaction,
   renderSummary,
   summarizationInstruction,
   validateContextSummaryTransition,
+  type CompactionOptions,
   type ContextSummary,
+  type NormalizedCompaction,
 } from "./compaction.js";
+import { TurnRetry, retryModelCall, type PendingCallRecord, type TurnRetryOptions } from "./provider-retry.js";
 import {
   graphHasUnverifiedToolSchemaSemantics,
   validateAgentGraph,
@@ -809,6 +809,14 @@ export interface RunOptions {
    * planned end state. The two are mutually exclusive.
    */
   budget?: RunBudget;
+  /**
+   * Window compaction without a budget: summarize before the context window
+   * fills (`reserveTokens`), each summary a provider call in the receipt. A
+   * budget with `onExhausted: "compact"` uses its own settings instead.
+   */
+  compaction?: CompactionOptions;
+  /** Pi's turn retry after a transient provider error turn. Off by default. */
+  turnRetry?: TurnRetryOptions;
   /**
    * Optional pre-call model selector. It runs before every root working model
    * request, before budget reservation and before provider I/O. Returned models
@@ -1707,6 +1715,8 @@ async function* streamAgentInternal(
   const budgetMeter = executionContext.budgetMeter ?? (normalizedRunBudget === undefined
     ? undefined
     : new BudgetMeter(normalizedRunBudget));
+  const windowCompaction: NormalizedCompaction | undefined = options.compaction === undefined
+    ? undefined : normalizeCompaction(options.compaction);
   if (options.deadlineMs !== undefined &&
       (!Number.isSafeInteger(options.deadlineMs) || options.deadlineMs <= 0)) {
     throw new Error("cave_run_deadline_invalid");
@@ -2929,9 +2939,10 @@ async function* streamAgentInternal(
         finalMessage = message;
         return;
       }
+      // A turn the run will retry is not a crash: its settle closes the intent.
       const journalThisSettle = activeJournal !== undefined &&
         !((message.stopReason === "error" || message.stopReason === "aborted") &&
-          budgetReservation === undefined && !carriedUsage);
+          budgetReservation === undefined && !carriedUsage && turnRetry?.retryable(message) !== true);
       try {
         if ((pendingCall?.reasoning ?? definition.reasoning) !== "off" && callModel.reasoning === true &&
             message.usage.reasoning === undefined) {
@@ -2978,6 +2989,9 @@ async function* streamAgentInternal(
         receipt.recordCall({ ...call, clampedOutputTokens: pendingCall?.clampedOutputTokens });
       } catch (error) {
         const failure = error instanceof Error ? error : new Error(String(error));
+        // A dropped stream reports no usage; the retried run goes on with its totals marked incomplete.
+        const retried = failure.message === "cave_provider_usage_incomplete" && turnRetry?.retryable(message) === true;
+        const priorFailure = usageFailure;
         usageFailure ??= failure;
         // Worst-case settlement keeps unreadable provider usage from looking
         // free. A later tool must see the resulting dead wallet.
@@ -2998,6 +3012,7 @@ async function* streamAgentInternal(
         // The journal records the same honesty: an unavailable-usage call,
         // settled at the reservation amount, never a free call.
         const call = accrueCall("model", callModel, undefined, budgetReservation?.amount, journalThisSettle);
+        if (retried) [usageFailure, usageIncomplete] = [priorFailure, true];
         receipt.recordCall({ ...call, clampedOutputTokens: pendingCall?.clampedOutputTokens });
       }
       finalMessage = message;
@@ -3524,6 +3539,7 @@ async function* streamAgentInternal(
         await cacheWarmer?.stop(CACHE_WARM_QUIESCE_MS);
         return refusalPending ? { action: "end" as const } : undefined;
       },
+      prepareRequest: ({ context }) => turnRetry?.request(context),
       // Indexes below are conversation indexes: Pi's leading system message
       // stays in front, so recall can never land before it.
       transformContext: async (messages) => {
@@ -3547,8 +3563,9 @@ async function* streamAgentInternal(
       // settled, no tool is in flight, and the replacement context this returns
       // is what the next call is built from.
       prepareNextTurnWithContext: async (turn) => {
-        if (budgetMeter === undefined || budgetMeter.onExhausted !== "compact") return undefined;
-        if (compactionsUsed >= budgetMeter.compaction.maxCompactions) return undefined;
+        const wallet = budgetMeter?.onExhausted === "compact" ? budgetMeter : undefined;
+        const compaction = wallet?.compaction ?? windowCompaction;
+        if (compaction === undefined || compactionsUsed >= compaction.maxCompactions) return undefined;
         // Pi runs this hook only when another call follows. A turn that asked
         // for no tools continues only for queued input; compaction stays on
         // the tool-loop path it is sized for.
@@ -3568,29 +3585,21 @@ async function* streamAgentInternal(
         // Compaction rewrites the conversation only; the head is put back.
         const head = getInitialSystemMessage(turn.context.messages);
         const conversationMessages = head ? turn.context.messages.slice(1) : turn.context.messages;
-        const nextCall = callCeilingFor(
-          activeWorkingModel,
-          instructions,
-          conversationMessages,
-          turn.context.tools,
+        const nextCallCost = wallet === undefined ? undefined : callCeilingCost(
+          wallet.denomination,
+          callCeilingFor(activeWorkingModel, instructions, conversationMessages, turn.context.tools, outputTokenCap),
           outputTokenCap,
-        );
-        const compactionDecisionAt = new Date();
-        const nextCallCost = callCeilingCost(
-          budgetMeter.denomination,
-          nextCall,
-          nextCall.outputTokenCap,
-          compactionDecisionAt,
+          new Date(),
         );
         // Trigger before exhaustion. At-max same-model compaction is
         // mathematically unreachable: once one working call no longer fits,
         // that same-sized summarizer plus post-rewrite headroom cannot fit
         // either. Four call ceilings preserves default-on compact-and-continue
         // while every actual provider call remains hard-reserved.
-        const windowFull = contextWindowFull(budgetMeter.compaction, activeWorkingModel, previousRouteUsage,
+        const windowFull = contextWindowFull(compaction, activeWorkingModel, previousRouteUsage,
           [turn.message, ...turn.toolResults]);
         if (!windowFull && (nextCallCost === undefined ||
-            budgetMeter.remaining() >= COMPACTION_TRIGGER_MULTIPLIER * nextCallCost)) {
+            wallet!.remaining() >= COMPACTION_TRIGGER_MULTIPLIER * nextCallCost)) {
           return undefined;
         }
         const compacted = await compactContext({
@@ -3600,6 +3609,7 @@ async function* streamAgentInternal(
           systemPrompt: instructions,
           tools: turn.context.tools,
           meter: budgetMeter,
+          config: compaction,
           selected: activeWorkingModel,
           outputTokenCap,
           baseStream,
@@ -3615,7 +3625,7 @@ async function* streamAgentInternal(
             emitModelRoute(decision);
             compactionsSpent++;
             if (activeJournal === undefined) return;
-            journalMeterCall(budgetMeter);
+            if (budgetMeter !== undefined) journalMeterCall(budgetMeter);
             activeJournal.emit({
               v: DURABLE_JOURNAL_VERSION,
               at: activeJournal.now(),
@@ -3674,7 +3684,12 @@ async function* streamAgentInternal(
           journalNewTranches();
           await journal.flush();
         }
-        return { context: { ...turn.context, messages: [...(head ? [head] : []), ...compacted.messages] } };
+        const messages = [...(head ? [head] : []), ...compacted.messages];
+        turnRetry?.compacted(messages);
+        // A compaction is a deliberate new prefix: the next request opens a new
+        // cache epoch instead of being "restored" to the pre-compaction bytes.
+        [providerPrefixDigest, providerFrozen, originalFrozen] = [undefined, undefined, undefined];
+        return { context: { ...turn.context, messages } };
       },
       beforeToolCall: async ({ toolCall, args, assistantMessage }) => {
         accountProviderMessage(assistantMessage);
@@ -3917,6 +3932,8 @@ async function* streamAgentInternal(
       });
     }
 
+    const turnRetry: TurnRetry | undefined = options.turnRetry === undefined
+      ? undefined : new TurnRetry(pi, options.turnRetry);
     const abort = () => pi.abort();
     activeAbort = abort;
     options.signal?.addEventListener("abort", abort, { once: true });
@@ -3926,7 +3943,13 @@ async function* streamAgentInternal(
     // one), so `continue()` picks up where the crashed process stopped
     // instead of `prompt()` appending the original input a second time.
     const resumeContinue = durableResume?.hasCompletedTurn === true;
-    const execution = (resumeContinue
+    const settle = (segment: Promise<void>) => activeExecution = segment.catch((error: unknown) => {
+      terminal = true;
+      wake?.();
+      wake = undefined;
+      throw error;
+    });
+    let execution = settle(resumeContinue
       ? pi.continue()
       : preparedInput.promptContent === undefined
         ? pi.prompt(input as string)
@@ -3934,25 +3957,26 @@ async function* streamAgentInternal(
           role: "user" as const,
           content: [...preparedInput.promptContent],
           timestamp: Date.now(),
-        })).catch((error: unknown) => {
-      terminal = true;
-      wake?.();
-      wake = undefined;
-      throw error;
-    });
-    activeExecution = execution;
-
-    while (!terminal || queued.length > 0) {
-      if (queued.length === 0) {
-        await new Promise<void>((resolve) => {
-          wake = resolve;
-        });
+        }));
+    for (;;) {
+      while (!terminal || queued.length > 0) {
+        if (queued.length === 0) {
+          await new Promise<void>((resolve) => {
+            wake = resolve;
+          });
+        }
+        while (queued.length > 0) {
+          yield queued.shift()!;
+        }
       }
-      while (queued.length > 0) {
-        yield queued.shift()!;
-      }
+      await execution;
+      // Only a run nothing else has stopped retries its last turn.
+      if (turnRetry === undefined || stopReason !== undefined || breakers?.tripped !== undefined ||
+          (ladderFailure ?? policyFailure ?? spendFailure) !== undefined ||
+          !(await turnRetry.retry(options.signal))) break;
+      terminal = false;
+      execution = settle(pi.continue());
     }
-    await execution;
     await cacheWarmer?.stop();
     while (queued.length > 0) yield queued.shift()!;
     await closeProgrammaticSpeculation();
@@ -6648,7 +6672,9 @@ async function compactContext(input: {
   head: AgentMessage | undefined;
   systemPrompt: string;
   tools: unknown;
-  meter: BudgetMeter;
+  /** Undefined on an unbudgeted run: no affordability gate, usage still accrued. */
+  meter: BudgetMeter | undefined;
+  config: NormalizedCompaction;
   selected: Model<Api>;
   outputTokenCap: number;
   baseStream: StreamFn;
@@ -6707,7 +6733,8 @@ async function compactContext(input: {
   summary: ContextSummary | undefined;
   tier: ReceiptCompaction["tier"];
 } | undefined> {
-  const config = compactionForModel(input.meter.compaction, `${input.selected.provider}/${input.selected.id}`);
+  const config = compactionForModel(input.config, `${input.selected.provider}/${input.selected.id}`);
+  const meter = input.meter;
   const accountingAt = new Date();
   const plan = planCompaction(input.messages, config);
   const summarySources = contextSummarySources(input.messages, plan.summarizable);
@@ -6717,7 +6744,9 @@ async function compactContext(input: {
   const evictable = new Set(plan.evictable);
   const evicted = input.messages.map((message, index) => {
     if (!evictable.has(index)) return message;
-    const citation = evictMessage(message, index);
+    // Fresh timestamp: pi-ai then ignores the stale usage of every later message
+    // and sizes the call (and its output clamp) from content, as after a summary.
+    const citation = { ...evictMessage(message, index), timestamp: Date.now() } as AgentMessage;
     // A citation longer than what it replaces is not a compaction.
     if (messagesTokens([citation]) >= messagesTokens([message])) return message;
     elidedDigests.push(elidedDigest(message));
@@ -6727,8 +6756,9 @@ async function compactContext(input: {
   const pinnedIds = plan.pinned.map((index) => `runtime.user_intent.${index}`);
   const evictionHelped = evictedTokens < preTokens;
 
-  const fitsAfterEviction = callFitsBudget(
-    input.meter,
+  // Without a wallet nothing says eviction alone bought enough: Pi summarizes.
+  const fitsAfterEviction = meter !== undefined && callFitsBudget(
+    meter,
     callCeilingFor(
       input.selected,
       input.systemPrompt,
@@ -6843,8 +6873,8 @@ async function compactContext(input: {
   // triggers while four cold working-call ceilings remain. This reserve still
   // prices the summarizer cold; reachability comes from earlier timing, never
   // an unevidenced cache discount.
-  const summarizerCost = callCeilingCost(
-    input.meter.denomination,
+  const summarizerCost = meter === undefined ? 0 : callCeilingCost(
+    meter.denomination,
     summarizerCall,
     config.summaryMaxTokens,
     accountingAt,
@@ -6864,8 +6894,8 @@ async function compactContext(input: {
     input.tools,
     input.outputTokenCap,
   );
-  const projectedCost = callCeilingCost(
-    input.meter.denomination,
+  const projectedCost = meter === undefined ? 0 : callCeilingCost(
+    meter.denomination,
     projectedCall,
     input.outputTokenCap,
     accountingAt,
@@ -6873,12 +6903,17 @@ async function compactContext(input: {
   if (projectedCost === undefined) return evictionHelped ? finishEviction() : undefined;
   // Budget floor: reserve enough for compaction and projected working calls;
   // otherwise eviction is the only safe fallback.
-  if (input.meter.remaining() < summarizerCost + config.headroomCalls * projectedCost) {
+  if (meter !== undefined && meter.remaining() < summarizerCost + config.headroomCalls * projectedCost) {
     return evictionHelped ? finishEviction() : undefined;
   }
 
-  const reservation = input.meter.reserve(summarizerCost, config.summaryMaxTokens);
-  if (reservation === undefined) return evictionHelped ? finishEviction() : undefined;
+  const reservation = meter?.reserve(summarizerCost, config.summaryMaxTokens);
+  if (meter !== undefined && reservation === undefined) return evictionHelped ? finishEviction() : undefined;
+  const release = (amount?: number) => {
+    if (reservation === undefined) return;
+    if (amount === undefined) meter!.cancel(reservation);
+    else meter!.settle(reservation, amount);
+  };
   // Preserve any legacy outer maxCostUsd holds too. A ledger that cannot cover
   // this call declines compaction rather than throwing; carved child-wallet
   // enforcement is already the BudgetMeter reservation above.
@@ -6891,7 +6926,7 @@ async function compactContext(input: {
       accountingAt,
     );
   } catch {
-    input.meter.cancel(reservation);
+    release();
     return evictionHelped ? finishEviction() : undefined;
   }
   // Past this point the attempt is paid for whatever happens to its output.
@@ -6922,7 +6957,7 @@ async function compactContext(input: {
   } catch {
     // The provider never returned a stream, so this attempt is proven
     // unbilled. Cancel both holds and close the durable intent as abandoned.
-    input.meter.cancel(reservation);
+    release();
     releaseLedgerHolds(ledgerReservations);
     await input.onAbandoned();
     return evictionHelped ? finishEviction() : undefined;
@@ -6935,7 +6970,7 @@ async function compactContext(input: {
     // A returned stream is provider-visible. If it then fails, billing is
     // uncertain: settle the full reservation, retain an unavailable call in
     // the receipt/journal, and make the run stop on incomplete usage evidence.
-    const metered = reservation.amount;
+    const metered = reservation?.amount ?? 0;
     markSpendIncomplete(ledgerReservations.map((item) => item.ledger));
     input.accrue(undefined, summarizerModel, metered);
     input.receipt.recordCompactionCall({
@@ -6951,10 +6986,10 @@ async function compactContext(input: {
       usageBasis: "unavailable",
       clampedOutputTokens: undefined,
     });
-    input.meter.settle(reservation, metered);
+    release(metered);
     return evictionHelped ? finishEviction(metered) : undefined;
   }
-  let metered = reservation.amount;
+  let metered = reservation?.amount ?? 0;
   let unpriced = true;
   let ledgerFailure: Error | undefined;
   try {
@@ -6968,7 +7003,8 @@ async function compactContext(input: {
       reasoningTokens: assistant.usage.reasoning ?? 0,
       totalTokens: assistant.usage.totalTokens,
     }, { accountingAt });
-    metered = input.meter.denomination === "usd" ? usage.catalogCostUsd : usage.totalTokens;
+    // Metered means against a wallet; an unbudgeted summary's cost is its receipt call.
+    metered = meter === undefined ? 0 : meter.denomination === "usd" ? usage.catalogCostUsd : usage.totalTokens;
     unpriced = !usage.priced;
     // Settle any legacy outer maxCostUsd ledgers. A carved child's own
     // compaction is settled by its BudgetMeter reservation above.
@@ -7007,11 +7043,11 @@ async function compactContext(input: {
       clampedOutputTokens: undefined,
     });
   }
-  input.meter.settle(reservation, metered);
+  release(metered);
   // A compaction that pushed a legacy outer ledger past its cap is that
   // ledger's failure to raise, exactly as a working call would be.
   if (ledgerFailure !== undefined) throw ledgerFailure;
-  if (unpriced && input.meter.denomination === "usd") {
+  if (unpriced && meter?.denomination === "usd") {
     return evictionHelped ? finishEviction(metered) : undefined;
   }
 
@@ -7094,89 +7130,6 @@ function placeholderSummary(summaryMaxTokens: number): Record<string, unknown> {
   };
 }
 
-async function retryModelCall(
-  attemptCall: () => ReturnType<StreamFn>,
-  breakers: BreakerState,
-  pending: PendingCallRecord,
-  stopError: () => Error | undefined,
-  onMeterReserved: (meter: BudgetMeter) => void | Promise<void>,
-  abandon: () => void,
-): Promise<Awaited<ReturnType<StreamFn>>> {
-  const meter = pending.reservationMeter;
-  const initial = pending.reservation;
-  if (meter === undefined || initial === undefined) return attemptCall();
-  const worstCaseSpend = initial.amount;
-  const outputTokenCap = initial.outputTokenCap;
-  let attempt = 0;
-  // Exhausted or refused retries surface a provider error turn as itself.
-  const giveUp = (error: unknown) => {
-    const replay = (error as { replay?: AssistantMessageEventStream } | undefined)?.replay;
-    if (replay === undefined) throw error;
-    return replay;
-  };
-  for (;;) {
-    try {
-      return await failFastPreStream(await attemptCall(), pending.model);
-    } catch (error) {
-      if (pending.reservation !== undefined) {
-        pending.reservationMeter?.cancel(pending.reservation);
-        if (pending.retryAttempt !== undefined) {
-          breakers.settleRetry(pending.retryAttempt, 0, "pre_stream_no_usage");
-        }
-        pending.reservation = undefined;
-        pending.reservationMeter = undefined;
-        pending.retryAttempt = undefined;
-      }
-      const terminal = stopError();
-      // A context overflow fails the same way on every attempt: never retried.
-      if (terminal !== undefined || terminalRetryError(error) ||
-          isContextOverflow({ stopReason: "error", errorMessage: (error as Error)?.message } as AssistantMessage)) {
-        abandon();
-        if (terminal !== undefined) throw terminal;
-        return giveUp(error);
-      }
-      attempt++;
-      const wait = breakers.backoffMs(attempt, serverRetryDelayMs(error));
-      if (wait === undefined) breakers.recordRetryExhausted(attempt);
-      if (wait === undefined || !breakers.retryExposureAvailable(worstCaseSpend, attempt)) {
-        abandon();
-        return giveUp(error);
-      }
-      const reservation = meter.reserve(worstCaseSpend, outputTokenCap);
-      if (reservation === undefined) {
-        breakers.recordRetryExhausted(attempt);
-        abandon();
-        return giveUp(error);
-      }
-      pending.reservation = reservation;
-      pending.reservationMeter = meter;
-      pending.retryAttempt = attempt;
-      breakers.recordRetryAttempt(worstCaseSpend, attempt);
-      await onMeterReserved(meter);
-      if (wait > 0) await new Promise((settle) => setTimeout(settle, wait));
-      const expired = stopError();
-      if (expired !== undefined) {
-        meter.cancel(reservation);
-        breakers.settleRetry(attempt, 0, "pre_stream_no_usage");
-        pending.reservation = undefined;
-        pending.reservationMeter = undefined;
-        pending.retryAttempt = undefined;
-        abandon();
-        throw expired;
-      }
-    }
-  }
-}
-
-function terminalRetryError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  return error.name === "AbortError" ||
-    error.message === "cave_run_aborted" ||
-    error.message === "cave_stream_cancelled" ||
-    error.message === "cave_run_stopped" ||
-    error.message === "cave_provider_terminal_aborted";
-}
-
 /**
  * How many bytes an outgoing payload could still grow by if `onPayload`
  * restores originals.
@@ -7198,18 +7151,6 @@ export function restorableRequestBytes(
   }
   return growth;
 }
-
-/** One in-flight provider call: its budget hold and the allowance it was given. */
-type PendingCallRecord = {
-  readonly model: Model<Api>;
-  /** Reasoning level this call actually ran at: the route decision's, else the definition's. */
-  readonly reasoning: ModelThinkingLevel;
-  reservation: BudgetReservation | undefined;
-  reservationMeter: BudgetMeter | undefined;
-  retryAttempt: number | undefined;
-  readonly clampedOutputTokens: number | undefined;
-  accountingAt: Date;
-};
 
 type NextCallDecision =
   | {
