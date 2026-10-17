@@ -249,6 +249,7 @@
 .	auto
 .	capabilityManifestFor
 .	captureModelBoundary
+.	caveGatewayReady
 .	compareConnectEfficiency
 .	compileProfiled
 .	compileProfiledNativePi

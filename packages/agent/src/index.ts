@@ -109,6 +109,8 @@ export {
   verifySandboxConformance,
 } from "./runtime.js";
 export type { AgentStaticContextDiagnostics } from "./runtime.js";
+// Identity and ownership probe for an embedder that owns the gateway decision.
+export { caveGatewayReady } from "./gateway.js";
 export { shellTools } from "./shell-tools.js";
 export type { ShellToolName, ShellToolsOptions } from "./shell-tools.js";
 export { decideToolCall, TOOL_POLICY_TIMEOUT_MS } from "./tool-policy.js";

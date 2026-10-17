@@ -4,6 +4,7 @@ import { Agent } from "@earendil-works/pi-agent-core";
 import {
   AgentRunController,
   agent,
+  caveGatewayReady,
   output,
   restoreConversation,
   run,
@@ -230,4 +231,5 @@ test("a subagent under a host controller does not take the root's controller", a
   });
   assert.equal(result.text, "done");
   assert.equal(typeof restoreConversation, "function", "restoreConversation is a package export");
+  assert.equal(typeof caveGatewayReady, "function", "caveGatewayReady is a package export");
 });
