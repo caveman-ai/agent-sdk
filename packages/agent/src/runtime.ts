@@ -130,8 +130,10 @@ import {
   validateAgentGraph,
 } from "./definition-graph.js";
 import {
+  enforceSemanticBudgets,
   lowerAgentContext,
   prepareLockedHarnessExecution,
+  volatileStablePrefix,
   validatePlanSelection,
   providerCallRecord,
   validateProviderUsage,
@@ -834,6 +836,13 @@ export interface RunOptions {
    * provider; unknown or cross-provider decisions fail closed.
    */
   modelRouter?: ModelCallRouter;
+  /**
+   * This run's reasoning level instead of the definition's: Pi's thinking level
+   * for the root's working calls (a route decision's level still wins for its
+   * call); subagents keep their own. Under a gateway-priced plan a different
+   * level fails closed with `cave_run_reasoning_locked`.
+   */
+  reasoning?: ModelThinkingLevel;
   /**
    * Escape hatch for the credential-regime gate. A USD budget on
    * Pi's own transport, off the gateway, is refused when the local credential
@@ -1744,6 +1753,7 @@ async function* streamAgentInternal(
         options.maxSubagentDepth > ABSOLUTE_SUBAGENT_DEPTH_LIMIT)) {
     throw new Error("cave_subagent_depth_limit_invalid");
   }
+  if (options.reasoning !== undefined && !MODEL_THINKING_LEVELS.includes(options.reasoning)) throw new Error("cave_run_reasoning_invalid");
   const deadlineAt = executionContext.deadlineAt ?? (options.deadlineMs === undefined
     ? undefined
     : performance.now() + options.deadlineMs);
@@ -1756,6 +1766,9 @@ async function* streamAgentInternal(
     ? undefined
     : new BreakerState(normalizeRunBreakers(options.breakers, budgetMeter !== undefined));
   const efficiencyPlan = options.lockedBuild?.selected_plan ?? options.candidatePlan;
+  // A candidate plan the local engine applies was priced by no one: its transforms run, but it binds no model,
+  // reasoning, usage, budget or cache epoch (a locked build or a gateway plan does).
+  const bindingPlan = options.cave === "local" && options.lockedBuild === undefined ? undefined : efficiencyPlan;
   const buildIdentity = options.lockedBuild === undefined
     ? undefined
     : {
@@ -1785,9 +1798,6 @@ async function* streamAgentInternal(
     }
     if (options.maxCostUsd !== undefined) {
       throw new Error("cave_durable_max_cost_usd_unsupported: use RunOptions.budget with durable runs");
-    }
-    if (options.candidatePlan !== undefined) {
-      throw new Error("cave_durable_candidate_plan_unsupported");
     }
     if (options.conversation !== undefined && options.sessionId !== undefined &&
         options.sessionId !== options.conversation.sessionId) {
@@ -1827,12 +1837,21 @@ async function* streamAgentInternal(
       const budgetSha256 = normalizedRunBudget === undefined
         ? "none"
         : sha256(stableStringify(JSON.parse(JSON.stringify(normalizedRunBudget))));
-      const durableDefinitionSHA256 = options.lockedBuild === undefined
+      // A run's plan (locked or candidate, with its levers) and reasoning level are part of what it replays.
+      const durableDefinitionSHA256 = options.lockedBuild === undefined && options.candidatePlan === undefined &&
+          options.reasoning === undefined
         ? executionContext.rootDefinitionSha256
         : sha256(stableStringify({
           definition_sha256: executionContext.rootDefinitionSha256,
-          build_sha256: options.lockedBuild.build_sha256,
-          plan_sha256: options.lockedBuild.plan_sha256,
+          ...(options.lockedBuild === undefined ? {} : {
+            build_sha256: options.lockedBuild.build_sha256,
+            plan_sha256: options.lockedBuild.plan_sha256,
+          }),
+          ...(options.candidatePlan === undefined ? {} : {
+            plan_sha256: sha256(stableStringify(options.candidatePlan)),
+            levers: options.engineLevers ?? null,
+          }),
+          ...(options.reasoning === undefined ? {} : { reasoning: options.reasoning }),
         }));
       const durableLines = await durableStore.load(runId);
       const analyzed = analyzeJournal(durableLines, {
@@ -2135,13 +2154,16 @@ async function* streamAgentInternal(
         : { inputOpaque: preparedInput.inputOpaque }),
     });
     const bill = contextBill(lowered.ir);
-    if (efficiencyPlan) enforceSemanticBudgets(
+    if (bindingPlan) enforceSemanticBudgets(
       bill,
       definition.output?.maxTokens ?? 0,
-      efficiencyPlan,
+      bindingPlan,
     );
     yield { type: "context_ready", runId, contextIR: lowered.ir, bill };
-    const appliedPlan = await applyEfficiencyPlan(lowered, efficiencyPlan, options.engineBin, options.signal);
+    // Bound: an earlier run's tool results are history; only this run's cap overruns reach the engine.
+    const appliedPlan = await applyEfficiencyPlan(lowered, efficiencyPlan && options.engineLevers?.compression === "bound"
+      ? { ...efficiencyPlan, segment_routes: efficiencyPlan.segment_routes.filter((route) => route.segment_kind !== "tool_result") }
+      : efficiencyPlan, options.engineBin, options.signal);
     const frameworkDistRoot = dirname(fileURLToPath(import.meta.url));
     const requestedSandboxEntry = options.entryPath === undefined
       ? undefined
@@ -2226,6 +2248,7 @@ async function* streamAgentInternal(
     const {
       invocationTrace: _inheritedInvocationTrace,
       modelRouter: _rootModelRouter,
+      reasoning: _rootReasoning,
       ...optionsWithoutInvocationTrace
     } = options;
     const nestedOptions: InternalRunOptions = {
@@ -2268,12 +2291,9 @@ async function* streamAgentInternal(
         );
       }
     }
-    if (efficiencyPlan !== undefined) {
-      validatePlanSelection(efficiencyPlan, {
-        provider: model.provider,
-        model: model.id,
-        reasoning: definition.reasoning,
-      });
+    if (bindingPlan !== undefined) {
+      validatePlanSelection(bindingPlan, { provider: model.provider, model: model.id, reasoning: definition.reasoning });
+      if (options.reasoning !== undefined && options.reasoning !== definition.reasoning) throw new Error("cave_run_reasoning_locked");
     }
     const recoveryHandles = appliedPlan.recoveryHandles;
     const nestedUsage: NestedUsage = {
@@ -2455,7 +2475,8 @@ async function* streamAgentInternal(
       conversation.originalFrozen = undefined;
     }
     if (conversation) conversation.fingerprint = conversationFingerprint;
-    if (efficiencyPlan?.segment_routes.length && volatileStablePrefix(instructions, definition.tools)) {
+    // A gateway cache epoch needs a stable prefix; a local plan opens none, and a host's AGENTS.md may hold a UUID.
+    if (bindingPlan?.segment_routes.length && volatileStablePrefix(instructions, definition.tools)) {
       throw new Error("cave_cache_volatile_stable_slot");
     }
     // Every x-cave-* header exists for the Caveman gateway: x-cave-api-key is
@@ -3187,12 +3208,12 @@ async function* streamAgentInternal(
       if (spendFailure) throw spendFailure;
       if (usageFailure) throw usageFailure;
       if (nestedUsage.incomplete) throw new Error("cave_nested_usage_incomplete");
-      if (efficiencyPlan && reasoningUsageUnavailable) {
+      if (bindingPlan && reasoningUsageUnavailable) {
         throw new Error("cave_reasoning_usage_unavailable");
       }
-      if (efficiencyPlan) {
-        enforceSemanticBudgets(contextBill(lowered.ir), outputTokens, efficiencyPlan);
-        if (reasoningTokens > efficiencyPlan.budgets.reasoning) {
+      if (bindingPlan) {
+        enforceSemanticBudgets(contextBill(lowered.ir), outputTokens, bindingPlan);
+        if (reasoningTokens > bindingPlan.budgets.reasoning) {
           throw new Error("cave_reasoning_budget_exceeded");
         }
       }
@@ -3286,7 +3307,7 @@ async function* streamAgentInternal(
       }
       const pendingCall: PendingCallRecord = {
         model: selected,
-        reasoning: routed.decision?.reasoning ?? definition.reasoning,
+        reasoning: routed.decision?.reasoning ?? options.reasoning ?? definition.reasoning,
         reservation: decided.reservation,
         reservationMeter: budgetMeter,
         retryAttempt: undefined,
@@ -3553,7 +3574,7 @@ async function* streamAgentInternal(
       initialState: {
         systemPrompt: instructions,
         model: routedModel,
-        thinkingLevel: definition.reasoning,
+        thinkingLevel: options.reasoning ?? definition.reasoning,
         tools: piTools,
         ...(conversation === undefined ? {} : {
           messages: initialProviderMessages,
@@ -4011,7 +4032,7 @@ async function* streamAgentInternal(
     while (queued.length > 0) yield queued.shift()!;
     await closeProgrammaticSpeculation();
     activeDurableTools?.assertReconciled();
-    if (efficiencyPlan && reasoningUsageUnavailable) {
+    if (bindingPlan && reasoningUsageUnavailable) {
       throw new Error("cave_reasoning_usage_unavailable");
     }
     if (ladderFailure) throw ladderFailure;
@@ -4020,7 +4041,7 @@ async function* streamAgentInternal(
     // From here an unreadable warm reports exactly like an unreadable compaction.
     if (usageIncomplete) usageFailure ??= new Error("cave_provider_usage_incomplete");
     if (usageFailure !== undefined &&
-        (efficiencyPlan !== undefined ||
+        (bindingPlan !== undefined ||
           executionContext.spendLedgers.length > 0 ||
           usageFailure.message === "cave_provider_model_identity_mismatch" ||
           usageFailure.message === "cave_provider_identity_missing")) {
@@ -4146,16 +4167,16 @@ async function* streamAgentInternal(
       unlocked: buildIdentity === undefined,
       ...(durableResume === undefined ? {} : { resumed: true }),
     };
-    if (efficiencyPlan) {
+    if (bindingPlan) {
       if (result.reasoningUsageBasis !== "provider_reported") {
         throw new Error("cave_reasoning_usage_unavailable");
       }
-      if (result.reasoningTokens > efficiencyPlan.budgets.reasoning) {
+      if (result.reasoningTokens > bindingPlan.budgets.reasoning) {
         throw new Error("cave_reasoning_budget_exceeded");
       }
     }
-    if (efficiencyPlan) {
-      enforceSemanticBudgets(result.contextBill, result.outputTokens, efficiencyPlan);
+    if (bindingPlan) {
+      enforceSemanticBudgets(result.contextBill, result.outputTokens, bindingPlan);
     }
     let conversationCommit: Parameters<typeof commitConversation>[1] | undefined;
     let completedConversation: DurableConversationCheckpoint | undefined;
@@ -4771,24 +4792,6 @@ function orderedTransformIDs(plan: CavePlan, ids: readonly string[]): string[] {
   return ordered;
 }
 
-export function enforceSemanticBudgets(
-  bill: Readonly<Record<string, number>>,
-  outputMaxTokens: number,
-  plan: CavePlan,
-): void {
-  const slots: Array<[keyof CavePlan["budgets"], number]> = [
-    ["instructions", bill.instruction ?? 0],
-    ["tools", bill.tool_schema ?? 0],
-    ["memory", bill.memory ?? 0],
-    ["history", bill.history ?? 0],
-    ["results_artifacts", (bill.artifact ?? 0) + (bill.skill ?? 0) + (bill.tool_result ?? 0)],
-    ["output", outputMaxTokens],
-  ];
-  for (const [slot, used] of slots) {
-    if (used > plan.budgets[slot]) throw new Error(`cave_${slot}_budget_exceeded`);
-  }
-}
-
 export function assembleSystemPrompt(
   definition: AgentDefinition,
   lowered: LoweredContext,
@@ -5094,7 +5097,6 @@ function engineContentType(transformID: string): string {
   if (!match) throw new Error(`cave_unknown_transform:${transformID}`);
   return match[1]!;
 }
-
 
 export interface SegmentRecoveryProof {
   transformID: string;
@@ -5988,20 +5990,6 @@ function markAppliedPlanFailedOpen(plan: AppliedPlan, reason: string): void {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function volatileStablePrefix(instructions: string, tools: readonly ToolDefinition[]): boolean {
-  const value = `${instructions}\n${stableStringify(tools.map((item) => ({
-    name: item.name,
-    description: item.description,
-    input: item.input,
-  })))}`;
-  return [
-    /\b20[0-9]{2}-[01][0-9]-[0-3][0-9][T ][0-2][0-9]:[0-5][0-9]/,
-    /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/i,
-    /["'](?:run|request|build|trace|span)[_-]?id["']\s*:/i,
-    /["']nonce["']\s*:/i,
-  ].some((pattern) => pattern.test(value));
 }
 
 function serializeTransformTrace(trace: readonly TransformTrace[]): string {

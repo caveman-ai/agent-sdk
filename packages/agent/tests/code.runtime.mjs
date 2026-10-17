@@ -756,11 +756,12 @@ for (const [runner, runTurn] of Object.entries(turnRunners)) {
       const session = await startCodingSession(codingAgent, { cave: "local", engineBin: FAKE_ENGINE, onNotice: (line) => notices.push(line) });
       const faux = fauxAnthropic();
       const model = { ...faux.getModel(), api: "anthropic-messages", provider: "anthropic" };
-      const command = `node -e 'process.stdout.write("x".repeat(40000) + "\\n")'`;
+      // Each turn's output differs: the fake engine stores an input under its digest.
+      const command = (turn) => `node -e 'process.stdout.write("turn ${turn} " + "x".repeat(40000) + "\\n")'`;
       const engineInputs = async () => (await readdir(store)).filter((name) => name.startsWith("ccr_")).length;
       for (const [turnIndex, ask] of ["first ask", "second ask"].entries()) {
         const before = await engineInputs();
-        faux.setResponses([fauxAssistantMessage(fauxToolCall("bash", { command }, { id: `bash-${turnIndex}` })), fauxAssistantMessage("done")]);
+        faux.setResponses([fauxAssistantMessage(fauxToolCall("bash", { command: command(turnIndex) }, { id: `bash-${turnIndex}` })), fauxAssistantMessage("done")]);
         const turn = await runTurn(session, ask, { model, models: payloadModels(faux, []), providerPayloadContract: "pi-on-payload-v1" });
         assert.equal(turn.text, "done");
         // Each turn's capped output still reaches the local engine: the plan survived the turn before.

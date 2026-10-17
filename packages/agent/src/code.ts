@@ -46,6 +46,7 @@ import {
   type MemoryRuntimeConfig,
 } from "./memory.js";
 import { createFileMemoryAdapter } from "./memory-store.js";
+import type { AgentInput } from "./input.js";
 import {
   PROGRAMMATIC_TOOL_NAME,
   createProgrammaticToolRuntime,
@@ -63,6 +64,7 @@ import {
   type ResolvedCodingLevers,
 } from "./coding-surface.js";
 import { renderMcpServersSection, type McpHost } from "./mcp.js";
+import { withProgrammaticTransport } from "./coding-transport.js";
 import {
   createCommandSessionRuntime,
   type CommandSessionSpillOptions,
@@ -466,6 +468,18 @@ export function codingRunOptions(codingAgent: CodingAgent, options: RunOptions =
 }
 
 /**
+ * `stream()` for a coding agent with {@link codingRunOptions}. With `cave: "local"`
+ * the agent's plan and levers apply in process, durable runs included; by
+ * default (`bound`) only a tool output that overran its cap reaches the engine.
+ */
+export function streamCodingRun(codingAgent: CodingAgent, input: AgentInput, options: RunOptions = {}): AsyncGenerator<CavemanRunEvent> {
+  rejectInternalRunOptions(options);
+  const prepared = codingRunOptions(codingAgent, options);
+  return streamAgentInternalOptions(codingAgent.definition, input, options.cave === "local"
+    ? { ...prepared, candidatePlan: codingAgent.plan, engineLevers: codingAgent.levers } : prepared);
+}
+
+/**
  * Clone model records for one provider onto an explicit API base URL while
  * retaining Pi's provider-owned auth and wire implementation. This is an
  * endpoint override, not gateway routing: callers remain in direct-provider
@@ -729,21 +743,6 @@ export function classifyTurnFailure(error: unknown): "degrade_to_observe_only" |
   return message.includes("cave_gateway_required_for_locked_plan")
     ? "degrade_to_observe_only"
     : "fatal";
-}
-
-function withProgrammaticTransport(
-  codingAgent: CodingAgent,
-  options: RunOptions,
-): RunOptions {
-  const runtime = codingAgent.programmaticTools;
-  if (runtime === undefined) return options;
-  if (options.streamFn !== undefined) {
-    return { ...options, streamFn: runtime.wrapStreamFn(options.streamFn) };
-  }
-  return {
-    ...options,
-    models: runtime.wrapModels(options.models ?? builtinModels()),
-  };
 }
 
 export async function runCodingTurn(

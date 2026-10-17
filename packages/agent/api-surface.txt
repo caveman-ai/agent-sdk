@@ -532,6 +532,7 @@
 ./code	runCodingTurn
 ./code	sessionBill
 ./code	startCodingSession
+./code	streamCodingRun
 ./code	streamCodingTurn
 ./code	summarizeCodingTaskAttempts
 ./command-session	CommandSessionReadOptions
