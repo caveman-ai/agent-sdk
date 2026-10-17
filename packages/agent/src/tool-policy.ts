@@ -37,13 +37,22 @@ export type ToolCallDecision =
   | { readonly allow: true }
   | { readonly deny: string };
 
-export type ToolCallPolicy = (
+export type ToolCallPolicy = ((
   call: ToolCallPolicyInput,
-) => ToolCallDecision | Promise<ToolCallDecision>;
+) => ToolCallDecision | Promise<ToolCallDecision>) & {
+  /**
+   * How long this policy may take to decide one call, in ms (1 to 86,400,000;
+   * default {@link TOOL_POLICY_TIMEOUT_MS}). A host whose policy asks a person
+   * (an approval card) raises it and answers on the run's Stop itself; past it
+   * the run still fails closed and the call never executes.
+   */
+  readonly timeoutMs?: number;
+};
 
 const DENY_CODE = /^[a-z][a-z0-9_]{0,63}$/u;
 /** A policy that cannot answer is an unknown authorization state: fail closed. */
 export const TOOL_POLICY_TIMEOUT_MS = 10_000;
+const TOOL_POLICY_TIMEOUT_MAX_MS = 86_400_000;
 
 export interface ToolCallDenial {
   readonly block: true;
@@ -53,7 +62,8 @@ export interface ToolCallDenial {
 /**
  * Evaluate a policy for one call. Returns the block result for a denial,
  * `undefined` to admit. Throws `cave_tool_policy_failed` when the policy
- * throws or hangs past {@link TOOL_POLICY_TIMEOUT_MS},
+ * throws or hangs past its `timeoutMs` (default {@link TOOL_POLICY_TIMEOUT_MS})
+ * or sets one outside 1..86,400,000 ms,
  * `cave_tool_policy_decision_invalid` for a malformed decision, and
  * `cave_tool_policy_reason_invalid` for a deny code outside `[a-z][a-z0-9_]*`.
  * Every throw is run-fatal to the caller: unknown authorization never executes.
@@ -64,11 +74,15 @@ export async function decideToolCall(
 ): Promise<ToolCallDenial | undefined> {
   let decision: ToolCallDecision;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeoutMs = policy.timeoutMs ?? TOOL_POLICY_TIMEOUT_MS;
   try {
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > TOOL_POLICY_TIMEOUT_MAX_MS) {
+      throw new Error("cave_tool_policy_timeout_invalid");
+    }
     decision = await Promise.race([
       Promise.resolve().then(() => policy(Object.freeze({ ...input }))),
       new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error("cave_tool_policy_timeout")), TOOL_POLICY_TIMEOUT_MS);
+        timer = setTimeout(() => reject(new Error("cave_tool_policy_timeout")), timeoutMs);
         (timer as { unref?: () => void }).unref?.();
       }),
     ]);

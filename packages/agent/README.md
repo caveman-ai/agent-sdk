@@ -82,7 +82,8 @@ use host execution with a notice.
 Inputs validate before execution. Optional output schemas validate results
 before they enter model context. Effects are `read`, `write`, `idempotent`, or
 `external`; every tool must declare one. `RunOptions.toolPolicy` can deny calls
-outside the model's control. [Tool guide](../../caveman-docs/guides/04-tools.md)
+outside the model's control; it decides within 10 s unless it carries its own
+`timeoutMs` (up to a day, for a policy that asks a person). [Tool guide](../../caveman-docs/guides/04-tools.md)
 and [sandbox contract](../../caveman-docs/guides/13-sandbox-and-security.md).
 
 ## Streaming and conversations
