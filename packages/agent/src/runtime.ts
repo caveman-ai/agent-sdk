@@ -1799,6 +1799,10 @@ async function* streamAgentInternal(
     if (options.maxCostUsd !== undefined) {
       throw new Error("cave_durable_max_cost_usd_unsupported: use RunOptions.budget with durable runs");
     }
+    // Only the local engine's plan replays from the journal (streamCodingRun); a gateway plan stays undurable.
+    if (options.candidatePlan !== undefined && options.cave !== "local") {
+      throw new Error("cave_durable_candidate_plan_unsupported");
+    }
     if (options.conversation !== undefined && options.sessionId !== undefined &&
         options.sessionId !== options.conversation.sessionId) {
       throw new Error("cave_durable_session_mismatch");

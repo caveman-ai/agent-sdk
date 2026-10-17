@@ -7,6 +7,7 @@ import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-work
 import { createModels } from "@earendil-works/pi-ai";
 import { DiskDurableStore, createConversation } from "../dist/index.js";
 import { createCodingAgent, runCodingTurn, startCodingSession, streamCodingRun } from "../dist/code.js";
+import { runAgentInternal } from "../dist/runtime.js";
 
 const FAKE_ENGINE = resolve(import.meta.dirname, "fixtures/fake-engine.mjs");
 
@@ -91,6 +92,25 @@ test("a durable coding run on the local engine bounds only a cap overrun; the ne
     assert.equal(toolText(seen[3], "small"), "exit 0\nsmall-output-sentinel\n");
     // The earlier overrun is back to its capped text: what the tool returned, as the transcript keeps it.
     assert.equal(seen[3].filter((message) => message.role === "toolResult").some((message) => /cave-compressed/.test(message.content[0].text)), false);
+  });
+});
+
+test("a durable run takes a candidate plan only on the local engine", async () => {
+  await withDirs(async ({ workspace, journal }) => {
+    const codingAgent = createCodingAgent({ workspace, model: "anthropic/faux-1" });
+    const { model } = faux();
+    for (const cave of ["off", "auto"]) {
+      await assert.rejects(
+        runAgentInternal(codingAgent.definition, "go", {
+          ensureRuntime: false, cave, model, candidatePlan: codingAgent.plan,
+          streamFn: () => { throw new Error("must not be called"); },
+          durable: { runId: `gateway-plan-${cave}`, store: new DiskDurableStore(journal) },
+        }),
+        /cave_durable_candidate_plan_unsupported/,
+        cave,
+      );
+    }
+    assert.equal((await readdir(journal)).length, 0, "refused before the journal is touched");
   });
 });
 
