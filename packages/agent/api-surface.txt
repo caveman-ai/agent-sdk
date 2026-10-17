@@ -317,6 +317,7 @@
 .	requireCompleteModelUsage
 .	resolveConnectBinary
 .	resolveEgressPolicy
+.	restoreConversation
 .	routine
 .	routineOutcomes
 .	run

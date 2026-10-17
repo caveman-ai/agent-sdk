@@ -105,6 +105,7 @@ export {
   CavemanRunError,
   agentStaticContextDiagnostics,
   createConversation,
+  restoreConversation,
   verifySandboxConformance,
 } from "./runtime.js";
 export type { AgentStaticContextDiagnostics } from "./runtime.js";

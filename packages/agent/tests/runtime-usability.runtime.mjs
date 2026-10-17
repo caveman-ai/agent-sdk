@@ -5,9 +5,11 @@ import {
   AgentRunController,
   agent,
   output,
+  restoreConversation,
   run,
   schema,
   stream,
+  subagent,
   tool,
 } from "../dist/index.js";
 import { fauxModel, scriptedStream } from "../dist/testing.js";
@@ -207,4 +209,25 @@ test("completed structured answers still validate and retain their parsed output
   await assert.rejects(run(structuredAgent(), "answer", {
     cave: "off", streamFn: scriptedStream([{ text: "not JSON" }]),
   }), /cave_output_schema_invalid_json/);
+});
+
+test("a subagent under a host controller does not take the root's controller", async () => {
+  const child = agent({ id: "child", instructions: "Answer.", model: "anthropic/claude-haiku-4-5", sandbox: "fixture" });
+  const parent = agent({
+    id: "parent",
+    instructions: "Delegate.",
+    model: "anthropic/claude-haiku-4-5",
+    sandbox: "fixture",
+    tools: [subagent({ name: "delegate", description: "Delegate.", agent: child })],
+  });
+  const result = await run(parent, "go", {
+    ensureRuntime: false,
+    cave: "off",
+    model: fauxModel(),
+    controller: new AgentRunController(),
+    // Parent delegates, child answers, parent finishes.
+    streamFn: scriptedStream([{ toolCalls: [{ name: "delegate", args: { task: "sub" } }] }, { text: "child" }, { text: "done" }]),
+  });
+  assert.equal(result.text, "done");
+  assert.equal(typeof restoreConversation, "function", "restoreConversation is a package export");
 });

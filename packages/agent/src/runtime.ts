@@ -6526,6 +6526,8 @@ async function runSubagent(input: {
     conversation: _conversation,
     model: _parentModel,
     signal: _parentSignal,
+    // The queue/steering handle belongs to the root loop; a child attaching it fails cave_agent_controller_in_use.
+    controller: _parentController,
     budget: _parentBudget,
     budgetController: _parentBudgetController,
     onBudgetExhausted: _parentOnBudgetExhausted,
