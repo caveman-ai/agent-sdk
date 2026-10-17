@@ -10,7 +10,8 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createAssistantMessageEventStream, createModels, getCurrentSystemPrompt } from "@earendil-works/pi-ai";
 import { fauxAssistantMessage as upstreamFaux, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
-import { run, schema, stream, tool } from "../dist/index.js";
+import { AgentRunController, createConversation, run, schema, stream, tool } from "../dist/index.js";
+import { DiskDurableStore } from "../dist/durable.js";
 import {
   CODING_RUN_BREAKERS,
   codingRunOptions,
@@ -136,6 +137,38 @@ test("hybrid is the default: coding tools stay declared, one code tool carries t
     } finally {
       await codingAgent.close();
     }
+  });
+});
+
+test("the app's call shape: stream() + durable journal + controller runs hybrid cells and direct tools", async () => {
+  await withWorkspace(async (workspace, store) => {
+    await writeFile(resolve(workspace, "a.txt"), "alpha\n");
+    const codingAgent = createCodingAgent({ workspace, model: "openai/gpt-5.4" });
+    const results = [];
+    const faux = fauxProvider();
+    let end;
+    try {
+      for await (const event of stream(codingAgent.definition, "read", codingRunOptions(codingAgent, {
+        ensureRuntime: false,
+        cave: "off",
+        model: faux.getModel(),
+        conversation: createConversation(),
+        controller: new AgentRunController(),
+        durable: { runId: "hybrid-durable", store: new DiskDurableStore(resolve(store, "journal")) },
+        streamFn: scripted([
+          { name: "caveman_code", args: { code: 'print(await read_file({ path: "a.txt" }));' } },
+          { name: "read_file", args: { path: "a.txt" } },
+        ], results),
+      }))) {
+        if (event.type === "run_error") throw new Error(event.message);
+        if (event.type === "run_end") end = event.result;
+      }
+    } finally {
+      await codingAgent.close();
+    }
+    assert.equal(end.text, "done");
+    assert.match(results[0], /alpha/);
+    assert.match(results[1], /^1\talpha/);
   });
 });
 
