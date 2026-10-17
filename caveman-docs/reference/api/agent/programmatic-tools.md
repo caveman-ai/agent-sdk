@@ -8,8 +8,8 @@ Declaration file: `packages/agent/dist/programmatic-tools.d.ts`.
 <details><summary>Symbol index</summary>
 
 - **Class**: `ProgrammaticSpeculationScope`
-- **Interface**: `ProgrammaticSpeculationActivation`, `ProgrammaticSpeculationLaunch`, `ProgrammaticToolInstructionOptions`, `ProgrammaticToolRuntime`, `ProgrammaticToolStats`
-- **Type alias**: `ProgrammaticSpeculationDispatch`
+- **Interface**: `ProgrammaticSpeculationActivation`, `ProgrammaticSpeculationLaunch`, `ProgrammaticToolInstructionOptions`, `ProgrammaticToolNamespace`, `ProgrammaticToolRuntime`, `ProgrammaticToolStats`
+- **Type alias**: `ProgrammaticCellGate`, `ProgrammaticSpeculationDispatch`
 - **Function**: `createProgrammaticToolErrorWrapper`, `createProgrammaticToolRuntime`, `programmaticToolInstructions`, `programmaticToolMetadata`
 - **Variable**: `PROGRAMMATIC_TOOL_NAME`
 
@@ -90,6 +90,21 @@ export interface ProgrammaticToolInstructionOptions {
 
 Declared in `packages/agent/dist/programmatic-tools.d.ts`.
 
+### `ProgrammaticToolNamespace`
+
+Groups late-registered tools for `describeNamespace()` and search filters.
+
+```ts
+export interface ProgrammaticToolNamespace {
+    readonly name: string;
+    readonly description?: string;
+    /** Longer guidance (for example tool-server instructions), returned only by `describeNamespace()`. */
+    readonly instructions?: string;
+}
+```
+
+Declared in `packages/agent/dist/programmatic-catalog.d.ts`.
+
 ### `ProgrammaticToolRuntime`
 
 ```ts
@@ -98,6 +113,15 @@ export interface ProgrammaticToolRuntime {
     wrapModels(models: Models): Models;
     wrapStreamFn(streamFn: StreamFn): StreamFn;
     stats(): ProgrammaticToolStats;
+    /**
+     * Make more trusted tools callable from the next cell as `tools.<name>`,
+     * found through `searchTools`/`describeTool`/`describeNamespace`. The code
+     * tool's provider-visible description never changes, so the cache prefix
+     * stays byte-stable while tool servers connect.
+     */
+    registerNestedTools(tools: readonly ToolDefinition[], namespace?: ProgrammaticToolNamespace): void;
+    /** Await `gate(code)` before each cell, e.g. so servers a cell names can finish connecting. */
+    setCellGate(gate: ProgrammaticCellGate | undefined): void;
     close(): void;
 }
 ```
@@ -118,6 +142,16 @@ export interface ProgrammaticToolStats {
 Declared in `packages/agent/dist/programmatic-tools.d.ts`.
 
 ## Type aliases
+
+### `ProgrammaticCellGate`
+
+Runs before each cell; must bound its own wait and honor `signal`.
+
+```ts
+export type ProgrammaticCellGate = (code: string, signal: AbortSignal | undefined) => Promise<void>;
+```
+
+Declared in `packages/agent/dist/programmatic-tools.d.ts`.
 
 ### `ProgrammaticSpeculationDispatch`
 
@@ -144,6 +178,11 @@ export declare function createProgrammaticToolRuntime(directDefinition: AgentDef
     readonly instructions?: string;
     readonly speculate?: boolean;
     readonly toolName?: string;
+    /**
+     * Hybrid mode: these tools stay declared to the provider beside the code
+     * tool, and instructions stay as given. Cells can still call every tool.
+     */
+    readonly direct?: readonly string[];
 }): ProgrammaticToolRuntime;
 ```
 

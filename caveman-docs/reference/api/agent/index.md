@@ -8,9 +8,9 @@ Declaration file: `packages/agent/dist/index.d.ts`.
 <details><summary>Symbol index</summary>
 
 - **Class**: `AgentRunController`, `BudgetController`, `CavemanRunError`, `ConnectRuntime`, `DiskDurableStore`, `HttpDurableStore`, `MemoryEngine`, `ProgrammaticSpeculationScope`
-- **Interface**: `AgentAudioInputPart`, `AgentDefinition`, `AgentDefinitionTransform`, `AgentDirConfig`, `AgentDirModules`, `AgentDirRunDefaults`, `AgentFileInputPart`, `AgentImageInputPart`, `AgentInputBase64Source`, `AgentInputEncoder`, `AgentInputURLSource`, `AgentOpaqueInputPart`, `AgentStaticContextDiagnostics`, `AgentTextInputPart`, `ArtifactDefinition`, `BreakerEvent`, `BudgetExhaustionContext`, `BudgetTranche`, `CapturedModelBoundary`, `CapturedModelBoundaryCall`, `CompactionOptions`, `CompiledPipelineResult`, `CompileProfiledInput`, `CompileProfiledNativePiInput`, `CompileProfiledResult`, `CompilerTarget`, `CompleteModelUsage`, `CompletionMemorySidecarOptions`, `ConnectAction`, `ConnectConnection`, `ConnectEfficiencyComparison`, `ConnectEfficiencyRun`, `ConnectExecuteOptions`, `ConnectIntegration`, `ConnectMcpCallResult`, `ConnectMcpTool`, `ConnectMcpToolAnnotations`, `ConnectMcpToolExecution`, `ConnectMcpToolIcon`, `ConnectOptions`, `ConnectProcessResult`, `ConnectQualityPolicy`, `ConnectRuntimeOptions`, `ConnectSource`, `ConnectToolRuntimeDefinition`, `ContextAnchor`, `ContextCompactionFixture`, `ContextCompactionFixtureRound`, `ContextCompactionHarnessOptions`, `ContextCompactionHarnessResult`, `ContextCompactionHarnessRoundResult`, `ContextCompactionSummarizerRequest`, `ContextDefinition`, `ContextIR`, `ContextIRWire`, `ContextSegment`, `ContextSegmentWire`, `ContextSummary`, `ContextSummaryEvaluation`, `ContextSummaryEvaluationInput`, `ContextSummaryRound`, `ContextSummarySource`, `ContextSummaryStability`, `ContextSummaryValidation`, `CreateMemoryEngineOptions`, `DurableRunOptions`, `DurableStore`, `EvalDefinition`, `ExecRequest`, `ExecResult`, `ExecuteCompiledPipelineInput`, `ExecutionBackend`, `ExpectedContextAnchor`, `FileSource`, `HttpDurableStoreOptions`, `LoweredContext`, `MemoryAmbientOptions`, `MemoryCompletionRequest`, `MemoryConsolidationInput`, `MemoryDefinition`, `MemoryDraft`, `MemoryEdge`, `MemoryEmbeddingAdapter`, `MemoryExtractionInput`, `MemoryHit`, `MemoryRecall`, `MemoryRecord`, `MemoryRememberInput`, `MemoryReviewInput`, `MemoryReviewResult`, `MemoryRuntimeConfig`, `MemoryScope`, `MemorySearchOptions`, `MemorySessionHit`, `MemorySidecarAdapter`, `MemorySource`, `MemoryState`, `MemoryStorageAdapter`, `MemoryStoreConfig`, `MemoryTurn`, `MemoryTurnInput`, `MemoryVector`, `ModelBoundary`, `ModelBoundaryContext`, `ModelBoundaryFailed`, `ModelBoundaryMiddleware`, `ModelBoundaryPrepare`, `ModelBoundarySettled`, `ModelCallRouteDecision`, `ModelCallRouteInput`, `ModelUsage`, `NativePiCandidatePlanningInput`, `NestedToolDispatchOptions`, `NormalizedAgentInput`, `NormalizedCompaction`, `NormalizedConnectAction`, `NormalizedConnectQualityPolicy`, `NormalizedConnectSource`, `NormalizedToolActivity`, `NormalizedTrajectory`, `NormalizeTrajectoryOptions`, `OpenAICompatibleMemoryEmbeddingOptions`, `OutputDefinition`, `PreparedModelBoundaryCall`, `ProfileToolEffect`, `ProgrammaticSpeculationActivation`, `ProgrammaticSpeculationLaunch`, `ProgrammaticToolInstructionOptions`, `ProgrammaticToolRuntime`, `ProgrammaticToolStats`, `ReceiptCall`, `ReceiptCompaction`, `ReceiptLike`, `ReceiptPrintCall`, `ReceiptResume`, `ReceiptTool`, `ResolvedEgressPolicy`, `RoutineOutcomeCount`, `RunBreakers`, `RunBudget`, `RunOptions`, `RunReceipt`, `RunResult`, `RuntimeContextSegment`, `SandboxEgressPolicy`, `ShellToolsOptions`, `StandardInputOutputToolOptions`, `StandardJSONOutputToolOptions`, `StandardJSONToolOptions`, `StandardJSONTypeBoxOutputToolOptions`, `StandardOutputToolOptions`, `StandardToolOptions`, `StandardTypeBoxOutputToolOptions`, `SubagentRuntimeDefinition`, `ToolCallDenial`, `ToolCallPolicyInput`, `ToolDefinition`, `ToolExecutionContext`, `ToolOptions`, `TypeBoxOutputToolOptions`, `WorkloadPartition`, `WorkloadProfile`
-- **Type alias**: `AgentDirContextValue`, `AgentInput`, `AgentInputPart`, `AgentInputSource`, `AgentOutput`, `Auto`, `BudgetDenomination`, `BudgetExhaustionHandler`, `CacheRegion`, `CavemanRunEvent`, `ConnectActionBindValue`, `ConnectExecutor`, `ContextAnchorKind`, `ContextCompactionSummarizer`, `ContextKind`, `ContextPriority`, `ContextStability`, `ConversationState`, `DurableRunSummary`, `EvalGuardrail`, `EvalSplit`, `FiniteJSON`, `MemoryKind`, `MemoryRelation`, `ModelBoundaryRole`, `ModelCallRouter`, `ModelUsageAccountingStatus`, `ModelUsageCost`, `ModelUsageTokenCount`, `PrivacyClass`, `ProfiledCompileStatus`, `ProgrammaticSpeculationDispatch`, `QualityGrader`, `RecoveryKind`, `RoutineOutcome`, `RunStopReason`, `SafetyClass`, `SandboxEgress`, `ShellToolName`, `StandardToolSchema`, `ToolCallDecision`, `ToolCallPolicy`, `ToolEffect`, `ToolResultPolicy`, `ToolRuntimeDefinition`, `TrajectorySource`, `WorkloadSplit`
-- **Function**: `agent`, `agentStaticContextDiagnostics`, `appendRuntimeContextSegment`, `applyAgentDefinitionTransforms`, `artifact`, `assertProfiledBuildTarget`, `assertQualityGrader`, `auto`, `capabilityManifestFor`, `captureModelBoundary`, `compareConnectEfficiency`, `compileProfiled`, `compileProfiledNativePi`, `completionMemorySidecar`, `composeAgentDir`, `connectEnvironment`, `context`, `contextBill`, `contextIRFromWire`, `contextIRToWire`, `contextSummarySources`, `cosine`, `createBudgetController`, `createCompilerWorkloadProfile`, `createConnect`, `createConversation`, `createFileMemoryAdapter`, `createInMemoryMemoryStorage`, `createMemoryEngine`, `createMemoryWorkflow`, `createModelBoundary`, `createProgrammaticToolErrorWrapper`, `createProgrammaticToolRuntime`, `createSparseEmbeddingAdapter`, `createWorkloadProfile`, `decideToolCall`, `defineAgentInputEncoder`, `defineModelUsage`, `defineRunReceipt`, `durableInputIsReplayable`, `durableRunSummary`, `egressAllowed`, `emptyMemoryState`, `encodeAgentInput`, `eval`, `evalFixture`, `evaluateContextSummary`, `evaluateContextSummaryStability`, `executeCompiledPipeline`, `executeConnectTool`, `file`, `httpExecutionBackend`, `latestContextSummary`, `loadAgentDir`, `localExecutionBackend`, `lowerContext`, `memory`, `memoryTTLMilliseconds`, `modelUsageAccountingStatus`, `nativePiCompilerTarget`, `normalizeAgentInput`, `normalizeCompaction`, `normalizeTrajectory`, `opaquePayload`, `openAICompatibleMemoryEmbedding`, `output`, `packVector`, `parseContextSummary`, `parseNormalizedTrajectory`, `parseWorkloadProfile`, `planNativePiCandidates`, `programmaticToolInstructions`, `programmaticToolMetadata`, `renderReceipt`, `renderSummary`, `requireCompleteModelUsage`, `resolveConnectBinary`, `resolveEgressPolicy`, `routine`, `routineOutcomes`, `run`, `runContextCompactionHarness`, `runLocked`, `sha256`, `shellTools`, `stableStringify`, `stream`, `subagent`, `summarizationInstruction`, `tool`, `validateContextSummaryTransition`, `verifySandboxConformance`, `workloadSplitSHA256`
+- **Interface**: `AgentAudioInputPart`, `AgentDefinition`, `AgentDefinitionTransform`, `AgentDirConfig`, `AgentDirModules`, `AgentDirRunDefaults`, `AgentFileInputPart`, `AgentImageInputPart`, `AgentInputBase64Source`, `AgentInputEncoder`, `AgentInputURLSource`, `AgentOpaqueInputPart`, `AgentStaticContextDiagnostics`, `AgentTextInputPart`, `ArtifactDefinition`, `BreakerEvent`, `BudgetExhaustionContext`, `BudgetTranche`, `CapturedModelBoundary`, `CapturedModelBoundaryCall`, `CompactionOptions`, `CompiledPipelineResult`, `CompileProfiledInput`, `CompileProfiledNativePiInput`, `CompileProfiledResult`, `CompilerTarget`, `CompleteModelUsage`, `CompletionMemorySidecarOptions`, `ConnectAction`, `ConnectConnection`, `ConnectEfficiencyComparison`, `ConnectEfficiencyRun`, `ConnectExecuteOptions`, `ConnectIntegration`, `ConnectMcpCallResult`, `ConnectMcpTool`, `ConnectMcpToolAnnotations`, `ConnectMcpToolExecution`, `ConnectMcpToolIcon`, `ConnectOptions`, `ConnectProcessResult`, `ConnectQualityPolicy`, `ConnectRuntimeOptions`, `ConnectSource`, `ConnectToolRuntimeDefinition`, `ContextAnchor`, `ContextCompactionFixture`, `ContextCompactionFixtureRound`, `ContextCompactionHarnessOptions`, `ContextCompactionHarnessResult`, `ContextCompactionHarnessRoundResult`, `ContextCompactionSummarizerRequest`, `ContextDefinition`, `ContextIR`, `ContextIRWire`, `ContextSegment`, `ContextSegmentWire`, `ContextSummary`, `ContextSummaryEvaluation`, `ContextSummaryEvaluationInput`, `ContextSummaryRound`, `ContextSummarySource`, `ContextSummaryStability`, `ContextSummaryValidation`, `CreateMemoryEngineOptions`, `DurableRunOptions`, `DurableStore`, `EvalDefinition`, `ExecRequest`, `ExecResult`, `ExecuteCompiledPipelineInput`, `ExecutionBackend`, `ExpectedContextAnchor`, `FileSource`, `HttpDurableStoreOptions`, `LoweredContext`, `MemoryAmbientOptions`, `MemoryCompletionRequest`, `MemoryConsolidationInput`, `MemoryDefinition`, `MemoryDraft`, `MemoryEdge`, `MemoryEmbeddingAdapter`, `MemoryExtractionInput`, `MemoryHit`, `MemoryRecall`, `MemoryRecord`, `MemoryRememberInput`, `MemoryReviewInput`, `MemoryReviewResult`, `MemoryRuntimeConfig`, `MemoryScope`, `MemorySearchOptions`, `MemorySessionHit`, `MemorySidecarAdapter`, `MemorySource`, `MemoryState`, `MemoryStorageAdapter`, `MemoryStoreConfig`, `MemoryTurn`, `MemoryTurnInput`, `MemoryVector`, `ModelBoundary`, `ModelBoundaryContext`, `ModelBoundaryFailed`, `ModelBoundaryMiddleware`, `ModelBoundaryPrepare`, `ModelBoundarySettled`, `ModelCallRouteDecision`, `ModelCallRouteInput`, `ModelUsage`, `NativePiCandidatePlanningInput`, `NestedToolDispatchOptions`, `NormalizedAgentInput`, `NormalizedCompaction`, `NormalizedConnectAction`, `NormalizedConnectQualityPolicy`, `NormalizedConnectSource`, `NormalizedToolActivity`, `NormalizedTrajectory`, `NormalizeTrajectoryOptions`, `OpenAICompatibleMemoryEmbeddingOptions`, `OutputDefinition`, `PreparedModelBoundaryCall`, `ProfileToolEffect`, `ProgrammaticSpeculationActivation`, `ProgrammaticSpeculationLaunch`, `ProgrammaticToolInstructionOptions`, `ProgrammaticToolNamespace`, `ProgrammaticToolRuntime`, `ProgrammaticToolStats`, `ReceiptCall`, `ReceiptCompaction`, `ReceiptLike`, `ReceiptPrintCall`, `ReceiptResume`, `ReceiptTool`, `ResolvedEgressPolicy`, `RoutineOutcomeCount`, `RunBreakers`, `RunBudget`, `RunOptions`, `RunReceipt`, `RunResult`, `RuntimeContextSegment`, `SandboxEgressPolicy`, `ShellToolsOptions`, `StandardInputOutputToolOptions`, `StandardJSONOutputToolOptions`, `StandardJSONToolOptions`, `StandardJSONTypeBoxOutputToolOptions`, `StandardOutputToolOptions`, `StandardToolOptions`, `StandardTypeBoxOutputToolOptions`, `SubagentRuntimeDefinition`, `ToolCallDenial`, `ToolCallPolicyInput`, `ToolDefinition`, `ToolExecutionContext`, `ToolOptions`, `TypeBoxOutputToolOptions`, `WorkloadPartition`, `WorkloadProfile`
+- **Type alias**: `AgentDirContextValue`, `AgentInput`, `AgentInputPart`, `AgentInputSource`, `AgentOutput`, `Auto`, `BudgetDenomination`, `BudgetExhaustionHandler`, `CacheRegion`, `CavemanRunEvent`, `ConnectActionBindValue`, `ConnectExecutor`, `ContextAnchorKind`, `ContextCompactionSummarizer`, `ContextKind`, `ContextPriority`, `ContextStability`, `ConversationState`, `DurableRunSummary`, `EvalGuardrail`, `EvalSplit`, `FiniteJSON`, `MemoryKind`, `MemoryRelation`, `ModelBoundaryRole`, `ModelCallRouter`, `ModelUsageAccountingStatus`, `ModelUsageCost`, `ModelUsageTokenCount`, `PrivacyClass`, `ProfiledCompileStatus`, `ProgrammaticCellGate`, `ProgrammaticSpeculationDispatch`, `QualityGrader`, `RecoveryKind`, `RoutineOutcome`, `RunStopReason`, `SafetyClass`, `SandboxEgress`, `ShellToolName`, `StandardToolSchema`, `ToolCallDecision`, `ToolCallPolicy`, `ToolEffect`, `ToolResultPolicy`, `ToolRuntimeDefinition`, `TrajectorySource`, `WorkloadSplit`
+- **Function**: `agent`, `agentStaticContextDiagnostics`, `appendRuntimeContextSegment`, `applyAgentDefinitionTransforms`, `artifact`, `assertProfiledBuildTarget`, `assertQualityGrader`, `auto`, `capabilityManifestFor`, `captureModelBoundary`, `caveGatewayReady`, `compareConnectEfficiency`, `compileProfiled`, `compileProfiledNativePi`, `completionMemorySidecar`, `composeAgentDir`, `connectEnvironment`, `context`, `contextBill`, `contextIRFromWire`, `contextIRToWire`, `contextSummarySources`, `cosine`, `createBudgetController`, `createCompilerWorkloadProfile`, `createConnect`, `createConversation`, `createFileMemoryAdapter`, `createInMemoryMemoryStorage`, `createMemoryEngine`, `createMemoryWorkflow`, `createModelBoundary`, `createProgrammaticToolErrorWrapper`, `createProgrammaticToolRuntime`, `createSparseEmbeddingAdapter`, `createWorkloadProfile`, `decideToolCall`, `defineAgentInputEncoder`, `defineModelUsage`, `defineRunReceipt`, `durableInputIsReplayable`, `durableRunSummary`, `egressAllowed`, `emptyMemoryState`, `encodeAgentInput`, `eval`, `evalFixture`, `evaluateContextSummary`, `evaluateContextSummaryStability`, `executeCompiledPipeline`, `executeConnectTool`, `file`, `httpExecutionBackend`, `latestContextSummary`, `loadAgentDir`, `localExecutionBackend`, `lowerContext`, `memory`, `memoryTTLMilliseconds`, `modelUsageAccountingStatus`, `nativePiCompilerTarget`, `normalizeAgentInput`, `normalizeCompaction`, `normalizeTrajectory`, `opaquePayload`, `openAICompatibleMemoryEmbedding`, `output`, `packVector`, `parseContextSummary`, `parseNormalizedTrajectory`, `parseWorkloadProfile`, `planNativePiCandidates`, `programmaticToolInstructions`, `programmaticToolMetadata`, `renderReceipt`, `renderSummary`, `requireCompleteModelUsage`, `resolveConnectBinary`, `resolveEgressPolicy`, `restoreConversation`, `routine`, `routineOutcomes`, `run`, `runContextCompactionHarness`, `runLocked`, `sha256`, `shellTools`, `stableStringify`, `stream`, `subagent`, `summarizationInstruction`, `tool`, `validateContextSummaryTransition`, `verifySandboxConformance`, `workloadSplitSHA256`
 - **Variable**: `AGENT_DIR_ENTRY`, `AGENT_INPUT_MAX_BASE64_BYTES_PER_PART`, `AGENT_INPUT_MAX_BASE64_BYTES_TOTAL`, `AGENT_INPUT_MAX_FILE_NAME_LENGTH`, `AGENT_INPUT_MAX_MIME_LENGTH`, `AGENT_INPUT_MAX_PARTS`, `AGENT_INPUT_MAX_TEXT_BYTES`, `AGENT_INPUT_MAX_URL_LENGTH`, `AGENT_RUN_RECEIPT_SCHEMA`, `AUTO`, `MODEL_BOUNDARY_MAX_CONTEXT_STRING_LENGTH`, `MODEL_BOUNDARY_MAX_ID_LENGTH`, `MODEL_BOUNDARY_MAX_MIDDLEWARE`, `OUTPUT_CLAMP_FLOOR_TOKENS`, `PROFILED_COMPILER_SHA256`, `PROFILED_COMPILER_VERSION`, `PROGRAMMATIC_TOOL_NAME`, `schema`, `SUMMARY_SCHEMA_VERSION`, `TARGET_CAPABILITY_LATTICE`, `TOOL_POLICY_TIMEOUT_MS`, `TRAJECTORY_IR_SCHEMA_VERSION`, `validateRunReceipt`, `WORKLOAD_PROFILE_SCHEMA_VERSION`
 
 </details>
@@ -23,7 +23,7 @@ One kernel-owned control handle for an active Pi loop.
 
 Messages queued before Pi is constructed are retained and attached once the
 run starts. Queue state is observable without exposing Pi's private queues,
-and one-at-a-time draining keeps the visible count exact at turn boundaries.
+and Pi's message delivery events keep the visible count exact.
 
 ```ts
 export declare class AgentRunController {
@@ -31,7 +31,6 @@ export declare class AgentRunController {
     private steering;
     private followUps;
     private listeners;
-    private seenTurnStart;
     private heldAfterInterrupt;
     get state(): AgentRunQueueState;
     subscribe(listener: AgentRunQueueListener): () => void;
@@ -46,8 +45,9 @@ export declare class AgentRunController {
     _attach(agent: Agent): void;
     /** Runtime hook. Keeps undrained messages for a retry or resumed run. */
     _detach(agent: Agent): void;
-    /** Runtime hook: Pi drains one queued message immediately before next turn. */
+    /** Runtime hook: acknowledge only messages Pi actually adds to the transcript. */
     _observe(event: AgentEvent): void;
+    private removeQueuedMessage;
     private emit;
 }
 ```
@@ -697,6 +697,17 @@ export interface CompactionOptions {
         /** 1-based rollover number within this run. */
         readonly generation: number;
     }) => string | Promise<string>;
+    /**
+     * Pi's `compaction.reserveTokens`: context-window tokens kept free for the
+     * response. The ladder also runs when the provider-reported prompt plus what
+     * the turn appended would leave less than this. Omitted: wallet trigger only.
+     */
+    readonly reserveTokens?: number;
+    /**
+     * Pi's `compaction.modelOverrides`, keyed by exact `provider/modelId`. Each
+     * value falls back independently to the run-wide setting.
+     */
+    readonly modelOverrides?: Readonly<Record<string, CompactionModelOverride>>;
 }
 ```
 
@@ -2088,6 +2099,11 @@ export interface ModelCallRouteDecision {
     readonly model: string;
     readonly reason: string;
     readonly signals: readonly string[];
+    /**
+     * Reasoning effort for this working call only. `off` removes the caller's
+     * level; absent keeps it. Compaction calls ignore it.
+     */
+    readonly reasoning?: ModelThinkingLevel;
 }
 ```
 
@@ -2100,12 +2116,29 @@ export interface ModelCallRouteInput {
     /** Zero-based root provider-call index, including paid compactions. */
     readonly callIndex: number;
     readonly role: "working" | "compaction";
+    /**
+     * Pi's request reason, always set by the runtime (optional for hand-built inputs): `user`
+     * after user input, `continuation` after tool results, `direct` for a compaction.
+     */
+    readonly reason?: "user" | "continuation" | "direct";
     readonly provider: string;
     readonly currentModel: string;
     /** Conservative serialized-context ceiling used by wallet admission. */
     readonly ctxTokens: number;
     readonly hasImages: boolean;
     readonly toolErrorStreak: number;
+    /**
+     * Consecutive identical leaf tool calls (same tool, same normalized
+     * arguments) so far in this run. Optional for compatibility with older
+     * runtimes.
+     */
+    readonly repeatedToolCallStreak?: number;
+    /**
+     * An efficiency plan fixed this run's reasoning level before it started; a
+     * decision that changes `reasoning` is rejected. Optional for compatibility
+     * with older runtimes.
+     */
+    readonly reasoningLocked?: boolean;
     readonly previousUsage?: {
         readonly model: string;
         /** Uncached provider input. Optional for compatibility with older routers. */
@@ -2204,6 +2237,8 @@ export interface NormalizedCompaction {
     readonly summarizerModel: Model<Api> | undefined;
     readonly mode: "summarize" | "new-context";
     readonly newContext: CompactionOptions["newContext"];
+    readonly reserveTokens: number | undefined;
+    readonly modelOverrides: Readonly<Record<string, CompactionModelOverride>>;
 }
 ```
 
@@ -2414,6 +2449,21 @@ export interface ProgrammaticToolInstructionOptions {
 
 Declared in `packages/agent/dist/programmatic-tools.d.ts`.
 
+### `ProgrammaticToolNamespace`
+
+Groups late-registered tools for `describeNamespace()` and search filters.
+
+```ts
+export interface ProgrammaticToolNamespace {
+    readonly name: string;
+    readonly description?: string;
+    /** Longer guidance (for example tool-server instructions), returned only by `describeNamespace()`. */
+    readonly instructions?: string;
+}
+```
+
+Declared in `packages/agent/dist/programmatic-catalog.d.ts`.
+
 ### `ProgrammaticToolRuntime`
 
 ```ts
@@ -2422,6 +2472,15 @@ export interface ProgrammaticToolRuntime {
     wrapModels(models: Models): Models;
     wrapStreamFn(streamFn: StreamFn): StreamFn;
     stats(): ProgrammaticToolStats;
+    /**
+     * Make more trusted tools callable from the next cell as `tools.<name>`,
+     * found through `searchTools`/`describeTool`/`describeNamespace`. The code
+     * tool's provider-visible description never changes, so the cache prefix
+     * stays byte-stable while tool servers connect.
+     */
+    registerNestedTools(tools: readonly ToolDefinition[], namespace?: ProgrammaticToolNamespace): void;
+    /** Await `gate(code)` before each cell, e.g. so servers a cell names can finish connecting. */
+    setCellGate(gate: ProgrammaticCellGate | undefined): void;
     close(): void;
 }
 ```
@@ -2465,6 +2524,8 @@ export interface ReceiptCall {
     readonly usageBasis: "provider_reported" | "unavailable";
     /** The output allowance this call was given when the budget lowered it below the configured cap. */
     readonly clampedOutputTokens: number | undefined;
+    /** Set on a prompt-cache refresh, which is metered but is not working-call progress. */
+    readonly purpose?: "cache_warm";
 }
 ```
 
@@ -2558,6 +2619,8 @@ export interface ReceiptPrintCall {
     readonly cacheWriteTokens: number;
     readonly reasoningTokens: number;
     readonly unpriced: boolean;
+    /** A cache warm is spend, not a turn. */
+    readonly purpose?: "cache_warm" | undefined;
 }
 ```
 
@@ -2688,6 +2751,14 @@ export interface RunBreakers {
         readonly maxSpend: number;
         /** First backoff, doubled each attempt. Deterministic — no jitter. Defaults to 250ms. */
         readonly backoffMs?: number;
+        /** Retries per model call. Unbounded by count when omitted; `maxSpend` still binds. */
+        readonly maxRetries?: number;
+        /**
+         * Cap on any one wait, Pi's `retry.maxAgentDelayMs`. A thrown provider
+         * error's Retry-After above it fails the call instead of sleeping.
+         * Defaults to 60s.
+         */
+        readonly maxAgentDelayMs?: number;
     };
 }
 ```
@@ -2731,6 +2802,8 @@ export interface RunOptions {
     sessionId?: string;
     /** Provider-native prompt-cache retention. Generic runs inherit Pi's short default. */
     cacheRetention?: CacheRetention;
+    /** Pi's `cacheWarming`. `streaming` keeps a valuable prompt cache warm while tools run. Off by default. */
+    cacheWarming?: CacheWarmingMode;
     gatewayURL?: string;
     ensureRuntime?: boolean;
     /**
@@ -2740,8 +2813,10 @@ export interface RunOptions {
      * `RunResult.mode: "observe-only"`. `off` never contacts or starts the
      * gateway. A run carrying a Cave Build lock or candidate plan never degrades
      * silently — it fails with `cave_gateway_required_for_locked_plan` instead.
+     * `local` never contacts the gateway but still applies a plan in process with
+     * the local `caveman-engine`: transforms and recovery, no gateway telemetry.
      */
-    cave?: "auto" | "off";
+    cave?: "auto" | "off" | "local";
     /**
      * Best-effort local spend cap for this run, in USD at public catalog list
      * prices. It is not financial enforcement: no provider invoice, no
@@ -2787,12 +2862,27 @@ export interface RunOptions {
      */
     budget?: RunBudget;
     /**
+     * Window compaction without a budget: summarize before the context window
+     * fills (`reserveTokens`), each summary a provider call in the receipt. A
+     * budget with `onExhausted: "compact"` uses its own settings instead.
+     */
+    compaction?: CompactionOptions;
+    /** Pi's turn retry after a transient provider error turn. Off by default. */
+    turnRetry?: TurnRetryOptions;
+    /**
      * Optional pre-call model selector. It runs before every root working model
      * request, before budget reservation and before provider I/O. Returned models
      * must exist in the configured Pi catalog and stay within the initial
      * provider; unknown or cross-provider decisions fail closed.
      */
     modelRouter?: ModelCallRouter;
+    /**
+     * This run's reasoning level instead of the definition's: Pi's thinking level
+     * for the root's working calls (a route decision's level still wins for its
+     * call); subagents keep their own. Under a gateway-priced plan a different
+     * level fails closed with `cave_run_reasoning_locked`.
+     */
+    reasoning?: ModelThinkingLevel;
     /**
      * Escape hatch for the credential-regime gate. A USD budget on
      * Pi's own transport, off the gateway, is refused when the local credential
@@ -3070,8 +3160,10 @@ export interface RunResult<TOutput = unknown> {
      * or `cave: "off"`, or the model's provider is not one the gateway proxies
      * (only anthropic, openai, and google are). A mixed graph reports
      * `observe-only`; the label under-claims rather than averaging, because the
-     * gateway measured nothing about the calls that bypassed it. Local results are
-     * estimates in both modes; no provider savings claim is made.
+     * gateway measured nothing about the calls that bypassed it. `cave: "local"`
+     * applies its transforms in process and still reports `observe-only`; they
+     * show in `transformTrace`. Local results are estimates in both modes; no
+     * provider savings claim is made.
      */
     mode: "optimized" | "observe-only";
     provider: string;
@@ -3176,8 +3268,9 @@ export interface ShellToolsOptions {
     outputCaps?: Partial<Record<ShellToolName, number>>;
     /** Interactive bash sessions (local backend only). Omit for one-shot bounded bash. */
     commandSessions?: CommandSessionRuntime;
-    /** Observes every capped tool output. */
-    onOutput?: (label: string, text: string) => void;
+    /** Observes every capped tool output. */ onOutput?: (label: string, text: string) => void;
+    /** Directory file tools may touch (default `workspace`); relative paths resolve against `workspace`. */ fileRoot?: string | undefined;
+    /** Variables the host adds to bash's environment on top of the coding allowlist; nothing is inherited ambiently. */ processEnv?: Readonly<Record<string, string>> | undefined;
 }
 ```
 
@@ -3610,6 +3703,10 @@ export type CavemanRunEvent = {
     runId: string;
     decision: ModelCallRouteDecision;
 } | {
+    type: "cache_warm";
+    runId: string;
+    call: ReceiptCall;
+} | {
     type: "pi";
     runId: string;
     event: AgentEvent;
@@ -3882,6 +3979,16 @@ export type ProfiledCompileStatus = CompileResult["status"] | "holdout_failed" |
 
 Declared in `packages/agent/dist/compiler.d.ts`.
 
+### `ProgrammaticCellGate`
+
+Runs before each cell; must bound its own wait and honor `signal`.
+
+```ts
+export type ProgrammaticCellGate = (code: string, signal: AbortSignal | undefined) => Promise<void>;
+```
+
+Declared in `packages/agent/dist/programmatic-tools.d.ts`.
+
 ### `ProgrammaticSpeculationDispatch`
 
 ```ts
@@ -3994,7 +4101,15 @@ Declared in `packages/agent/dist/tool-policy.d.ts`.
 ### `ToolCallPolicy`
 
 ```ts
-export type ToolCallPolicy = (call: ToolCallPolicyInput) => ToolCallDecision | Promise<ToolCallDecision>;
+export type ToolCallPolicy = ((call: ToolCallPolicyInput) => ToolCallDecision | Promise<ToolCallDecision>) & {
+    /**
+     * How long this policy may take to decide one call, in ms (1 to 86,400,000;
+     * default {@link TOOL_POLICY_TIMEOUT_MS}). A host whose policy asks a person
+     * (an approval card) raises it and answers on the run's Stop itself; past it
+     * the run still fails closed and the call never executes.
+     */
+    readonly timeoutMs?: number;
+};
 ```
 
 Declared in `packages/agent/dist/tool-policy.d.ts`.
@@ -4147,6 +4262,16 @@ export declare function captureModelBoundary<Request, Response>(value: ModelBoun
 ```
 
 Declared in `packages/agent/dist/model-boundary.d.ts`.
+
+### `caveGatewayReady`
+
+Health + ownership probe for diagnostics. Never starts anything.
+
+```ts
+export declare function caveGatewayReady(gatewayURL: string, fetchImpl?: typeof globalThis.fetch): Promise<boolean>;
+```
+
+Declared in `packages/agent/dist/gateway.d.ts`.
 
 ### `compareConnectEfficiency`
 
@@ -4386,6 +4511,11 @@ export declare function createProgrammaticToolRuntime(directDefinition: AgentDef
     readonly instructions?: string;
     readonly speculate?: boolean;
     readonly toolName?: string;
+    /**
+     * Hybrid mode: these tools stay declared to the provider beside the code
+     * tool, and instructions stay as given. Cells can still call every tool.
+     */
+    readonly direct?: readonly string[];
 }): ProgrammaticToolRuntime;
 ```
 
@@ -4416,7 +4546,8 @@ Declared in `packages/agent/dist/profile.d.ts`.
 
 Evaluate a policy for one call. Returns the block result for a denial,
 `undefined` to admit. Throws `cave_tool_policy_failed` when the policy
-throws or hangs past {@link TOOL_POLICY_TIMEOUT_MS},
+throws or hangs past its `timeoutMs` (default {@link TOOL_POLICY_TIMEOUT_MS})
+or sets one outside 1..86,400,000 ms,
 `cave_tool_policy_decision_invalid` for a malformed decision, and
 `cave_tool_policy_reason_invalid` for a deny code outside `[a-z][a-z0-9_]*`.
 Every throw is run-fatal to the caller: unknown authorization never executes.
@@ -4878,6 +5009,18 @@ export declare function resolveEgressPolicy(policy: SandboxEgressPolicy): Resolv
 ```
 
 Declared in `packages/agent/dist/sandbox/policy.d.ts`.
+
+### `restoreConversation`
+
+Rebuild a conversation from a journaled checkpoint. The digest is
+recomputed and must match: a checkpoint that cannot be reproduced byte for
+byte is not a conversation this runtime will continue.
+
+```ts
+export declare function restoreConversation(checkpoint: DurableConversationCheckpoint): Conversation;
+```
+
+Declared in `packages/agent/dist/runtime.d.ts`.
 
 ### `routine`
 

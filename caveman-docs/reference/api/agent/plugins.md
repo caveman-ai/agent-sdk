@@ -52,8 +52,10 @@ export interface AgentPlugin {
     readonly manifest: AgentPluginManifest;
     readonly skills: readonly AgentSkill[];
     readonly commands: readonly AgentPluginCommand[];
-    /** MCP declaration exists, but this SDK currently implements declarative content only. */
+    /** MCP declaration exists. Plugin loading never launches it; hosts decide. */
     readonly hasMcp: boolean;
+    /** Valid servers from the plugin's `mcp.json`/`.mcp.json` or manifest `mcpServers`, parsed only. */
+    readonly mcpServers: readonly McpServerEntry[];
     readonly hasHooks: boolean;
     readonly hasAgents: boolean;
 }
@@ -282,6 +284,9 @@ export declare function renderAgentSkillInvocation(environment: AgentEnvironment
 Declared in `packages/agent/dist/agent-environment.d.ts`.
 
 ### `renderAgentSkillsIndex`
+
+Stable-prefix skill index. The cap depends only on the sorted skill list, so
+the rendered bytes stay identical for one environment.
 
 ```ts
 export declare function renderAgentSkillsIndex(skills: readonly AgentSkill[]): string;

@@ -9,7 +9,7 @@ Declaration file: `packages/agent/dist/catalog.d.ts`.
 
 - **Interface**: `CatalogCacheProfile`, `CatalogModelFacts`, `CatalogPrice`, `CatalogPriceRates`, `CatalogRecurringUTCPriceWindow`, `CatalogRecurringUTCPricing`, `CatalogUsage`
 - **Type alias**: `CatalogSupportState`
-- **Function**: `catalogCacheProfile`, `catalogCost`, `catalogCostForPrice`, `catalogModelFacts`, `catalogModelRuntimeEligible`, `catalogPriceAt`, `catalogPriceFingerprint`, `catalogPriceVerifiedAt`, `catalogRuntimeModel`, `catalogSearchCeiling`
+- **Function**: `catalogCacheMode`, `catalogCacheProfile`, `catalogCost`, `catalogCostForPrice`, `catalogModelFacts`, `catalogModelRuntimeEligible`, `catalogPriceAt`, `catalogPriceFingerprint`, `catalogPriceVerifiedAt`, `catalogRuntimeModel`, `catalogSearchCeiling`
 - **Variable**: `CATALOG_SEMANTIC_SHA256`, `CATALOG_SHA256`, `PRICE_PROVENANCE_SHA256`
 
 </details>
@@ -134,6 +134,16 @@ Declared in `packages/agent/dist/catalog.d.ts`.
 
 ## Functions
 
+### `catalogCacheMode`
+
+Cache billing semantics in force at a request time; undefined when unpriced then.
+
+```ts
+export declare function catalogCacheMode(provider: string, model: string, accountingAt?: Date): CatalogPriceRates["cacheMode"] | undefined;
+```
+
+Declared in `packages/agent/dist/catalog.d.ts`.
+
 ### `catalogCacheProfile`
 
 Cache profile lookup mirroring the Go engine: empty region means "global".
@@ -232,7 +242,7 @@ Declared in `packages/agent/dist/catalog.d.ts`.
 ### `CATALOG_SEMANTIC_SHA256`
 
 ```ts
-export declare const CATALOG_SEMANTIC_SHA256 = "f9f74e012f52474ed3f0d4fdc40feef766cb035dd61eec1d97282946385942bb";
+export declare const CATALOG_SEMANTIC_SHA256 = "7497b8837a5dc790b7ea487bc781d2fcb1e1c1d0ddaec8a63e5d1075fba9156f";
 ```
 
 Declared in `packages/agent/dist/catalog.d.ts`.
@@ -240,7 +250,7 @@ Declared in `packages/agent/dist/catalog.d.ts`.
 ### `CATALOG_SHA256`
 
 ```ts
-export declare const CATALOG_SHA256 = "44f273c90cd7ab4707888fdf7ac5aea21d668e2204ef8a66683644e9151e1ce8";
+export declare const CATALOG_SHA256 = "dbeaea6ec9cf97ee1faf437951f4339aee9b3073c5741553d93f50361ff932d8";
 ```
 
 Declared in `packages/agent/dist/catalog.d.ts`.
@@ -248,7 +258,7 @@ Declared in `packages/agent/dist/catalog.d.ts`.
 ### `PRICE_PROVENANCE_SHA256`
 
 ```ts
-export declare const PRICE_PROVENANCE_SHA256 = "3712b1307ed08b02a1bb2c6ec4df1c3af14a6a3b619cba8b34f513f4bcc00035";
+export declare const PRICE_PROVENANCE_SHA256 = "297e2b7e7b6f0480d5691804256e5d98b56f467a63b41ab695463681378f9516";
 ```
 
 Declared in `packages/agent/dist/catalog.d.ts`.

@@ -7,14 +7,25 @@ Declaration file: `packages/agent/dist/compaction-api.d.ts`.
 
 <details><summary>Symbol index</summary>
 
-- **Interface**: `CompactionOptions`, `ContextAnchor`, `ContextCompactionFixture`, `ContextCompactionFixtureRound`, `ContextCompactionHarnessOptions`, `ContextCompactionHarnessResult`, `ContextCompactionHarnessRoundResult`, `ContextCompactionSummarizerRequest`, `ContextSummary`, `ContextSummaryEvaluation`, `ContextSummaryEvaluationInput`, `ContextSummaryRound`, `ContextSummarySource`, `ContextSummaryStability`, `ContextSummaryValidation`, `ExpectedContextAnchor`, `MessagePlan`, `NormalizedCompaction`
+- **Interface**: `CompactionModelOverride`, `CompactionOptions`, `ContextAnchor`, `ContextCompactionFixture`, `ContextCompactionFixtureRound`, `ContextCompactionHarnessOptions`, `ContextCompactionHarnessResult`, `ContextCompactionHarnessRoundResult`, `ContextCompactionSummarizerRequest`, `ContextSummary`, `ContextSummaryEvaluation`, `ContextSummaryEvaluationInput`, `ContextSummaryRound`, `ContextSummarySource`, `ContextSummaryStability`, `ContextSummaryValidation`, `ExpectedContextAnchor`, `MessagePlan`, `NormalizedCompaction`
 - **Type alias**: `ContextAnchorKind`, `ContextCompactionSummarizer`, `ContextSummarySourceRole`
-- **Function**: `contextSummarySources`, `elidedDigest`, `evaluateContextSummary`, `evaluateContextSummaryStability`, `evictionCitation`, `evictMessage`, `latestContextSummary`, `messagesTokens`, `messageText`, `messageTokens`, `newContextMessages`, `normalizeCompaction`, `parseContextSummary`, `pinnedContentSurvives`, `planCompaction`, `renderSummary`, `runContextCompactionHarness`, `summarizationInstruction`, `validateContextSummaryTransition`
+- **Function**: `compactionForModel`, `contextSummarySources`, `contextWindowFull`, `elidedDigest`, `evaluateContextSummary`, `evaluateContextSummaryStability`, `evictionCitation`, `evictMessage`, `latestContextSummary`, `messagesTokens`, `messageText`, `messageTokens`, `newContextMessages`, `normalizeCompaction`, `parseContextSummary`, `pinnedContentSurvives`, `planCompaction`, `renderSummary`, `runContextCompactionHarness`, `summarizationInstruction`, `validateContextSummaryTransition`
 - **Variable**: `CONTEXT_SEED_MAX_CHARS`, `SUMMARY_SCHEMA_VERSION`
 
 </details>
 
 ## Interfaces
+
+### `CompactionModelOverride`
+
+```ts
+export interface CompactionModelOverride {
+    readonly reserveTokens?: number;
+    readonly keepRecentTokens?: number;
+}
+```
+
+Declared in `packages/agent/dist/compaction.d.ts`.
 
 ### `CompactionOptions`
 
@@ -103,6 +114,17 @@ export interface CompactionOptions {
         /** 1-based rollover number within this run. */
         readonly generation: number;
     }) => string | Promise<string>;
+    /**
+     * Pi's `compaction.reserveTokens`: context-window tokens kept free for the
+     * response. The ladder also runs when the provider-reported prompt plus what
+     * the turn appended would leave less than this. Omitted: wallet trigger only.
+     */
+    readonly reserveTokens?: number;
+    /**
+     * Pi's `compaction.modelOverrides`, keyed by exact `provider/modelId`. Each
+     * value falls back independently to the run-wide setting.
+     */
+    readonly modelOverrides?: Readonly<Record<string, CompactionModelOverride>>;
 }
 ```
 
@@ -382,6 +404,8 @@ export interface NormalizedCompaction {
     readonly summarizerModel: Model<Api> | undefined;
     readonly mode: "summarize" | "new-context";
     readonly newContext: CompactionOptions["newContext"];
+    readonly reserveTokens: number | undefined;
+    readonly modelOverrides: Readonly<Record<string, CompactionModelOverride>>;
 }
 ```
 
@@ -423,12 +447,38 @@ Declared in `packages/agent/dist/compaction.d.ts`.
 
 ## Functions
 
+### `compactionForModel`
+
+Run-wide settings with the active model's override applied, value by value.
+
+```ts
+export declare function compactionForModel(config: NormalizedCompaction, model: string): NormalizedCompaction;
+```
+
+Declared in `packages/agent/dist/compaction.d.ts`.
+
 ### `contextSummarySources`
 
 Build the digest-addressed manifest for messages a rewrite may remove.
 
 ```ts
 export declare function contextSummarySources(messages: readonly AgentMessage[], indexes: readonly number[]): readonly ContextSummarySource[];
+```
+
+Declared in `packages/agent/dist/compaction.d.ts`.
+
+### `contextWindowFull`
+
+Pi's `reserveTokens` trigger: the provider-reported prompt plus what the turn
+appended leaves less than the model's reserve free. The reserve is clamped
+so the trigger never fires below `minYieldTokens`, where no rung frees enough.
+
+```ts
+export declare function contextWindowFull(config: NormalizedCompaction, model: Model<Api>, previous: {
+    readonly inputTokens?: number;
+    readonly cacheReadTokens: number;
+    readonly cacheWriteTokens: number;
+} | undefined, appended: readonly AgentMessage[]): boolean;
 ```
 
 Declared in `packages/agent/dist/compaction.d.ts`.

@@ -9,7 +9,7 @@ Interactive Caveman coding agent and caveman-code CLI.
 
 | Import specifier | Declarations | Exported symbols |
 | --- | --- | --- |
-| `@caveman-ai/coding-agent` | `packages/coding-agent/src/index.d.ts` | 57 |
+| `@caveman-ai/coding-agent` | `packages/coding-agent/src/index.d.ts` | 64 |
 | `@caveman-ai/coding-agent/cli` | `packages/coding-agent/src/cli.d.ts` | 4 |
 
 ## `@caveman-ai/coding-agent`
@@ -19,9 +19,9 @@ Declaration file: `packages/coding-agent/src/index.d.ts`.
 <details><summary>Symbol index</summary>
 
 - **Class**: `AgentRunController`
-- **Interface**: `CodingAgent`, `CodingAgentOptions`, `CodingRecoveryProof`, `CodingSession`, `CodingSessionOptions`, `CodingSessionRunOptions`, `CodingTaskAttemptEvidence`, `CodingTaskEconomics`, `CodingTaskEconomicsOptions`, `CommandSessionReadOptions`, `CommandSessionReadResult`, `CommandSessionRuntime`, `CommandSessionRuntimeOptions`, `CommandSessionSpillOptions`, `CommandSessionStartOptions`, `CommandSessionStartResult`, `CommandSessionSummary`, `CommandSessionWriteOptions`, `CommandSessionWriteResult`, `FailedStreamingTurn`, `ProgrammaticToolRuntime`, `ProgrammaticToolStats`, `SessionBill`, `StreamingCodingTurnOptions`, `ToolOutputSample`, `TurnBill`, `TurnRecord`
-- **Type alias**: `CodingTaskPriceBasis`, `CodingToolMode`, `CodingToolSet`, `CommandSessionState`, `SessionMode`, `StreamingCodingTurnResult`
-- **Function**: `capOutput`, `classifyTurnFailure`, `codingModelsAtProviderBaseURL`, `createCodingAgent`, `createCommandSessionRuntime`, `createProgrammaticToolRuntime`, `defaultCodingPlan`, `formatRecoveryProof`, `formatSessionBill`, `formatTurnBill`, `programmaticToolInstructions`, `proveRecovery`, `runCodingSession`, `runCodingTurn`, `sessionBill`, `startCodingSession`, `streamCodingTurn`, `summarizeCodingTaskAttempts`
+- **Interface**: `CodingAgent`, `CodingAgentOptions`, `CodingInstructionSection`, `CodingLevers`, `CodingMcpOptions`, `CodingRecoveryProof`, `CodingSession`, `CodingSessionOptions`, `CodingSessionRunOptions`, `CodingTaskAttemptEvidence`, `CodingTaskEconomics`, `CodingTaskEconomicsOptions`, `CommandSessionReadOptions`, `CommandSessionReadResult`, `CommandSessionRuntime`, `CommandSessionRuntimeOptions`, `CommandSessionSpillOptions`, `CommandSessionStartOptions`, `CommandSessionStartResult`, `CommandSessionSummary`, `CommandSessionWriteOptions`, `CommandSessionWriteResult`, `FailedStreamingTurn`, `ProgrammaticToolRuntime`, `ProgrammaticToolStats`, `SessionBill`, `StreamingCodingTurnOptions`, `ToolOutputSample`, `TurnBill`, `TurnRecord`
+- **Type alias**: `CodingTaskPriceBasis`, `CodingToolMode`, `CodingToolSet`, `CommandSessionState`, `ResolvedCodingLevers`, `SessionMode`, `StreamingCodingTurnResult`
+- **Function**: `capOutput`, `classifyTurnFailure`, `codingModelsAtProviderBaseURL`, `codingRunOptions`, `createCodingAgent`, `createCommandSessionRuntime`, `createProgrammaticToolRuntime`, `defaultCodingPlan`, `formatRecoveryProof`, `formatSessionBill`, `formatTurnBill`, `hybridCodeToolInstructions`, `programmaticToolInstructions`, `proveRecovery`, `runCodingSession`, `runCodingTurn`, `sessionBill`, `startCodingSession`, `streamCodingRun`, `streamCodingTurn`, `summarizeCodingTaskAttempts`
 - **Variable**: `CODING_RUN_BREAKERS`, `CODING_TOOL_OUTPUT_CAPS`, `OBSERVE_ONLY_BANNER`, `PROGRAMMATIC_TOOL_NAME`, `RECOVERABLE_CODING_TRANSFORMS`
 
 </details>
@@ -34,7 +34,7 @@ One kernel-owned control handle for an active Pi loop.
 
 Messages queued before Pi is constructed are retained and attached once the
 run starts. Queue state is observable without exposing Pi's private queues,
-and one-at-a-time draining keeps the visible count exact at turn boundaries.
+and Pi's message delivery events keep the visible count exact.
 
 ```ts
 export declare class AgentRunController {
@@ -42,7 +42,6 @@ export declare class AgentRunController {
     private steering;
     private followUps;
     private listeners;
-    private seenTurnStart;
     private heldAfterInterrupt;
     get state(): AgentRunQueueState;
     subscribe(listener: AgentRunQueueListener): () => void;
@@ -57,8 +56,9 @@ export declare class AgentRunController {
     _attach(agent: Agent): void;
     /** Runtime hook. Keeps undrained messages for a retry or resumed run. */
     _detach(agent: Agent): void;
-    /** Runtime hook: Pi drains one queued message immediately before next turn. */
+    /** Runtime hook: acknowledge only messages Pi actually adds to the transcript. */
     _observe(event: AgentEvent): void;
+    private removeQueuedMessage;
     private emit;
 }
 ```
@@ -77,8 +77,11 @@ export interface CodingAgent {
     readonly workspace: string;
     readonly modelID: string;
     readonly toolMode: CodingToolMode;
-    /** Present only in programmatic mode. Session APIs wire its transport automatically. */
+    /** Present in hybrid and programmatic mode. Session APIs and `codingRunOptions` wire its transport. */
     readonly programmaticTools?: ProgrammaticToolRuntime;
+    /** Present when the host passed MCP servers: status, sign-in. `close()` shuts it down. */
+    readonly mcp?: McpHost;
+    readonly levers: ResolvedCodingLevers;
     /** Largest raw tool outputs seen this process, kept for the recovery proof. */
     readonly samples: ToolOutputSample[];
     /** Kill live command sessions owned by this agent. Idempotent. */
@@ -100,20 +103,36 @@ export interface CodingAgentOptions {
     id?: string;
     /** Extra instruction text appended to the built-in coding instructions. */
     instructions?: string;
+    /**
+     * Host-read instructions in order, after the SDK's own text and `instructions`:
+     * repository AGENTS.md or CLAUDE.md, private project notes, a memory brief.
+     */
+    instructionSections?: readonly CodingInstructionSection[];
     /** Per-tool raw output caps in bytes, before any transform. */
     outputCaps?: Partial<typeof CODING_TOOL_OUTPUT_CAPS>;
     /** Provider-visible coding tools. Generic SDK default remains the full six-tool surface. */
     toolSet?: CodingToolSet;
-    /** `programmatic` collapses ordinary tools into one bounded code-cell tool. */
+    /**
+     * `hybrid` (default): the coding tools stay declared, plus one code tool for
+     * everything else (MCP, connectors, browser, fan-out, tool search). Tools
+     * added by `definitionTransforms` are reachable only through the code tool.
+     * `programmatic` collapses every tool into the code tool; `direct` has none.
+     */
     toolMode?: CodingToolMode;
-    /** Safe read speculation in programmatic mode. Defaults on; ignored by direct mode. */
+    /** Safe read speculation in code cells. Defaults on; ignored by direct mode. */
     speculativeToolCalls?: boolean;
+    /** MCP servers to launch now; tools appear inside the code tool. Not available in direct mode. */
+    mcp?: CodingMcpOptions;
+    /** Caveman engine levers; defaults per {@link CodingLevers}. */
+    levers?: CodingLevers;
+    /** Directory file tools may touch; defaults to `workspace`. `/` leaves them uncontained, like bash. */
+    fileRoot?: string;
     /** Optional bounded disk retention for command output evicted from memory. */
     commandSessionSpill?: CommandSessionSpillOptions;
     /** Interactive bash sessions. Defaults on locally and off for non-local backends. */
     commandSessions?: boolean;
-    /** Workspace and process execution. Defaults to the local host backend. */
-    executionBackend?: ExecutionBackend;
+    /** Workspace and process execution. Defaults to the local host backend. */ executionBackend?: ExecutionBackend;
+    /** Variables the host adds to bash's environment on top of the coding allowlist. */ processEnv?: Readonly<Record<string, string>>;
     /** Trusted product adapters applied before direct/programmatic tool finalization. */
     definitionTransforms?: readonly AgentDefinitionTransform[];
     /** Provider-visible composite tool name. Product wrappers may brand it; default `caveman_code`. */
@@ -124,6 +143,62 @@ export interface CodingAgentOptions {
 ```
 
 Declared in `packages/agent/dist/code.d.ts`.
+
+#### `CodingInstructionSection`
+
+```ts
+export interface CodingInstructionSection {
+    /** One line naming the source, for example `AGENTS.md`, `Project instructions`, `Memory`. */
+    readonly title: string;
+    readonly text: string;
+}
+```
+
+Declared in `packages/agent/dist/coding-surface.d.ts`.
+
+#### `CodingLevers`
+
+One switchboard for the Caveman engine levers, so a benchmark arm flips
+fields, not code. Levers act only when the session runs the engine
+(`cave: "local"` or a gateway); engine off is the session's `cave: "off"`.
+No lever is on by default unless measured not worse per solved task.
+
+```ts
+export interface CodingLevers {
+    /**
+     * `bound` (default): the engine sees only a tool output that overran its
+     * cap, and reads all of it instead of a blind cut; everything else reaches
+     * the model as it is. `all`: tool results over 8 KiB and history as well.
+     * `cave_retrieve` returns the original either way.
+     */
+    readonly compression?: "bound" | "all";
+    /** Keep: compression keeps the lines relevant to the user's ask. Default true. */
+    readonly keep?: boolean;
+}
+```
+
+Declared in `packages/agent/dist/coding-surface.d.ts`.
+
+#### `CodingMcpOptions`
+
+MCP servers a host launches explicitly; their tools are callable inside the code tool.
+
+```ts
+export interface CodingMcpOptions extends Omit<McpHostOptions, "servers" | "cwd" | "register"> {
+    /** Stdio or streamable HTTP entries; HTTP takes `headers` (a bearer token goes in `Authorization`). */
+    readonly servers: readonly McpServerEntry[];
+    /**
+     * Hybrid mode only: a few server tools declared beside the coding tools, for
+     * calls that wait on a person or another agent. A declared call runs outside
+     * any code cell, so the cell's time limit never applies; it waits up to its
+     * own `timeoutMs`. The host writes each declaration, so the prompt prefix is
+     * fixed before the server connects. Cells can still call the listed tool.
+     */
+    readonly direct?: readonly McpDirectTool[];
+}
+```
+
+Declared in `packages/agent/dist/coding-surface.d.ts`.
 
 #### `CodingRecoveryProof`
 
@@ -164,7 +239,7 @@ Declared in `packages/agent/dist/code.d.ts`.
 ```ts
 export interface CodingSessionOptions {
     conversation?: ConversationState;
-    cave?: "auto" | "off";
+    cave?: "auto" | "off" | "local";
     gatewayURL?: string;
     engineBin?: string;
     workflow?: string;
@@ -228,7 +303,7 @@ export interface CodingTaskAttemptEvidence {
 }
 ```
 
-Declared in `packages/agent/dist/code.d.ts`.
+Declared in `packages/agent/dist/coding-economics.d.ts`.
 
 #### `CodingTaskEconomics`
 
@@ -250,7 +325,7 @@ export interface CodingTaskEconomics {
 }
 ```
 
-Declared in `packages/agent/dist/code.d.ts`.
+Declared in `packages/agent/dist/coding-economics.d.ts`.
 
 #### `CodingTaskEconomicsOptions`
 
@@ -261,7 +336,7 @@ export interface CodingTaskEconomicsOptions {
 }
 ```
 
-Declared in `packages/agent/dist/code.d.ts`.
+Declared in `packages/agent/dist/coding-economics.d.ts`.
 
 #### `CommandSessionReadOptions`
 
@@ -465,6 +540,15 @@ export interface ProgrammaticToolRuntime {
     wrapModels(models: Models): Models;
     wrapStreamFn(streamFn: StreamFn): StreamFn;
     stats(): ProgrammaticToolStats;
+    /**
+     * Make more trusted tools callable from the next cell as `tools.<name>`,
+     * found through `searchTools`/`describeTool`/`describeNamespace`. The code
+     * tool's provider-visible description never changes, so the cache prefix
+     * stays byte-stable while tool servers connect.
+     */
+    registerNestedTools(tools: readonly ToolDefinition[], namespace?: ProgrammaticToolNamespace): void;
+    /** Await `gate(code)` before each cell, e.g. so servers a cell names can finish connecting. */
+    setCellGate(gate: ProgrammaticCellGate | undefined): void;
     close(): void;
 }
 ```
@@ -596,16 +680,19 @@ Declared in `packages/agent/dist/code.d.ts`.
 
 #### `CodingTaskPriceBasis`
 
+Honest harness economics for matched coding evaluations: all attempt spend
+over externally verified completions, failing closed on missing evidence.
+
 ```ts
 export type CodingTaskPriceBasis = "provider_invoice" | "public_catalog" | "unpriced";
 ```
 
-Declared in `packages/agent/dist/code.d.ts`.
+Declared in `packages/agent/dist/coding-economics.d.ts`.
 
 #### `CodingToolMode`
 
 ```ts
-export type CodingToolMode = "direct" | "programmatic";
+export type CodingToolMode = "direct" | "programmatic" | "hybrid";
 ```
 
 Declared in `packages/agent/dist/code.d.ts`.
@@ -625,6 +712,14 @@ export type CommandSessionState = "running" | "exited" | "timed_out" | "killed" 
 ```
 
 Declared in `packages/agent/dist/command-session.d.ts`.
+
+#### `ResolvedCodingLevers`
+
+```ts
+export type ResolvedCodingLevers = Readonly<Required<CodingLevers>>;
+```
+
+Declared in `packages/agent/dist/coding-surface.d.ts`.
 
 #### `SessionMode`
 
@@ -681,6 +776,20 @@ export declare function codingModelsAtProviderBaseURL(modelID: string, rawBaseUR
 
 Declared in `packages/agent/dist/code.d.ts`.
 
+#### `codingRunOptions`
+
+Coding run defaults for a host that calls `stream()` or `run()` itself
+instead of the session API: 1,000 model / 4,000 tool call ceilings, turn
+retry and window compaction, the coding breakers, long cache retention, and
+the code tool's transport. Host values win. The 32K output cap and the 600 s
+bash timeout already live in `codingAgent.definition`.
+
+```ts
+export declare function codingRunOptions(codingAgent: CodingAgent, options?: RunOptions): RunOptions;
+```
+
+Declared in `packages/agent/dist/code.d.ts`.
+
 #### `createCodingAgent`
 
 ```ts
@@ -709,6 +818,11 @@ export declare function createProgrammaticToolRuntime(directDefinition: AgentDef
     readonly instructions?: string;
     readonly speculate?: boolean;
     readonly toolName?: string;
+    /**
+     * Hybrid mode: these tools stay declared to the provider beside the code
+     * tool, and instructions stay as given. Cells can still call every tool.
+     */
+    readonly direct?: readonly string[];
 }): ProgrammaticToolRuntime;
 ```
 
@@ -723,9 +837,10 @@ dynamic route (two routes matching one runtime segment collapse to
 `dynamic_route_ambiguous` and the segment passes through untouched). Budgets
 are sized for a long interactive session rather than a fixture run; they are
 ceilings that fail the turn honestly rather than silently truncating context.
+`bound` (the default lever) routes tool results only; `all` adds history.
 
 ```ts
-export declare function defaultCodingPlan(modelID: string, namespace: string): CavePlan;
+export declare function defaultCodingPlan(modelID: string, namespace: string, compression?: ResolvedCodingLevers["compression"]): CavePlan;
 ```
 
 Declared in `packages/agent/dist/code.d.ts`.
@@ -753,6 +868,16 @@ export declare function formatTurnBill(bill: TurnBill, sessionSaved: number): st
 ```
 
 Declared in `packages/agent/dist/code.d.ts`.
+
+#### `hybridCodeToolInstructions`
+
+Hybrid mode: what goes through the one code tool beside the declared tools.
+
+```ts
+export declare function hybridCodeToolInstructions(toolName: string): string;
+```
+
+Declared in `packages/agent/dist/coding-guidance.d.ts`.
 
 #### `programmaticToolInstructions`
 
@@ -820,6 +945,18 @@ export declare function startCodingSession(codingAgent: CodingAgent, options?: C
 
 Declared in `packages/agent/dist/code.d.ts`.
 
+#### `streamCodingRun`
+
+`stream()` for a coding agent with {@link codingRunOptions}. With `cave: "local"`
+the agent's plan and levers apply in process, durable runs included; by
+default (`bound`) only a tool output that overran its cap reaches the engine.
+
+```ts
+export declare function streamCodingRun(codingAgent: CodingAgent, input: AgentInput, options?: RunOptions): AsyncGenerator<CavemanRunEvent>;
+```
+
+Declared in `packages/agent/dist/code.d.ts`.
+
 #### `streamCodingTurn`
 
 Stream one coding turn as frozen Pebble v1 events.
@@ -843,13 +980,13 @@ completions. Unknown or mixed evidence produces null, never a favorable zero.
 export declare function summarizeCodingTaskAttempts(attempts: readonly CodingTaskAttemptEvidence[], options?: CodingTaskEconomicsOptions): CodingTaskEconomics;
 ```
 
-Declared in `packages/agent/dist/code.d.ts`.
+Declared in `packages/agent/dist/coding-economics.d.ts`.
 
 ### Variables & constants
 
 #### `CODING_RUN_BREAKERS`
 
-Cost-control defaults for coding runs. No retry policy: retries require a declared budget.
+Cost-control defaults for coding runs. No pre-stream retry policy: that needs a declared budget.
 
 ```ts
 export declare const CODING_RUN_BREAKERS: RunBreakers;
