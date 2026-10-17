@@ -95,12 +95,21 @@ export function toolDeclaration(definition: ToolDefinition): string {
     `declare function ${definition.name}(args: ${schemaType(definition.input)}): Promise<${result}>;`;
 }
 
-/** Stable provider-visible description, built only from construction-time tools. */
-export function codeToolDescription(definitions: readonly ToolDefinition[]): string {
+/**
+ * Stable provider-visible description, built only from construction-time tools.
+ * `declared` tools are already in the provider's tool list (hybrid mode), so
+ * they are named, not declared twice.
+ */
+export function codeToolDescription(
+  definitions: readonly ToolDefinition[],
+  declared: ReadonlySet<string> = new Set(),
+): string {
   let remaining = PROGRAM_INLINE_DECLARATION_BYTES;
   let hidden = 0;
   const declarations: string[] = [];
+  const named = definitions.filter((definition) => declared.has(definition.name)).map((definition) => definition.name);
   for (const definition of definitions) {
+    if (declared.has(definition.name)) continue;
     const declaration = toolDeclaration(definition);
     const bytes = Buffer.byteLength(declaration, "utf8") + 1;
     if (bytes > remaining) {
@@ -113,6 +122,7 @@ export function codeToolDescription(definitions: readonly ToolDefinition[]): str
   return [
     "Bounded async JS cell. Tools are direct functions and under tools.",
     "Discovery: ALL_TOOLS; await searchTools(query, {limit?, namespace?}), describeTool(name), describeNamespace(name).",
+    ...(named.length === 0 ? [] : [`Your declared tools are cell functions too: ${named.join(", ")}.`]),
     ...declarations,
     ...(hidden === 0 ? [] : [`${hidden} more tools are callable; describeTool(name) shows one.`]),
   ].join("\n");

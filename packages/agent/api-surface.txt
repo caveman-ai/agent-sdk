@@ -476,6 +476,9 @@
 ./code	CODING_TOOL_OUTPUT_CAPS
 ./code	CodingAgent
 ./code	CodingAgentOptions
+./code	CodingInstructionSection
+./code	CodingLevers
+./code	CodingMcpOptions
 ./code	CodingRecoveryProof
 ./code	CodingSession
 ./code	CodingSessionOptions
@@ -503,6 +506,7 @@
 ./code	ProgrammaticToolRuntime
 ./code	ProgrammaticToolStats
 ./code	RECOVERABLE_CODING_TRANSFORMS
+./code	ResolvedCodingLevers
 ./code	SessionBill
 ./code	SessionMode
 ./code	StreamingCodingTurnOptions
@@ -513,6 +517,7 @@
 ./code	capOutput
 ./code	classifyTurnFailure
 ./code	codingModelsAtProviderBaseURL
+./code	codingRunOptions
 ./code	createCodingAgent
 ./code	createCommandSessionRuntime
 ./code	createProgrammaticToolRuntime

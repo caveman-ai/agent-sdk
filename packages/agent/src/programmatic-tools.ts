@@ -160,10 +160,19 @@ export function createProgrammaticToolRuntime(
     readonly instructions?: string;
     readonly speculate?: boolean;
     readonly toolName?: string;
+    /**
+     * Hybrid mode: these tools stay declared to the provider beside the code
+     * tool, and instructions stay as given. Cells can still call every tool.
+     */
+    readonly direct?: readonly string[];
   } = {},
 ): ProgrammaticToolRuntime {
   if (directDefinition.sandbox !== "host") {
     throw new Error("cave_programmatic_tools_require_host_sandbox");
+  }
+  const direct = options.direct === undefined ? undefined : new Set(options.direct);
+  for (const name of direct ?? []) {
+    if (!directDefinition.tools.some((item) => item.name === name)) throw new Error(`cave_programmatic_direct_tool_unknown:${name}`);
   }
   // Cells call a tool's script companion when it has one: same name and
   // input, structured result. Direct mode keeps the compact text form.
@@ -177,19 +186,24 @@ export function createProgrammaticToolRuntime(
   const toolName = options.toolName ?? PROGRAMMATIC_TOOL_NAME;
   const counters: MutableStats = { launched: 0, claimed: 0, missed: 0, abandoned: 0 };
   const enabled = options.speculate ?? true;
-  const codeTool = createCodeTool(definitions, enabled, counters, toolName);
+  const codeTool = createCodeTool(definitions, enabled, counters, toolName, direct);
   const { registry, cellGate } = PROGRAMMATIC_METADATA.get(codeTool)!;
   const definition = Object.freeze({
     ...directDefinition,
     // Declarations carry each tool's description, so the coding prompt's
     // direct-mode Tools block would only repeat them in the prefix.
-    instructions: options.instructions ?? programmaticToolInstructions(
-      typeof directDefinition.instructions === "string"
-        ? withoutCodingToolGuidance(directDefinition.instructions)
-        : undefined,
-      { toolName },
-    ),
-    tools: Object.freeze([codeTool]),
+    instructions: options.instructions ?? (direct !== undefined
+      ? directDefinition.instructions
+      : programmaticToolInstructions(
+        typeof directDefinition.instructions === "string"
+          ? withoutCodingToolGuidance(directDefinition.instructions)
+          : undefined,
+        { toolName },
+      )),
+    tools: Object.freeze([
+      ...directDefinition.tools.filter((item) => direct?.has(item.name) === true),
+      codeTool,
+    ]),
   });
 
   return Object.freeze({
@@ -227,6 +241,7 @@ function createCodeTool(
   speculationEnabled: boolean,
   counters: MutableStats,
   toolName: string,
+  declared?: ReadonlySet<string>,
 ): ToolDefinition<{ code: string }, string> {
   const speculativeTools = speculationEnabled
     ? definitions.filter((definition) => definition.speculative === true)
@@ -243,7 +258,7 @@ function createCodeTool(
   }
   const definition = tool({
     name: toolName,
-    description: codeToolDescription(definitions),
+    description: codeToolDescription(definitions, declared),
     input: {
       type: "object",
       properties: { code: { type: "string" } },

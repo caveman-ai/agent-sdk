@@ -20,6 +20,16 @@ export const PEBBLE_V1_TOOL_INSTRUCTIONS = [
   "  to make the target unique, or pass replace_all.",
 ].join("\n");
 
+/** Hybrid mode: what goes through the one code tool beside the declared tools. */
+export function hybridCodeToolInstructions(toolName: string): string {
+  return [
+    `${toolName} runs one bounded async JS cell. Use it for what the tools above do not cover:`,
+    "tools that are not declared to you (tool servers, connectors, browser), tool search",
+    "(searchTools, describeTool), and fan-out: independent calls at once with Promise.all,",
+    "filtered in the cell so only the evidence comes back. Otherwise call the tools above directly.",
+  ].join("\n");
+}
+
 /** Remove the one SDK-rendered `Tools:` block; any other text is left byte-for-byte. */
 export function withoutCodingToolGuidance(instructions: string): string {
   const block = [PEBBLE_V1_TOOL_INSTRUCTIONS, FULL_TOOL_INSTRUCTIONS]

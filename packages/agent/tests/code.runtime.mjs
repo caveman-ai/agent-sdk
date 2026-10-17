@@ -155,7 +155,12 @@ async function withWorkspace(body) {
 }
 
 test("default coding plan routes only recoverable transforms over the live zone", () => {
-  const plan = defaultCodingPlan("anthropic/claude-sonnet-4-6", "caveman-code");
+  // Default lever: the engine only bounds runaway tool output, history stays as it is.
+  assert.deepEqual(
+    defaultCodingPlan("anthropic/claude-sonnet-4-6", "caveman-code").segment_routes.map((route) => route.segment_kind),
+    ["tool_result"],
+  );
+  const plan = defaultCodingPlan("anthropic/claude-sonnet-4-6", "caveman-code", "all");
   const kinds = plan.segment_routes.map((route) => route.segment_kind).sort();
   assert.deepEqual(kinds, ["history", "tool_result"]);
   for (const route of plan.segment_routes) {
@@ -184,14 +189,16 @@ test("created coding agent is host sandboxed, unlocked, and capped before compre
   const codingAgent = createCodingAgent({ workspace: tmpdir(), model: "anthropic/faux-1" });
   assert.equal(codingAgent.definition.sandbox, "host");
   assert.equal(codingAgent.definition.reasoning, "off");
+  assert.equal(codingAgent.toolMode, "hybrid");
   assert.deepEqual(
     codingAgent.definition.tools.map((item) => item.name).sort(),
-    ["bash", "edit_file", "grep", "read_file", "read_tool_output", "write_file"],
+    ["bash", "caveman_code", "edit_file", "grep", "read_file", "read_tool_output", "write_file"],
   );
   assert.deepEqual(
     codingAgent.definition.tools.map((item) => [item.name, item.effect]).sort(),
     [
       ["bash", "external"],
+      ["caveman_code", "idempotent"],
       ["edit_file", "write"],
       ["grep", "read"],
       ["read_file", "read"],
@@ -237,6 +244,7 @@ test("Pebble v1 coding surface exposes only read, shell, write, and edit", async
     workspace: tmpdir(),
     model: "anthropic/faux-1",
     toolSet: "pebble-v1",
+    toolMode: "direct",
     outputCaps: { bash: 128 },
   });
   assert.deepEqual(
@@ -614,7 +622,7 @@ test("a local session compresses tool results with the engine and no gateway, ke
     ).join("\n");
     await writeFile(resolve(workspace, "big.txt"), body, "utf8");
     const argvLog = resolve(process.env.CAVE_FAKE_ENGINE_STORE, "argv.jsonl");
-    const codingAgent = createCodingAgent({ workspace, model: "anthropic/faux-1" });
+    const codingAgent = createCodingAgent({ workspace, model: "anthropic/faux-1", levers: { compression: "all" } });
     // No gateway, nothing probed: a gateway fetch would fail the test.
     const session = await startCodingSession(codingAgent, {
       cave: "local",
@@ -785,7 +793,7 @@ test("an engine without --query-file compresses without Keep; the ask never goes
     await writeFile(resolve(workspace, "big.txt"), Array.from({ length: 240 }, (_, index) =>
       `line ${index}: the quick brown fox jumps over the lazy dog repeatedly`).join("\n"), "utf8");
     await writeFile(resolve(process.env.CAVE_FAKE_ENGINE_STORE, "no-query-file"), "");
-    const codingAgent = createCodingAgent({ workspace, model: "anthropic/faux-1" });
+    const codingAgent = createCodingAgent({ workspace, model: "anthropic/faux-1", levers: { compression: "all" } });
     const session = await startCodingSession(codingAgent, { cave: "local", engineBin: FAKE_ENGINE });
     const faux = fauxAnthropic();
     const model = { ...faux.getModel(), api: "anthropic-messages", provider: "anthropic" };
@@ -811,7 +819,7 @@ test("file reads and short outputs reach the model as they are; the prompt expla
   await withWorkspace(async (workspace) => {
     await writeFile(resolve(workspace, "big.txt"), Array.from({ length: 240 }, (_, index) =>
       `line ${index}: the quick brown fox jumps over the lazy dog repeatedly`).join("\n"), "utf8");
-    const codingAgent = createCodingAgent({ workspace, model: "anthropic/faux-1" });
+    const codingAgent = createCodingAgent({ workspace, model: "anthropic/faux-1", levers: { compression: "all" } });
     const session = await startCodingSession(codingAgent, { cave: "local", engineBin: FAKE_ENGINE });
     const faux = fauxAnthropic();
     const model = { ...faux.getModel(), api: "anthropic-messages", provider: "anthropic" };
@@ -842,7 +850,7 @@ test("file reads and short outputs reach the model as they are; the prompt expla
 
 test("a long local run is not stopped by the gateway trace header's 64-entry limit", async () => {
   await withWorkspace(async (workspace) => {
-    const codingAgent = createCodingAgent({ workspace, model: "anthropic/faux-1" });
+    const codingAgent = createCodingAgent({ workspace, model: "anthropic/faux-1", levers: { compression: "all" } });
     const session = await startCodingSession(codingAgent, { cave: "local", engineBin: FAKE_ENGINE });
     const faux = fauxAnthropic();
     const model = { ...faux.getModel(), api: "anthropic-messages", provider: "anthropic" };
@@ -886,7 +894,7 @@ test("optimized turn bills token counts from run telemetry and proves recovery",
       (_, index) => `line ${index}: the quick brown fox jumps over the lazy dog repeatedly`,
     ).join("\n");
     await writeFile(resolve(workspace, "big.txt"), body, "utf8");
-    const codingAgent = createCodingAgent({ workspace, model: "anthropic/faux-1" });
+    const codingAgent = createCodingAgent({ workspace, model: "anthropic/faux-1", levers: { compression: "all" } });
     const session = await startCodingSession(codingAgent, {
       ensureRuntime: false,
       engineBin: FAKE_ENGINE,

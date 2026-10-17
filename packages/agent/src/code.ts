@@ -47,9 +47,20 @@ import {
 } from "./memory.js";
 import { createFileMemoryAdapter } from "./memory-store.js";
 import {
+  PROGRAMMATIC_TOOL_NAME,
   createProgrammaticToolRuntime,
   type ProgrammaticToolRuntime,
 } from "./programmatic-tools.js";
+import {
+  attachCodingMcp,
+  renderCodingInstructionSections,
+  resolveCodingLevers,
+  type CodingInstructionSection,
+  type CodingLevers,
+  type CodingMcpOptions,
+  type ResolvedCodingLevers,
+} from "./coding-surface.js";
+import { renderMcpServersSection, type McpHost } from "./mcp.js";
 import {
   createCommandSessionRuntime,
   type CommandSessionSpillOptions,
@@ -89,9 +100,14 @@ import {
   type TransformTrace,
 } from "./runtime.js";
 import { encodeRunEvent, PebbleEventEncoder } from "./pebble-stream.js";
-import { FULL_TOOL_INSTRUCTIONS, PEBBLE_V1_TOOL_INSTRUCTIONS } from "./coding-guidance.js";
+import {
+  FULL_TOOL_INSTRUCTIONS,
+  PEBBLE_V1_TOOL_INSTRUCTIONS,
+  hybridCodeToolInstructions,
+} from "./coding-guidance.js";
 
 export { AgentRunController };
+export type { CodingInstructionSection, CodingLevers, CodingMcpOptions, ResolvedCodingLevers };
 // The tools themselves live in `./shell-tools.js`, composable by any agent;
 // these two stay published here because the coding surface documented them.
 export { CODING_TOOL_OUTPUT_CAPS };
@@ -169,7 +185,7 @@ export const OBSERVE_ONLY_BANNER = [
   "  Turn optimized mode on: npm i -g @caveman-ai/cli && caveman start",
 ].join("\n");
 
-function codingInstructions(toolSet: CodingToolSet, workspace: string): string {
+function codingInstructions(toolSet: CodingToolSet, workspace: string, hybridToolName?: string): string {
   const toolInstructions = toolSet === "pebble-v1"
     ? PEBBLE_V1_TOOL_INSTRUCTIONS
     : FULL_TOOL_INSTRUCTIONS;
@@ -190,6 +206,7 @@ function codingInstructions(toolSet: CodingToolSet, workspace: string): string {
     "Tools:",
     toolInstructions,
     "",
+    ...(hybridToolName === undefined ? [] : [hybridCodeToolInstructions(hybridToolName), ""]),
     cappedOutputInstructions,
     "",
     "Be terse: no narration between tool calls; end with what changed in a line or two.",
@@ -198,7 +215,7 @@ function codingInstructions(toolSet: CodingToolSet, workspace: string): string {
 }
 
 export type CodingToolSet = "full" | "pebble-v1";
-export type CodingToolMode = "direct" | "programmatic";
+export type CodingToolMode = "direct" | "programmatic" | "hybrid";
 
 export interface CodingAgentOptions {
   /** Workspace root. Tools refuse to read or write outside it. */
@@ -209,14 +226,28 @@ export interface CodingAgentOptions {
   id?: string;
   /** Extra instruction text appended to the built-in coding instructions. */
   instructions?: string;
+  /**
+   * Host-read instructions in order, after the SDK's own text and `instructions`:
+   * repository AGENTS.md or CLAUDE.md, private project notes, a memory brief.
+   */
+  instructionSections?: readonly CodingInstructionSection[];
   /** Per-tool raw output caps in bytes, before any transform. */
   outputCaps?: Partial<typeof CODING_TOOL_OUTPUT_CAPS>;
   /** Provider-visible coding tools. Generic SDK default remains the full six-tool surface. */
   toolSet?: CodingToolSet;
-  /** `programmatic` collapses ordinary tools into one bounded code-cell tool. */
+  /**
+   * `hybrid` (default): the coding tools stay declared, plus one code tool for
+   * everything else (MCP, connectors, browser, fan-out, tool search). Tools
+   * added by `definitionTransforms` are reachable only through the code tool.
+   * `programmatic` collapses every tool into the code tool; `direct` has none.
+   */
   toolMode?: CodingToolMode;
-  /** Safe read speculation in programmatic mode. Defaults on; ignored by direct mode. */
+  /** Safe read speculation in code cells. Defaults on; ignored by direct mode. */
   speculativeToolCalls?: boolean;
+  /** MCP servers to launch now; tools appear inside the code tool. Not available in direct mode. */
+  mcp?: CodingMcpOptions;
+  /** Caveman engine levers; defaults per {@link CodingLevers}. */
+  levers?: CodingLevers;
   /** Directory file tools may touch; defaults to `workspace`. `/` leaves them uncontained, like bash. */
   fileRoot?: string;
   /** Optional bounded disk retention for command output evicted from memory. */
@@ -240,8 +271,11 @@ export interface CodingAgent {
   readonly workspace: string;
   readonly modelID: string;
   readonly toolMode: CodingToolMode;
-  /** Present only in programmatic mode. Session APIs wire its transport automatically. */
+  /** Present in hybrid and programmatic mode. Session APIs and `codingRunOptions` wire its transport. */
   readonly programmaticTools?: ProgrammaticToolRuntime;
+  /** Present when the host passed MCP servers: status, sign-in. `close()` shuts it down. */
+  readonly mcp?: McpHost;
+  readonly levers: ResolvedCodingLevers;
   /** Largest raw tool outputs seen this process, kept for the recovery proof. */
   readonly samples: ToolOutputSample[];
   /** Kill live command sessions owned by this agent. Idempotent. */
@@ -263,16 +297,25 @@ const MAX_SAMPLES = 4;
  * `dynamic_route_ambiguous` and the segment passes through untouched). Budgets
  * are sized for a long interactive session rather than a fixture run; they are
  * ceilings that fail the turn honestly rather than silently truncating context.
+ * `bound` (the default lever) routes tool results only; `all` adds history.
  */
-export function defaultCodingPlan(modelID: string, namespace: string): CavePlan {
+export function defaultCodingPlan(
+  modelID: string,
+  namespace: string,
+  compression: ResolvedCodingLevers["compression"] = "bound",
+): CavePlan {
   return {
     schema_version: 1,
-    plan_id: "caveman-code.default.recoverable-live-zone",
+    plan_id: compression === "all"
+      ? "caveman-code.default.recoverable-live-zone"
+      : "caveman-code.default.runaway-output-bound",
     model: modelID,
     reasoning: "none",
     segment_routes: [
       { segment_kind: "tool_result", transform_id: TOOL_RESULT_TRANSFORM, fallback: "original" },
-      { segment_kind: "history", transform_id: HISTORY_TRANSFORM, fallback: "original" },
+      ...(compression === "all"
+        ? [{ segment_kind: "history" as const, transform_id: HISTORY_TRANSFORM, fallback: "original" as const }]
+        : []),
     ],
     budgets: {
       instructions: 64_000,
@@ -296,10 +339,23 @@ export function createCodingAgent(options: CodingAgentOptions = {}): CodingAgent
   const modelID = resolveCodingModelID(options.model);
   const toolSet = options.toolSet ?? "full";
   if (toolSet !== "full" && toolSet !== "pebble-v1") throw new Error(`coding_tool_set_invalid:${toolSet}`);
-  const toolMode = options.toolMode ?? "direct";
-  if (toolMode !== "direct" && toolMode !== "programmatic") {
+  const toolMode = options.toolMode ?? "hybrid";
+  if (toolMode !== "direct" && toolMode !== "programmatic" && toolMode !== "hybrid") {
     throw new Error(`coding_tool_mode_invalid:${toolMode}`);
   }
+  if (options.mcp !== undefined && toolMode === "direct") throw new Error("coding_mcp_requires_code_tool");
+  const levers = resolveCodingLevers(options.levers);
+  const codeToolName = options.programmaticToolName ?? PROGRAMMATIC_TOOL_NAME;
+  const coreTools = toolSet === "pebble-v1"
+    ? ["read_file", "bash", "write_file", "edit_file"] as const
+    : ["read_file", "grep", "bash", "write_file", "edit_file", "read_tool_output"] as const;
+  // SDK text first, then the host's in its order: the SDK part never moves.
+  const instructions = [
+    codingInstructions(toolSet, workspace, toolMode === "hybrid" ? codeToolName : undefined),
+    options.instructions,
+    options.mcp === undefined ? undefined : renderMcpServersSection(options.mcp.servers, codeToolName),
+    options.instructionSections === undefined ? undefined : renderCodingInstructionSections(options.instructionSections),
+  ].filter((text): text is string => text !== undefined).join("\n\n");
   const caps = { ...CODING_TOOL_OUTPUT_CAPS, ...options.outputCaps };
   const samples: ToolOutputSample[] = [];
   const record = (label: string, text: string) => {
@@ -330,9 +386,7 @@ export function createCodingAgent(options: CodingAgentOptions = {}): CodingAgent
     : undefined;
   const baseDefinition = agent({
     id,
-    instructions: options.instructions === undefined
-      ? codingInstructions(toolSet, workspace)
-      : `${codingInstructions(toolSet, workspace)}\n\n${options.instructions}`,
+    instructions,
     model: modelID,
     reasoning: "off",
     sandbox: "host",
@@ -347,9 +401,7 @@ export function createCodingAgent(options: CodingAgentOptions = {}): CodingAgent
     tools: shellTools({
       workspace,
       executionBackend,
-      tools: toolSet === "pebble-v1"
-        ? ["read_file", "bash", "write_file", "edit_file"]
-        : ["read_file", "grep", "bash", "write_file", "edit_file", "read_tool_output"],
+      tools: coreTools,
       outputCaps: caps,
       ...(options.fileRoot === undefined ? {} : { fileRoot: options.fileRoot }),
       ...(commandSessions === undefined ? {} : { commandSessions }),
@@ -360,17 +412,21 @@ export function createCodingAgent(options: CodingAgentOptions = {}): CodingAgent
     baseDefinition,
     options.definitionTransforms ?? [],
   );
-  const programmaticTools = toolMode === "programmatic"
-    ? createProgrammaticToolRuntime(directDefinition, {
+  const programmaticTools = toolMode === "direct"
+    ? undefined
+    : createProgrammaticToolRuntime(directDefinition, {
       speculate: options.speculativeToolCalls ?? true,
-      ...(options.programmaticToolName === undefined
-        ? {}
-        : { toolName: options.programmaticToolName }),
-    })
-    : undefined;
+      toolName: codeToolName,
+      // Transforms may wrap a coding tool under its own name; new tools go in the cell.
+      ...(toolMode === "hybrid"
+        ? { direct: coreTools.filter((name) => directDefinition.tools.some((item) => item.name === name)) }
+        : {}),
+    });
+  const mcp = options.mcp === undefined ? undefined : attachCodingMcp(programmaticTools!, options.mcp, workspace);
   let closing: Promise<void> | undefined;
   const close = () => (closing ??= (async () => {
     try {
+      await mcp?.close();
       await programmaticTools?.close();
     } finally {
       await commandSessions?.close();
@@ -378,13 +434,32 @@ export function createCodingAgent(options: CodingAgentOptions = {}): CodingAgent
   })());
   return Object.freeze({
     definition: programmaticTools?.definition ?? directDefinition,
-    plan: defaultCodingPlan(modelID, id),
+    plan: defaultCodingPlan(modelID, id, levers.compression),
     workspace,
     modelID,
     toolMode,
     ...(programmaticTools === undefined ? {} : { programmaticTools }),
+    ...(mcp === undefined ? {} : { mcp }),
+    levers,
     samples,
     close,
+  });
+}
+
+/**
+ * Coding run defaults for a host that calls `stream()` or `run()` itself
+ * instead of the session API: 1,000 model / 4,000 tool call ceilings, turn
+ * retry and window compaction, the coding breakers, long cache retention, and
+ * the code tool's transport. Host values win. The 32K output cap and the 600 s
+ * bash timeout already live in `codingAgent.definition`.
+ */
+export function codingRunOptions(codingAgent: CodingAgent, options: RunOptions = {}): RunOptions {
+  return withProgrammaticTransport(codingAgent, {
+    cacheRetention: "long",
+    ...CODING_CALL_CEILINGS,
+    ...CODING_RECOVERY,
+    breakers: CODING_RUN_BREAKERS,
+    ...options,
   });
 }
 
@@ -737,6 +812,7 @@ export async function runCodingTurn(
       result = await runAgentInternal(session.agent.definition, input, {
         ...prepared,
         candidatePlan: session.agent.plan,
+        engineLevers: session.agent.levers,
       });
     } catch (error) {
       if (classifyTurnFailure(error) === "fatal") throw error;
@@ -863,7 +939,7 @@ export async function* streamCodingTurn(
       const runtime = streamAgentInternalOptions(session.agent.definition, input, {
         ...prepared,
         ...(session.mode === "optimized" && attempt === 0 && !durable && runtimeOwnedRoute
-          ? { candidatePlan: session.agent.plan }
+          ? { candidatePlan: session.agent.plan, engineLevers: session.agent.levers }
           : {}),
       });
       const iterator = runtime[Symbol.asyncIterator]();

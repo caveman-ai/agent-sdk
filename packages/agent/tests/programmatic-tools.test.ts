@@ -45,6 +45,7 @@ function directDefinitionWithTools(tools: AgentDefinition["tools"]): AgentDefini
     workspace: process.cwd(),
     model: "openai/gpt-5.4",
     toolSet: "pebble-v1",
+    toolMode: "direct",
   });
   return Object.freeze({ ...base.definition, tools: Object.freeze([...tools]) });
 }
@@ -354,7 +355,8 @@ async function feedCodeStream(
 
 test("coding agent exposes programmatic mode with speculation enabled by default", () => {
   const model = "openai/gpt-5.4";
-  const direct = createCodingAgent({ model });
+  assert.equal(createCodingAgent({ model }).toolMode, "hybrid");
+  const direct = createCodingAgent({ model, toolMode: "direct" });
   assert.equal(direct.toolMode, "direct");
   const programmatic = createCodingAgent({ model, toolMode: "programmatic" });
   assert.equal(programmatic.toolMode, "programmatic");
@@ -421,6 +423,7 @@ test("programmatic runtime collapses ordinary tools into one typed code surface"
     workspace: process.cwd(),
     model: "openai/gpt-5.4",
     toolSet: "pebble-v1",
+    toolMode: "direct",
   });
   assert.equal(direct.definition.tools.length, 4);
   const runtime = createProgrammaticToolRuntime(direct.definition, {
@@ -486,6 +489,7 @@ test("programmatic runtime supports product-specific provider tool names", () =>
     workspace: process.cwd(),
     model: "openai/gpt-5.4",
     toolSet: "pebble-v1",
+    toolMode: "direct",
   });
   const runtime = createProgrammaticToolRuntime(direct.definition, { toolName: "pebble_code" });
 
@@ -901,6 +905,7 @@ test("one code cell runs multiple tools but returns only selected output", async
       workspace,
       model: "openai/gpt-5.4",
       toolSet: "pebble-v1",
+      toolMode: "direct",
     });
     const runtime = createProgrammaticToolRuntime(direct.definition, { speculate: false });
     const codeTool = runtime.definition.tools[0]!;
@@ -929,6 +934,7 @@ test("code cell exposes tool capabilities without Worker globals", async () => {
     workspace: process.cwd(),
     model: "openai/gpt-5.4",
     toolSet: "pebble-v1",
+    toolMode: "direct",
   });
   const runtime = createProgrammaticToolRuntime(direct.definition, { speculate: false });
   const codeTool = runtime.definition.tools[0]!;
@@ -1192,7 +1198,7 @@ test("inline ESM parent flags do not break eval Worker startup", async () => {
   const script = [
     'import { createCodingAgent } from "./dist/code.js";',
     'import { createProgrammaticToolRuntime } from "./dist/programmatic-tools.js";',
-    'const direct = createCodingAgent({ workspace: process.cwd(), model: "openai/gpt-5.4", toolSet: "pebble-v1" });',
+    'const direct = createCodingAgent({ workspace: process.cwd(), model: "openai/gpt-5.4", toolSet: "pebble-v1", toolMode: "direct" });',
     'const runtime = createProgrammaticToolRuntime(direct.definition, { speculate: false });',
     'const result = await runtime.definition.tools[0].execute({ code: `print("esm-ok")` });',
     'runtime.close();',
@@ -1404,7 +1410,7 @@ test("declarations render declared result types", async () => {
 test("script bash resolves to a structured result while direct bash stays text", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "programmatic-bash-"));
   const coding = createCodingAgent({ workspace, model: "openai/gpt-5.4", toolSet: "pebble-v1", toolMode: "programmatic" });
-  const direct = createCodingAgent({ workspace, model: "openai/gpt-5.4", toolSet: "pebble-v1" });
+  const direct = createCodingAgent({ workspace, model: "openai/gpt-5.4", toolSet: "pebble-v1", toolMode: "direct" });
   try {
     const codeTool = coding.definition.tools[0]!;
     const context = registryContext(codeTool);

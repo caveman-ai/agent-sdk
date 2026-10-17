@@ -10,6 +10,27 @@ Versioning policy and what counts as breaking: [docs/RELEASING.md](docs/RELEASIN
 
 ### Changed
 
+- `@caveman-ai/agent/code`: `createCodingAgent` defaults to `toolMode:
+  "hybrid"`: the coding tools stay declared, plus one code tool for tools that
+  are not declared (MCP, connectors, browser), tool search and fan-out. Tools a
+  `definitionTransforms` entry adds are reachable only in the cell. `direct`
+  and `programmatic` remain selectable. Hosts pass `instructionSections`
+  (repository AGENTS.md or CLAUDE.md, project notes, a memory brief; the SDK
+  still reads no workspace file) and `mcp: { servers }` (stdio or streamable
+  HTTP with headers); `CodingAgent.mcp` reports status and closes with the
+  agent. `codingRunOptions(agent, options)` gives a host that calls `stream()`
+  or `run()` itself the session defaults: call ceilings, turn retry, window
+  compaction, breakers, long cache retention.
+- Engine levers (`createCodingAgent({ levers })`): `compression: "bound"` is
+  the new default, so the engine sees only a tool output that overran its cap
+  and history is never compressed; `"all"` is the previous behavior. `keep:
+  false` compresses without the ask. Nothing measured them better yet, so no
+  saving is claimed for either.
+- `@caveman-ai/agent` exports `restoreConversation`; a subagent no longer
+  inherits the root run's `controller` (it failed with
+  `cave_agent_controller_in_use`). Engine subprocess code moved to
+  `src/engine-process.ts` and task economics to `src/coding-economics.ts`.
+
 - `@caveman-ai/agent` coding agent, for long autonomous runs: the output cap
   per call is 32,000 tokens (was 8,000, which cut off long reasoning or file
   writes and ended the run); bash's hard timeout is 600 s (was 120 s); the

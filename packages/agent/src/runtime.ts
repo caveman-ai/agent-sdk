@@ -1032,6 +1032,8 @@ export {
 interface InternalRunOptions extends RunOptions {
   lockedBuild?: AnyCaveBuildLock;
   candidatePlan?: CavePlan;
+  /** Coding levers for the plan: `bound` sends only cap-overrun tool outputs to the engine; `keep` off drops the ask. */
+  engineLevers?: { readonly compression: "bound" | "all"; readonly keep: boolean };
   /**
    * Resolved once per root run and handed to descendants so a nested agent
    * neither re-probes the gateway nor disagrees with its parent about whether
@@ -3581,6 +3583,7 @@ async function* streamAgentInternal(
             conversationOriginals,
             deferredToolOutputs,
             options.signal,
+            options.engineLevers,
           ),
           originalConversationMessages.length,
           passiveRecall?.prompt,
@@ -4606,13 +4609,14 @@ async function transformConversationContext(
   originals: Map<string, string>,
   deferredOutputs: ReadonlyMap<string, DeferredToolOutput>,
   signal?: AbortSignal,
+  levers?: InternalRunOptions["engineLevers"],
 ): Promise<AgentMessage[]> {
   if (!plan) return messages;
   const descriptors = conversationTextSegments(messages, currentPromptIndex);
   // The current ask: the newest user message (not a compaction summary), so Keep trims toward it.
   const ask = messages.findLast((message) => message.role === "user" &&
     (message as { caveContextSummary?: unknown }).caveContextSummary !== true);
-  const query = (typeof ask?.content === "string" ? ask.content : Array.isArray(ask?.content)
+  const query = levers?.keep === false ? "" : (typeof ask?.content === "string" ? ask.content : Array.isArray(ask?.content)
     ? ask.content.map((part) => part.type === "text" ? part.text : "").join("\n") : "").slice(0, KEEP_QUERY_CHARS);
   const output = structuredClone(messages) as AgentMessage[];
   for (const descriptor of descriptors) {
@@ -4651,6 +4655,8 @@ async function transformConversationContext(
       }
       continue;
     }
+    // Bound: only an output that overran its cap (handled above) reaches the engine.
+    if (levers?.compression === "bound" && descriptor.kind === "tool_result") continue;
     // Decided on an earlier request, kept or declined: one engine call per segment
     // per run, not one per segment per request.
     const existing = applied.bodies.get(segment.bodyHandle);
@@ -7583,7 +7589,7 @@ export function rejectInternalRunOptions(options: RunOptions): void {
   const value = options as Record<string, unknown>;
   if ("buildIdentity" in value || "efficiencyPlan" in value ||
       "lockedBuild" in value || "candidatePlan" in value || "caveRoute" in value ||
-      "invocationTrace" in value) {
+      "invocationTrace" in value || "engineLevers" in value) {
     throw new Error(
       "cave_internal_run_option: Cave Build execution is available through caveman-agent dev/build after lock validation",
     );
