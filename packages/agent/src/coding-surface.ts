@@ -3,7 +3,8 @@
  * MCP servers, and the Caveman engine levers. The SDK still never discovers
  * workspace files: a host reads AGENTS.md or CLAUDE.md itself and passes text.
  */
-import { McpHost, type McpHostOptions, type McpServerEntry } from "./mcp.js";
+import type { AgentDefinition } from "./definition.js";
+import { McpHost, type McpDirectTool, type McpHostOptions, type McpServerEntry } from "./mcp.js";
 import type { ProgrammaticToolRuntime } from "./programmatic-tools.js";
 
 export interface CodingInstructionSection {
@@ -62,16 +63,24 @@ export function resolveCodingLevers(levers: CodingLevers = {}): ResolvedCodingLe
   return Object.freeze({ compression, keep });
 }
 
-/** MCP servers a host launches explicitly; their tools are callable only inside the code tool. */
+/** MCP servers a host launches explicitly; their tools are callable inside the code tool. */
 export interface CodingMcpOptions extends Omit<McpHostOptions, "servers" | "cwd" | "register"> {
   /** Stdio or streamable HTTP entries; HTTP takes `headers` (a bearer token goes in `Authorization`). */
   readonly servers: readonly McpServerEntry[];
+  /**
+   * Hybrid mode only: a few server tools declared beside the coding tools, for
+   * calls that wait on a person or another agent. A declared call runs outside
+   * any code cell, so the cell's time limit never applies; it waits up to its
+   * own `timeoutMs`. The host writes each declaration, so the prompt prefix is
+   * fixed before the server connects. Cells can still call the listed tool.
+   */
+  readonly direct?: readonly McpDirectTool[];
 }
 
 /** Register server tools into the code tool, gate cells on connecting servers, and start connecting. */
 export function attachCodingMcp(
   runtime: ProgrammaticToolRuntime,
-  options: CodingMcpOptions,
+  { direct: _direct, ...options }: CodingMcpOptions,
   workspace: string,
 ): McpHost {
   const host = new McpHost({
@@ -82,4 +91,53 @@ export function attachCodingMcp(
   runtime.setCellGate((code, signal) => host.waitForCell(code, signal));
   host.start();
   return host;
+}
+
+/** The agent's definition plus the host's declared server tools (`CodingMcpOptions.direct`). */
+export function withDirectMcpTools(
+  definition: AgentDefinition,
+  host: McpHost | undefined,
+  direct: readonly McpDirectTool[] | undefined,
+  toolMode: string,
+): AgentDefinition {
+  if (direct === undefined || direct.length === 0) return definition;
+  try {
+    if (toolMode !== "hybrid") throw new Error("coding_mcp_direct_requires_hybrid");
+    const tools = direct.map((spec) => host!.directTool(spec));
+    for (const item of tools) {
+      if (definition.tools.some((existing) => existing.name === item.name) || tools.filter((other) => other.name === item.name).length > 1) {
+        throw new Error(`coding_mcp_direct_tool_duplicate:${item.name}`);
+      }
+    }
+    return Object.freeze({ ...definition, tools: Object.freeze([...definition.tools, ...tools]) });
+  } catch (error) {
+    void host?.close(); // already connecting
+    throw error;
+  }
+}
+
+/** `provider/model` from the host, else `CAVE_MODEL`, else the one provider with a key. */
+export function resolveCodingModelID(explicit: string | undefined): string {
+  const requested = explicit ?? process.env.CAVE_MODEL;
+  if (requested !== undefined && requested !== "") {
+    const slash = requested.indexOf("/");
+    if (slash <= 0 || slash === requested.length - 1) {
+      throw new Error("caveman-code: model must use provider/model format");
+    }
+    return requested;
+  }
+  const configured: string[] = [];
+  if (process.env.ANTHROPIC_API_KEY) configured.push("anthropic/claude-sonnet-4-6");
+  if (process.env.OPENAI_API_KEY) configured.push("openai/gpt-5.5");
+  if (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY) {
+    configured.push("google/gemini-2.5-pro");
+  }
+  if (configured.length !== 1) {
+    throw new Error(
+      configured.length === 0
+        ? "caveman-code: no supported provider credential found; set ANTHROPIC_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY"
+        : "caveman-code: multiple provider credentials found; set CAVE_MODEL to pick one",
+    );
+  }
+  return configured[0]!;
 }

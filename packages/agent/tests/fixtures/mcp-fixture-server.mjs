@@ -61,6 +61,7 @@ const TOOLS = process.env.FIXTURE_HOSTILE ? HOSTILE : [
   { name: "crash", description: "Exit the server during the call.", inputSchema: { type: "object" } },
   { name: "spawn_child", description: "Start a long-lived child process.", inputSchema: { type: "object" } },
   { name: "fail", description: "Return an MCP error result.", inputSchema: { type: "object" } },
+  { name: "sleep", description: "Answer after ms milliseconds.", inputSchema: { type: "object", properties: { ms: { type: "integer" } } } },
 ];
 
 function send(message) {
@@ -115,6 +116,9 @@ function serve() {
       });
     } else if (frame.method === "tools/list") {
       send({ jsonrpc: "2.0", id: frame.id, result: { tools: TOOLS } });
+    } else if (frame.method === "tools/call" && frame.params.name === "sleep") {
+      const ms = Number(frame.params.arguments?.ms ?? 0);
+      setTimeout(() => send({ jsonrpc: "2.0", id: frame.id, result: text(`slept ${ms}`) }), ms);
     } else if (frame.method === "tools/call") {
       const result = call(frame.params.name, frame.params.arguments ?? {});
       if (result === undefined) {

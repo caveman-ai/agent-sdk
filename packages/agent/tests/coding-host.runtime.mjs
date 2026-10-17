@@ -265,6 +265,67 @@ test("host MCP servers are callable inside the code tool, with a byte-stable pre
   });
 });
 
+test("a host declares a few waiting server tools directly: no cell, its own timeout", async () => {
+  await withWorkspace(async (workspace) => {
+    // The server's own timeout (0.2 s) stops a cell's call; the declared tool waits its own 5 s.
+    const server = { name: "fx", source: "host", config: { command: process.execPath, args: [MCP_FIXTURE], timeout: 0.2 } };
+    const sleep = { server: "fx", tool: "sleep", description: "Wait, then answer.",
+      input: { type: "object", properties: { ms: { type: "integer" } }, required: ["ms"] }, timeoutMs: 5_000 };
+    assert.throws(() => createCodingAgent({ workspace, model: "openai/gpt-5.4", toolMode: "programmatic", mcp: { servers: [server], direct: [sleep] } }),
+      /coding_mcp_direct_requires_hybrid/);
+    assert.throws(() => createCodingAgent({ workspace, model: "openai/gpt-5.4", mcp: { servers: [server], direct: [{ ...sleep, server: "nope" }] } }),
+      /mcp_server_unknown:nope/);
+    const codingAgent = createCodingAgent({ workspace, model: "openai/gpt-5.4", mcp: { servers: [server], direct: [sleep] } });
+    try {
+      assert.deepEqual(codingAgent.definition.tools.map((item) => item.name), [...CORE, "caveman_code", "mcp__fx__sleep"]);
+      const declared = codingAgent.definition.tools.at(-1);
+      assert.equal(declared.description, "Wait, then answer.");
+      assert.equal(declared.effect, "external");
+      assert.equal(declared.timeoutMs, 5_000 + 5_000);
+      const results = [];
+      const faux = fauxProvider();
+      const result = await run(codingAgent.definition, "sleep", codingRunOptions(codingAgent, {
+        ensureRuntime: false,
+        cave: "off",
+        model: faux.getModel(),
+        streamFn: scripted([
+          { name: "mcp__fx__sleep", args: { ms: 600 } },
+          { name: "caveman_code", args: { code: 'print((await tools.mcp__fx__sleep({ ms: 600 })).content[0].text);' } },
+        ], results),
+      }));
+      assert.equal(result.text, "done");
+      assert.match(results[0], /slept 600/);
+      assert.match(results[1], /mcp_tool_timeout:fx\/sleep: no answer within 200 ms/);
+      assert.deepEqual(result.toolCalls, ["mcp__fx__sleep", "caveman_code", "mcp__fx__sleep"]);
+    } finally {
+      await codingAgent.close();
+    }
+  });
+});
+
+test("processEnv reaches bash declared and in a cell, which keeps its structured result", async () => {
+  await withWorkspace(async (workspace) => {
+    const codingAgent = createCodingAgent({ workspace, model: "openai/gpt-5.4", processEnv: { CAVEMAN_PORT_WEB: "4123", PATH: "/usr/bin:/bin" } });
+    try {
+      const results = [];
+      const faux = fauxProvider();
+      await run(codingAgent.definition, "env", codingRunOptions(codingAgent, {
+        ensureRuntime: false,
+        cave: "off",
+        model: faux.getModel(),
+        streamFn: scripted([
+          { name: "bash", args: { command: 'echo "port=$CAVEMAN_PORT_WEB path=$PATH"' } },
+          { name: "caveman_code", args: { code: 'const r = await bash({ command: "echo $CAVEMAN_PORT_WEB" }); print(JSON.stringify({ exitCode: r.exitCode, output: r.output }));' } },
+        ], results),
+      }));
+      assert.match(results[0], /port=4123 path=\/usr\/bin:\/bin/);
+      assert.deepEqual(JSON.parse(results[1]), { exitCode: 0, output: "4123\n" });
+    } finally {
+      await codingAgent.close();
+    }
+  });
+});
+
 function bearerMcpServer(token) {
   const server = createServer(async (request, response) => {
     let body = "";

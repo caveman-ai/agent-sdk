@@ -55,6 +55,8 @@ import {
   attachCodingMcp,
   renderCodingInstructionSections,
   resolveCodingLevers,
+  resolveCodingModelID,
+  withDirectMcpTools,
   type CodingInstructionSection,
   type CodingLevers,
   type CodingMcpOptions,
@@ -433,7 +435,7 @@ export function createCodingAgent(options: CodingAgentOptions = {}): CodingAgent
     }
   })());
   return Object.freeze({
-    definition: programmaticTools?.definition ?? directDefinition,
+    definition: withDirectMcpTools(programmaticTools?.definition ?? directDefinition, mcp, options.mcp?.direct, toolMode),
     plan: defaultCodingPlan(modelID, id, levers.compression),
     workspace,
     modelID,
@@ -461,31 +463,6 @@ export function codingRunOptions(codingAgent: CodingAgent, options: RunOptions =
     breakers: CODING_RUN_BREAKERS,
     ...options,
   });
-}
-
-function resolveCodingModelID(explicit: string | undefined): string {
-  const requested = explicit ?? process.env.CAVE_MODEL;
-  if (requested !== undefined && requested !== "") {
-    const slash = requested.indexOf("/");
-    if (slash <= 0 || slash === requested.length - 1) {
-      throw new Error("caveman-code: model must use provider/model format");
-    }
-    return requested;
-  }
-  const configured: string[] = [];
-  if (process.env.ANTHROPIC_API_KEY) configured.push("anthropic/claude-sonnet-4-6");
-  if (process.env.OPENAI_API_KEY) configured.push("openai/gpt-5.5");
-  if (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY) {
-    configured.push("google/gemini-2.5-pro");
-  }
-  if (configured.length !== 1) {
-    throw new Error(
-      configured.length === 0
-        ? "caveman-code: no supported provider credential found; set ANTHROPIC_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY"
-        : "caveman-code: multiple provider credentials found; set CAVE_MODEL to pick one",
-    );
-  }
-  return configured[0]!;
 }
 
 /**

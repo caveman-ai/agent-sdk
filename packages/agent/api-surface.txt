@@ -728,6 +728,7 @@
 ./input	encodeAgentInput
 ./input	normalizeAgentInput
 ./mcp	MAX_MCP_SERVERS_SECTION_CHARS
+./mcp	McpDirectTool
 ./mcp	McpHost
 ./mcp	McpHostOptions
 ./mcp	McpHttpServerConfig

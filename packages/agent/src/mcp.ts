@@ -170,7 +170,24 @@ const RESULT_SCHEMA = Object.freeze({
   required: ["content"],
 });
 
-function createMcpToolDefinition(connection: McpConnection, mcpTool: McpTool, name: string): ToolDefinition {
+/** A server tool the provider sees as a declared tool, with the host's declaration. */
+export interface McpDirectTool {
+  readonly server: string;
+  /** The server's own tool name. */
+  readonly tool: string;
+  readonly description: string;
+  /** JSON Schema of the arguments, as the server lists them. */
+  readonly input: Record<string, unknown>;
+  /** How long one call waits for the server's answer. Defaults to the server's `timeout`. */
+  readonly timeoutMs?: number;
+}
+
+function createMcpToolDefinition(
+  connection: McpConnection,
+  mcpTool: McpTool,
+  name: string,
+  timeoutMs = connection.timeoutMs,
+): ToolDefinition {
   const server = connection.entry.name;
   const hints = mcpTool.annotations;
   const schema = sanitizeServerSchema(mcpTool.inputSchema) as Record<string, unknown>;
@@ -193,9 +210,10 @@ function createMcpToolDefinition(connection: McpConnection, mcpTool: McpTool, na
     // is serialized, never speculated, and never re-run on durable resume.
     effect: "external",
     result: "inline",
-    timeoutMs: connection.timeoutMs + 5_000,
+    timeoutMs: timeoutMs + 5_000,
     [TOOL_IMPLEMENTATION_SOURCE]: `mcp:${server}/${mcpTool.name}`,
-    execute: (args: Record<string, unknown>, signal?: AbortSignal) => connection.call(mcpTool.name, name, args, signal),
+    execute: (args: Record<string, unknown>, signal?: AbortSignal) =>
+      connection.call(mcpTool.name, name, args, signal, timeoutMs),
   };
   return tool(options as unknown as Parameters<typeof tool>[0]) as ToolDefinition;
 }
@@ -554,6 +572,7 @@ class McpConnection {
     nestedName: string,
     args: Record<string, unknown>,
     signal: AbortSignal | undefined,
+    timeoutMs = this.timeoutMs,
   ): Promise<Omit<CallToolResult, "_meta">> {
     const label = `${this.name}/${toolName}`;
     this.#host.recordCall(nestedName, this.name, toolName);
@@ -566,7 +585,7 @@ class McpConnection {
     try {
       const { _meta: _ignored, ...result } = await client.callTool(toolName, args, {
         ...(signal === undefined ? {} : { signal }),
-        timeoutMs: this.timeoutMs,
+        timeoutMs,
       });
       if (result.isError === true) this.#host.recordError(nestedName);
       return result;
@@ -593,7 +612,7 @@ class McpConnection {
       }
       if (error instanceof McpTimeoutError) {
         throw new Error(
-          `mcp_tool_timeout:${label}: no answer within ${this.timeoutMs} ms; the call may still have run on the server.`,
+          `mcp_tool_timeout:${label}: no answer within ${timeoutMs} ms; the call may still have run on the server.`,
         );
       }
       // pi-mcp synthesizes this when an HTTP response stream breaks mid-call.
@@ -902,6 +921,21 @@ export class McpHost {
       prompt,
     });
     await connection.reconnect();
+  }
+
+  /**
+   * A server tool as a declared tool: the host's name, description and schema,
+   * so it exists before the server connects; each call goes to the server and
+   * waits up to `timeoutMs`. Never retried, like every server call.
+   */
+  directTool(spec: McpDirectTool): ToolDefinition {
+    const connection = this.#connections.get(spec.server);
+    if (connection === undefined) throw new Error(`mcp_server_unknown:${spec.server}`);
+    if (spec.timeoutMs !== undefined && (!Number.isSafeInteger(spec.timeoutMs) || spec.timeoutMs <= 0)) {
+      throw new Error(`mcp_direct_tool_timeout_invalid:${spec.server}/${spec.tool}`);
+    }
+    const mcpTool = { name: spec.tool, description: spec.description, inputSchema: spec.input } as McpTool;
+    return createMcpToolDefinition(connection, mcpTool, createMcpToolName(spec.server, spec.tool), spec.timeoutMs);
   }
 
   async close(): Promise<void> {
