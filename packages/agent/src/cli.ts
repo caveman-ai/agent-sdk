@@ -77,13 +77,13 @@ import { lowerAgentContext } from "./execution-kernel.js";
 import { createConversation, type AgentDefinition } from "./index.js";
 import {
   caveGatewayReady,
-  buildEngineEnv,
   buildRuntimeControlEnv,
   resolveGatewayURL,
   runAgentInternal,
   verifySandboxConformance,
   type ConversationState,
 } from "./runtime.js";
+import { buildEngineEnv } from "./engine-process.js";
 import type { ContextKind, EvalDefinition } from "./primitives.js";
 import { optionalPeerCheck } from "./optional-peers.js";
 import { normalizeTrajectory, type NormalizedTrajectory } from "./trajectory-ir.js";
