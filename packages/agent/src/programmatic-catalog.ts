@@ -90,15 +90,19 @@ export class NestedToolRegistry {
 }
 
 export function toolDeclaration(definition: ToolDefinition): string {
+  return `// ${definition.description.replace(/\r?\n/g, "\n// ")}\n${toolSignature(definition)}`;
+}
+
+function toolSignature(definition: ToolDefinition): string {
   const result = definition.output === undefined ? "string" : schemaType(definition.output);
-  return `// ${definition.description.replace(/\r?\n/g, "\n// ")}\n` +
-    `declare function ${definition.name}(args: ${schemaType(definition.input)}): Promise<${result}>;`;
+  return `declare function ${definition.name}(args: ${schemaType(definition.input)}): Promise<${result}>;`;
 }
 
 /**
  * Stable provider-visible description, built only from construction-time tools.
- * `declared` tools are already in the provider's tool list (hybrid mode), so
- * they are named, not declared twice.
+ * `declared` tools are already in the provider's tool list (hybrid mode): their
+ * description is not repeated, but the cell signature is, since a cell result
+ * can differ from the declared tool's text.
  */
 export function codeToolDescription(
   definitions: readonly ToolDefinition[],
@@ -107,10 +111,8 @@ export function codeToolDescription(
   let remaining = PROGRAM_INLINE_DECLARATION_BYTES;
   let hidden = 0;
   const declarations: string[] = [];
-  const named = definitions.filter((definition) => declared.has(definition.name)).map((definition) => definition.name);
   for (const definition of definitions) {
-    if (declared.has(definition.name)) continue;
-    const declaration = toolDeclaration(definition);
+    const declaration = declared.has(definition.name) ? toolSignature(definition) : toolDeclaration(definition);
     const bytes = Buffer.byteLength(declaration, "utf8") + 1;
     if (bytes > remaining) {
       hidden++;
@@ -122,7 +124,6 @@ export function codeToolDescription(
   return [
     "Bounded async JS cell. Tools are direct functions and under tools.",
     "Discovery: ALL_TOOLS; await searchTools(query, {limit?, namespace?}), describeTool(name), describeNamespace(name).",
-    ...(named.length === 0 ? [] : [`Your declared tools are cell functions too: ${named.join(", ")}.`]),
     ...declarations,
     ...(hidden === 0 ? [] : [`${hidden} more tools are callable; describeTool(name) shows one.`]),
   ].join("\n");

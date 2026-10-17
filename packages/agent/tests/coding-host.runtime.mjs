@@ -106,9 +106,11 @@ test("hybrid is the default: coding tools stay declared, one code tool carries t
       const codeTool = codingAgent.definition.tools.at(-1);
       // A transform's new tool is reachable only in the cell; the coding tools are both.
       assert.deepEqual(codeTool.nestedTools.map((item) => item.name), [...CORE, "lookup"]);
-      assert.match(codeTool.description, /declare function lookup\(/);
-      assert.doesNotMatch(codeTool.description, /declare function read_file\(/, "declared tools are not declared twice");
-      assert.match(codeTool.description, /Your declared tools are cell functions too: read_file, grep, bash/);
+      assert.match(codeTool.description, /\/\/ Read one value\.\ndeclare function lookup\(/);
+      // A declared tool keeps its cell signature (its result differs from the declared text), not its description.
+      const readFile = codingAgent.definition.tools.find((item) => item.name === "read_file");
+      assert.match(codeTool.description, /\ndeclare function read_file\(args: \{ path: string[^\n]*\): Promise<string>;/);
+      assert.equal(codeTool.description.includes(readFile.description.split("\n")[0]), false, "descriptions are not repeated");
       const instructions = String(codingAgent.definition.instructions);
       assert.match(instructions, /\nTools:\n- read_file prefixes each line/);
       assert.match(instructions, /caveman_code runs one bounded async JS cell\. Use it for what the tools above do not cover/);
