@@ -116,6 +116,8 @@ export type { CodingInstructionSection, CodingLevers, CodingMcpOptions, Resolved
 // these two stay published here because the coding surface documented them.
 export { CODING_TOOL_OUTPUT_CAPS };
 export { capOutput } from "./shell-tools.js";
+/** The hybrid code tool's prompt line, for hosts that build their own hybrid surface. */
+export { hybridCodeToolInstructions } from "./coding-guidance.js";
 export {
   createCommandSessionRuntime,
   type CommandSessionReadOptions,

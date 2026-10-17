@@ -526,6 +526,7 @@
 ./code	formatRecoveryProof
 ./code	formatSessionBill
 ./code	formatTurnBill
+./code	hybridCodeToolInstructions
 ./code	programmaticToolInstructions
 ./code	proveRecovery
 ./code	runCodingSession
