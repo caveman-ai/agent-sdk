@@ -337,6 +337,8 @@ export function shellTools(options: ShellToolsOptions): ToolDefinition[] {
     structured: boolean,
     context?: ToolExecutionContext,
   ): Promise<string | BashScriptResult> => {
+    // Open union members: {action, command} validates as a command; a host that skips approval for actions must not run it.
+    if ("command" in input && "action" in input) throw new Error("caveman-code: bash takes a command or an action, not both");
     if ("command" in input) {
       const timeoutMs = Math.min(input.timeoutMs ?? BASH_TIMEOUT_MS, BASH_TIMEOUT_MS);
       const yieldTimeMs = "yieldTimeMs" in input ? input.yieldTimeMs : undefined;
@@ -370,9 +372,7 @@ export function shellTools(options: ShellToolsOptions): ToolDefinition[] {
             combined, !run.truncated, false,
             (text, complete) => storedOutputs.put(`bash:${input.command.slice(0, 60)}`, text, complete));
         }
-        const output = combined.trim() === ""
-          ? "(no output)"
-          : combined;
+        const output = combined.trim() === "" ? "(no output)" : combined;
         const text = capToolOutput({
           prefix: `${status}\n`,
           text: output,

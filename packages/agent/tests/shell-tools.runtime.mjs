@@ -112,6 +112,20 @@ test("bash runs one bounded command in the workspace", async () => {
   });
 });
 
+test("bash refuses a session action that also carries a command, and runs nothing", async () => {
+  await withWorkspace(async (workspace) => {
+    const sessions = { list: () => [], read: async () => {}, close: async () => {} };
+    const tools = byName(shellTools({ workspace, tools: ["bash"], commandSessions: sessions }));
+    for (const action of ["read", "list", "kill"]) {
+      await assert.rejects(
+        () => tools.bash.execute({ action, sessionId: "s1", command: "touch marker" }),
+        /a command or an action, not both/,
+      );
+    }
+    await assert.rejects(() => readFile(resolve(workspace, "marker")), { code: "ENOENT" });
+  });
+});
+
 test("bash gets the host's processEnv on top of the allowlist, never the ambient environment", async () => {
   await withWorkspace(async (workspace) => {
     process.env.CAVE_SHELL_TOOLS_AMBIENT = "leaked";
