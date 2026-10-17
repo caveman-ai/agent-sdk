@@ -339,3 +339,20 @@ test("agent catalog compiles exact runtime lifecycle and thinking facts", () => 
   }), false);
   assert.equal(catalogModelRuntimeEligible({ ...facts, lifecycle: "reviewed" }), true);
 });
+
+test("the Caveman Code app's current models carry a reviewed list price", () => {
+  const usage = { inputTokens: 1_000_000, outputTokens: 1_000_000, cacheReadTokens: 0, cacheWriteTokens: 0, reasoningTokens: 0 };
+  const expected = {
+    "anthropic/claude-sonnet-5-5": 12, "anthropic/claude-opus-5-5": 24, "anthropic/claude-haiku-5-5": 0.6, "anthropic/claude-fable-5-1": 60,
+    "openai/gpt-6.1-sol": 12, "openai/gpt-6-sol": 12, "openai/gpt-6-luna": 0.6, "openai/gpt-6-astra": 60,
+  };
+  for (const [key, usd] of Object.entries(expected)) {
+    const [provider, model] = key.split("/");
+    assert.ok(catalogPriceFingerprint(provider, model, new Date("2026-10-17T00:00:00Z")), `${key} is unpriced`);
+    assert.deepEqual(catalogCost({ provider, model, ...usage }, new Date("2026-10-17T00:00:00Z")), { priced: true, usd }, key);
+  }
+  // A scheduled change: Gemini 3.8 Flash is priced on either side of it.
+  for (const at of ["2026-10-17T00:00:00Z", "2027-02-01T00:00:00Z"]) {
+    assert.equal(catalogCost({ provider: "google", model: "gemini-3.8-flash", ...usage }, new Date(at)).priced, true, at);
+  }
+});

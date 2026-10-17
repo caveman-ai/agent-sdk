@@ -247,7 +247,7 @@ function recurringUTCPricing(value, mode, key, label) {
   if (value === undefined || value === null) return null;
   if (typeof value !== "object" || Array.isArray(value) ||
       typeof value.effective_from !== "string" || !Number.isFinite(Date.parse(value.effective_from)) ||
-      !Array.isArray(value.windows) || value.windows.length === 0) {
+      !Array.isArray(value.windows)) { // no windows: one scheduled price change at effective_from
     throw new Error(`${label}: ${key}.recurring_utc_pricing is malformed`);
   }
   const timeOfDay = (text, field) => {

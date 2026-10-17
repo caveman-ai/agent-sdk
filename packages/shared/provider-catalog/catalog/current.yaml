@@ -2730,3 +2730,656 @@
     - https://console.groq.com/docs/vision
   verified_at: 2026-08-13T00:00:00Z
   capabilities_verified_at: 2026-08-13T00:00:00Z
+- provider: openai
+  model: gpt-5.6-terra
+  region: global
+  currency: USD
+  pricing:
+    input_per_million: 2.00
+    output_per_million: 12.00
+    cache_read_input_per_million: 0.20
+    cache_write_input_per_million: 2.50
+    reasoning_output_per_million: 12.00
+    batch_discount_fraction: null
+    long_context_threshold_tokens: 272000
+    long_context_input_multiplier: 2.0
+    long_context_output_multiplier: 1.5
+  capabilities:
+    # released_at checked 2026-10-06, OpenAI changelog.
+    released_at: 2026-07-09T00:00:00Z
+    # Model page checked 2026-10-06: Chat Completions and Responses supported.
+    responses_api: true
+    count_tokens: true
+    chat_completions: true
+    # default_effort checked 2026-10-06, model page gpt-5.6-terra: "medium (default)".
+    default_effort: medium
+    context_window_tokens: 1050000
+    tools: true
+    vision: true
+    json_mode: true
+  lifecycle:
+    status: reviewed
+    observed_at: 2026-08-29T00:00:00Z
+  count_surface:
+    state: supported
+    id: openai.responses.input_tokens
+    projection_version: openai-responses-input-tokens-v1
+    accuracy: provider_measured
+    quota: unknown
+  sources:
+    - https://developers.openai.com/api/docs/models/gpt-5.6-terra
+    - https://openai.com/api/pricing/
+    - https://developers.openai.com/api/docs/guides/token-counting
+    - https://developers.openai.com/api/docs/changelog
+  verified_at: 2026-08-29T00:00:00Z
+  capabilities_verified_at: 2026-10-06T00:00:00Z
+- provider: openai
+  model: gpt-6.1-sol
+  region: global
+  currency: USD
+  # Pricing page and model page checked 2026-10-06. Cached input is 0.05x input
+  # on this model (0.10), not the usual 0.1x. Over 272K input tokens the whole
+  # request is 2x input and cache rates and 1.5x output.
+  pricing:
+    input_per_million: 2.00
+    output_per_million: 10.00
+    cache_read_input_per_million: 0.10
+    cache_write_input_per_million: 2.50
+    cache_write_1h_input_per_million: null
+    reasoning_output_per_million: 10.00
+    batch_discount_fraction: 0.50
+    long_context_threshold_tokens: 272000
+    long_context_input_multiplier: 2.0
+    long_context_output_multiplier: 1.5
+  capabilities:
+    # released_at checked 2026-10-06, OpenAI changelog.
+    released_at: 2026-09-29T00:00:00Z
+    responses_api: true
+    count_tokens: true
+    chat_completions: true
+    # Model page: tool calling is Responses-only on this model.
+    chat_completions_tools: false
+    effort_levels: [low, medium, high, xhigh, max]
+    # default_effort checked 2026-10-06, reasoning guide: GPT-6.1 Sol, GPT-6 Sol and GPT-6 Luna default to medium.
+    default_effort: medium
+    prompt_cache_key: true
+    prompt_cache_breakpoint: true
+    streaming: true
+    batch: true
+    flex: true
+    regional_processing_multiplier: 1.10
+    # Model page: 1,050,000-token window shared with up to 128,000 output
+    # tokens. 922,000 is the input that fits beside a full output, the bound
+    # the SDK record gives the GPT-5.6 siblings.
+    context_window_tokens: 922000
+    tools: true
+    vision: true
+    json_mode: true
+  count_surface:
+    state: supported
+    id: openai.responses.input_tokens
+    projection_version: openai-responses-input-tokens-v1
+    accuracy: provider_measured
+    quota: unknown
+  cache_profile:
+    state: supported
+    id: cave-cache-openai-explicit-v1
+    mode: explicit
+    attribution: causal
+    min_prefix_tokens: 1024
+    max_breakpoints: 4
+    ttl_seconds: 1800
+    rolling: true
+    routing_key: true
+    max_rpm_per_key: 15
+    endpoints: [v1/chat/completions, v1/responses]
+  sources:
+    - https://developers.openai.com/api/docs/pricing
+    - https://developers.openai.com/api/docs/models/gpt-6.1-sol
+    - https://developers.openai.com/api/docs/guides/prompt-caching
+    - https://developers.openai.com/api/docs/guides/token-counting
+    - https://developers.openai.com/api/docs/guides/reasoning
+    - https://developers.openai.com/api/docs/changelog
+  verified_at: 2026-10-06T00:00:00Z
+  capabilities_verified_at: 2026-10-06T00:00:00Z
+- provider: openai
+  model: gpt-6-sol
+  region: global
+  currency: USD
+  # Pricing page and model page checked 2026-10-06. Over 272K input tokens the
+  # whole request is 2x input and cache rates and 1.5x output.
+  pricing:
+    input_per_million: 2.00
+    output_per_million: 10.00
+    cache_read_input_per_million: 0.20
+    cache_write_input_per_million: 2.50
+    cache_write_1h_input_per_million: null
+    reasoning_output_per_million: 10.00
+    batch_discount_fraction: 0.50
+    long_context_threshold_tokens: 272000
+    long_context_input_multiplier: 2.0
+    long_context_output_multiplier: 1.5
+  capabilities:
+    # released_at checked 2026-10-06, OpenAI changelog.
+    released_at: 2026-09-22T00:00:00Z
+    responses_api: true
+    count_tokens: true
+    chat_completions: true
+    # Model page: Chat Completions takes tools only at reasoning_effort none;
+    # Responses takes them at every effort.
+    chat_completions_tools: false
+    effort_levels: [none, low, medium, high, xhigh, max]
+    # default_effort checked 2026-10-06, reasoning guide: GPT-6.1 Sol, GPT-6 Sol and GPT-6 Luna default to medium.
+    default_effort: medium
+    prompt_cache_key: true
+    prompt_cache_breakpoint: true
+    streaming: true
+    batch: true
+    flex: true
+    regional_processing_multiplier: 1.10
+    # Model page: 1,050,000-token window shared with up to 128,000 output
+    # tokens. 922,000 is the input that fits beside a full output, the bound
+    # the SDK record gives the GPT-5.6 siblings.
+    context_window_tokens: 922000
+    tools: true
+    vision: true
+    json_mode: true
+  count_surface:
+    state: supported
+    id: openai.responses.input_tokens
+    projection_version: openai-responses-input-tokens-v1
+    accuracy: provider_measured
+    quota: unknown
+  cache_profile:
+    state: supported
+    id: cave-cache-openai-explicit-v1
+    mode: explicit
+    attribution: causal
+    min_prefix_tokens: 1024
+    max_breakpoints: 4
+    ttl_seconds: 1800
+    rolling: true
+    routing_key: true
+    max_rpm_per_key: 15
+    endpoints: [v1/chat/completions, v1/responses]
+  sources:
+    - https://developers.openai.com/api/docs/pricing
+    - https://developers.openai.com/api/docs/models/gpt-6-sol
+    - https://developers.openai.com/api/docs/guides/prompt-caching
+    - https://developers.openai.com/api/docs/guides/token-counting
+    - https://developers.openai.com/api/docs/guides/reasoning
+    - https://developers.openai.com/api/docs/changelog
+  verified_at: 2026-10-06T00:00:00Z
+  capabilities_verified_at: 2026-10-06T00:00:00Z
+- provider: openai
+  model: gpt-6-astra
+  region: global
+  currency: USD
+  # Pricing page and model page checked 2026-10-06. Over 272K input tokens the
+  # whole request is 2x input and cache rates and 1.5x output. The pricing
+  # page charges data-residency endpoints a 10% uplift for models released on
+  # or after 2026-03-05 that are eligible for data residency; the Astra page
+  # states no eligibility, so no regional_processing_multiplier is attested.
+  pricing:
+    input_per_million: 10.00
+    output_per_million: 50.00
+    cache_read_input_per_million: 1.00
+    cache_write_input_per_million: 12.50
+    cache_write_1h_input_per_million: null
+    reasoning_output_per_million: 50.00
+    batch_discount_fraction: 0.50
+    long_context_threshold_tokens: 272000
+    long_context_input_multiplier: 2.0
+    long_context_output_multiplier: 1.5
+  capabilities:
+    # released_at checked 2026-10-06, OpenAI changelog.
+    released_at: 2026-09-03T00:00:00Z
+    responses_api: true
+    count_tokens: true
+    chat_completions: true
+    effort_levels: [low, medium, high, xhigh, max]
+    prompt_cache_key: true
+    prompt_cache_breakpoint: true
+    streaming: true
+    batch: true
+    flex: true
+    # Model page: 1,050,000-token window shared with up to 128,000 output
+    # tokens. 922,000 is the input that fits beside a full output, the bound
+    # the SDK record gives the GPT-5.6 siblings.
+    context_window_tokens: 922000
+    tools: true
+    vision: true
+    json_mode: true
+  count_surface:
+    state: supported
+    id: openai.responses.input_tokens
+    projection_version: openai-responses-input-tokens-v1
+    accuracy: provider_measured
+    quota: unknown
+  cache_profile:
+    state: supported
+    id: cave-cache-openai-explicit-v1
+    mode: explicit
+    attribution: causal
+    min_prefix_tokens: 1024
+    max_breakpoints: 4
+    ttl_seconds: 1800
+    rolling: true
+    routing_key: true
+    max_rpm_per_key: 15
+    endpoints: [v1/chat/completions, v1/responses]
+  sources:
+    - https://developers.openai.com/api/docs/pricing
+    - https://developers.openai.com/api/docs/models/gpt-6-astra
+    - https://developers.openai.com/api/docs/guides/prompt-caching
+    - https://developers.openai.com/api/docs/guides/token-counting
+    - https://developers.openai.com/api/docs/guides/reasoning
+    - https://developers.openai.com/api/docs/changelog
+  verified_at: 2026-10-06T00:00:00Z
+  capabilities_verified_at: 2026-10-06T00:00:00Z
+- provider: openai
+  model: gpt-6-luna
+  region: global
+  currency: USD
+  # Pricing page and model page checked 2026-10-06. Over 272K input tokens the
+  # whole request is 2x input and cache rates and 1.5x output.
+  pricing:
+    input_per_million: 0.10
+    output_per_million: 0.50
+    cache_read_input_per_million: 0.01
+    cache_write_input_per_million: 0.125
+    cache_write_1h_input_per_million: null
+    reasoning_output_per_million: 0.50
+    batch_discount_fraction: 0.50
+    long_context_threshold_tokens: 272000
+    long_context_input_multiplier: 2.0
+    long_context_output_multiplier: 1.5
+  capabilities:
+    # released_at checked 2026-10-06, OpenAI changelog.
+    released_at: 2026-09-22T00:00:00Z
+    responses_api: true
+    count_tokens: true
+    chat_completions: true
+    # Model page: Chat Completions takes tools only at reasoning_effort none;
+    # Responses takes them at every effort.
+    chat_completions_tools: false
+    effort_levels: [none, low, medium, high, xhigh, max]
+    # default_effort checked 2026-10-06, reasoning guide: GPT-6.1 Sol, GPT-6 Sol and GPT-6 Luna default to medium.
+    default_effort: medium
+    prompt_cache_key: true
+    prompt_cache_breakpoint: true
+    streaming: true
+    batch: true
+    flex: true
+    regional_processing_multiplier: 1.10
+    # Model page: 1,050,000-token window shared with up to 128,000 output
+    # tokens. 922,000 is the input that fits beside a full output, the bound
+    # the SDK record gives the GPT-5.6 siblings.
+    context_window_tokens: 922000
+    tools: true
+    vision: true
+    json_mode: true
+  count_surface:
+    state: supported
+    id: openai.responses.input_tokens
+    projection_version: openai-responses-input-tokens-v1
+    accuracy: provider_measured
+    quota: unknown
+  cache_profile:
+    state: supported
+    id: cave-cache-openai-explicit-v1
+    mode: explicit
+    attribution: causal
+    min_prefix_tokens: 1024
+    max_breakpoints: 4
+    ttl_seconds: 1800
+    rolling: true
+    routing_key: true
+    max_rpm_per_key: 15
+    endpoints: [v1/chat/completions, v1/responses]
+  sources:
+    - https://developers.openai.com/api/docs/pricing
+    - https://developers.openai.com/api/docs/models/gpt-6-luna
+    - https://developers.openai.com/api/docs/guides/prompt-caching
+    - https://developers.openai.com/api/docs/guides/token-counting
+    - https://developers.openai.com/api/docs/guides/reasoning
+    - https://developers.openai.com/api/docs/changelog
+  verified_at: 2026-10-06T00:00:00Z
+  capabilities_verified_at: 2026-10-06T00:00:00Z
+- provider: anthropic
+  model: claude-opus-5-5
+  region: global
+  currency: USD
+  # Pricing page checked 2026-10-06. Cache hits are 0.05x base input on
+  # Opus 5.5 (0.20), not the standard 0.1x.
+  pricing:
+    input_per_million: 4.00
+    output_per_million: 20.00
+    cache_read_input_per_million: 0.20
+    cache_write_input_per_million: 5.00
+    cache_write_1h_input_per_million: 8.00
+    reasoning_output_per_million: 20.00
+    batch_discount_fraction: 0.50
+  capabilities:
+    # released_at checked 2026-10-06, model page opus-5-5 "Released".
+    released_at: 2026-09-22T00:00:00Z
+    messages_api: true
+    adaptive_thinking: true
+    manual_thinking: false
+    thinking_disabled: false
+    effort_levels: [low, medium, high, xhigh, max]
+    count_tokens: true
+    prompt_cache: true
+    streaming: true
+    message_batches: true
+    inference_geo_us_multiplier: 1.10
+    context_window_tokens: 1000000
+    tools: true
+    vision: true
+    json_mode: true
+  count_surface:
+    state: supported
+    id: anthropic.messages.count_tokens
+    projection_version: anthropic-messages-count-v1
+    accuracy: provider_measured
+    quota: independent
+  cache_profile:
+    state: supported
+    id: cave-cache-anthropic-v1
+    mode: explicit
+    attribution: causal
+    min_prefix_tokens: 512
+    max_breakpoints: 4
+    ttl_seconds: 300
+    rolling: true
+    routing_key: false
+    endpoints: [v1/messages]
+  sources:
+    - https://platform.claude.com/docs/en/build-with-claude/token-counting
+    - https://platform.claude.com/docs/en/build-with-claude/prompt-caching
+    - https://platform.claude.com/docs/en/about-claude/pricing
+    - https://platform.claude.com/docs/en/about-claude/models/overview
+    - https://platform.claude.com/docs/en/build-with-claude/effort
+    - https://platform.claude.com/docs/en/build-with-claude/extended-thinking
+    - https://platform.claude.com/docs/en/build-with-claude/thinking-troubleshooting
+    - https://platform.claude.com/docs/en/build-with-claude/structured-outputs
+    - https://platform.claude.com/docs/en/models/opus-5-5/overview
+  verified_at: 2026-10-06T00:00:00Z
+  capabilities_verified_at: 2026-10-06T00:00:00Z
+- provider: anthropic
+  model: claude-sonnet-5-5
+  region: global
+  currency: USD
+  pricing:
+    input_per_million: 2.00
+    output_per_million: 10.00
+    cache_read_input_per_million: 0.20
+    cache_write_input_per_million: 2.50
+    cache_write_1h_input_per_million: 4.00
+    reasoning_output_per_million: 10.00
+    batch_discount_fraction: 0.50
+  capabilities:
+    # released_at checked 2026-10-06, model page sonnet-5-5 "Released".
+    released_at: 2026-09-28T00:00:00Z
+    messages_api: true
+    adaptive_thinking: true
+    manual_thinking: false
+    thinking_disabled: false
+    effort_levels: [low, medium, high, xhigh, max]
+    count_tokens: true
+    prompt_cache: true
+    streaming: true
+    message_batches: true
+    inference_geo_us_multiplier: 1.10
+    context_window_tokens: 1000000
+    tools: true
+    vision: true
+    json_mode: true
+  count_surface:
+    state: supported
+    id: anthropic.messages.count_tokens
+    projection_version: anthropic-messages-count-v1
+    accuracy: provider_measured
+    quota: independent
+  cache_profile:
+    state: supported
+    id: cave-cache-anthropic-v1
+    mode: explicit
+    attribution: causal
+    min_prefix_tokens: 512
+    max_breakpoints: 4
+    ttl_seconds: 300
+    rolling: true
+    routing_key: false
+    endpoints: [v1/messages]
+  sources:
+    - https://platform.claude.com/docs/en/build-with-claude/token-counting
+    - https://platform.claude.com/docs/en/build-with-claude/prompt-caching
+    - https://platform.claude.com/docs/en/about-claude/pricing
+    - https://platform.claude.com/docs/en/about-claude/models/overview
+    - https://platform.claude.com/docs/en/build-with-claude/effort
+    - https://platform.claude.com/docs/en/build-with-claude/extended-thinking
+    - https://platform.claude.com/docs/en/build-with-claude/thinking-troubleshooting
+    - https://platform.claude.com/docs/en/build-with-claude/structured-outputs
+    - https://platform.claude.com/docs/en/models/sonnet-5-5/overview
+  verified_at: 2026-10-06T00:00:00Z
+  capabilities_verified_at: 2026-10-06T00:00:00Z
+- provider: anthropic
+  model: claude-haiku-5-5
+  region: global
+  currency: USD
+  # Pricing page and model page checked 2026-10-15. A request whose prompt
+  # (input plus cache reads and writes) is over 100,000 tokens pays 5x every
+  # input, cache and output rate.
+  pricing:
+    input_per_million: 0.10
+    output_per_million: 0.50
+    cache_read_input_per_million: 0.01
+    cache_write_input_per_million: 0.125
+    cache_write_1h_input_per_million: 0.20
+    reasoning_output_per_million: 0.50
+    batch_discount_fraction: 0.50
+    long_context_threshold_tokens: 100000
+    long_context_input_multiplier: 5.0
+    long_context_output_multiplier: 5.0
+  capabilities:
+    # released_at checked 2026-10-15, model page haiku-5-5 "Released".
+    released_at: 2026-10-07T00:00:00Z
+    messages_api: true
+    adaptive_thinking: true
+    manual_thinking: false
+    effort_levels: [low, medium, high, xhigh, max]
+    default_effort: medium
+    count_tokens: true
+    prompt_cache: true
+    streaming: true
+    message_batches: true
+    inference_geo_us_multiplier: 1.10
+    context_window_tokens: 1000000
+    tools: true
+    vision: true
+  count_surface:
+    state: supported
+    id: anthropic.messages.count_tokens
+    projection_version: anthropic-messages-count-v1
+    accuracy: provider_measured
+    quota: independent
+  cache_profile:
+    state: supported
+    id: cave-cache-anthropic-v1
+    mode: explicit
+    attribution: causal
+    min_prefix_tokens: 512
+    max_breakpoints: 4
+    ttl_seconds: 300
+    rolling: true
+    routing_key: false
+    endpoints: [v1/messages]
+  sources:
+    - https://platform.claude.com/docs/en/about-claude/pricing
+    - https://platform.claude.com/docs/en/models/haiku-5-5/overview
+    - https://platform.claude.com/docs/en/about-claude/models/overview
+    - https://platform.claude.com/docs/en/build-with-claude/effort
+    - https://platform.claude.com/docs/en/build-with-claude/prompt-caching
+    - https://platform.claude.com/docs/en/build-with-claude/token-counting
+  verified_at: 2026-10-15T00:00:00Z
+  capabilities_verified_at: 2026-10-15T00:00:00Z
+- provider: anthropic
+  model: claude-fable-5-1
+  region: global
+  currency: USD
+  # Pricing page checked 2026-10-06. Cache hits are 0.025x base input on
+  # Fable 5.1 (0.25), not the standard 0.1x that Fable 5 keeps.
+  pricing:
+    input_per_million: 10.00
+    output_per_million: 50.00
+    cache_read_input_per_million: 0.25
+    cache_write_input_per_million: 12.50
+    cache_write_1h_input_per_million: 20.00
+    reasoning_output_per_million: 50.00
+    batch_discount_fraction: 0.50
+  capabilities:
+    # released_at checked 2026-10-06, model page fable-5-1 "Released".
+    released_at: 2026-09-01T00:00:00Z
+    messages_api: true
+    adaptive_thinking: true
+    manual_thinking: false
+    thinking_disabled: false
+    effort_levels: [low, medium, high, xhigh, max]
+    count_tokens: true
+    prompt_cache: true
+    streaming: true
+    message_batches: true
+    inference_geo_us_multiplier: 1.10
+    context_window_tokens: 1000000
+    tools: true
+    vision: true
+    json_mode: true
+  count_surface:
+    state: supported
+    id: anthropic.messages.count_tokens
+    projection_version: anthropic-messages-count-v1
+    accuracy: provider_measured
+    quota: independent
+  cache_profile:
+    state: supported
+    id: cave-cache-anthropic-v1
+    mode: explicit
+    attribution: causal
+    min_prefix_tokens: 512
+    max_breakpoints: 4
+    ttl_seconds: 300
+    rolling: true
+    routing_key: false
+    endpoints: [v1/messages]
+  sources:
+    - https://platform.claude.com/docs/en/build-with-claude/token-counting
+    - https://platform.claude.com/docs/en/build-with-claude/prompt-caching
+    - https://platform.claude.com/docs/en/about-claude/pricing
+    - https://platform.claude.com/docs/en/about-claude/models/overview
+    - https://platform.claude.com/docs/en/build-with-claude/effort
+    - https://platform.claude.com/docs/en/build-with-claude/extended-thinking
+    - https://platform.claude.com/docs/en/build-with-claude/thinking-troubleshooting
+    - https://platform.claude.com/docs/en/build-with-claude/structured-outputs
+    - https://platform.claude.com/docs/en/models/fable-5-1/overview
+  verified_at: 2026-10-06T00:00:00Z
+  capabilities_verified_at: 2026-10-06T00:00:00Z
+- provider: gemini
+  model: gemini-3.8-flash
+  region: global
+  currency: USD
+  # Pricing page checked 2026-10-06 (paid tier): introductory 0.75 / 3.75,
+  # cache 0.075, storage 0.50 through 2026-12-31; from 2027-01-01 1.50 / 7.50,
+  # cache 0.15, storage 1.00. Batch is 50% of both. The schedule switches it.
+  pricing:
+    input_per_million: 0.75
+    output_per_million: 3.75
+    cache_read_input_per_million: 0.075
+    cache_write_input_per_million: null
+    reasoning_output_per_million: 3.75
+    batch_discount_fraction: 0.50
+    cache_storage_per_million_tokens_hour: 0.50
+  recurring_utc_pricing:
+    effective_from: 2027-01-01T00:00:00Z
+    default_pricing:
+      input_per_million: 1.50
+      output_per_million: 7.50
+      cache_read_input_per_million: 0.15
+      cache_write_input_per_million: null
+      reasoning_output_per_million: 7.50
+      batch_discount_fraction: 0.50
+      cache_storage_per_million_tokens_hour: 1.00
+    windows: []
+    verified_at: 2026-10-06T00:00:00Z
+  capabilities:
+    generate_content: true
+    count_tokens: true
+    stream_generate_content: true
+    explicit_cache: true
+    streaming: true
+    batch: true
+    context_window_tokens: 1048576
+    tools: true
+    vision: true
+    json_mode: true
+  count_surface:
+    state: supported
+    id: gemini.models.count_tokens
+    projection_version: gemini-count-tokens-v1
+    accuracy: provider_measured
+    quota: shared
+  cache_profile:
+    state: supported
+    id: cave-cache-gemini-implicit-v1
+    mode: implicit
+    attribution: organic
+    min_prefix_tokens: 4096
+    max_breakpoints: 1
+    rolling: true
+    routing_key: false
+    endpoints: [generateContent]
+  sources:
+    - https://ai.google.dev/api/tokens
+    - https://ai.google.dev/gemini-api/docs/caching
+    - https://ai.google.dev/gemini-api/docs/pricing
+    - https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash
+  verified_at: 2026-10-06T00:00:00Z
+  capabilities_verified_at: 2026-10-06T00:00:00Z
+- provider: gemini
+  model: gemini-3.5-flash-lite
+  region: global
+  currency: USD
+  # Pricing page checked 2026-10-06 (paid tier): one input rate for text,
+  # image, video and audio.
+  pricing:
+    input_per_million: 0.30
+    output_per_million: 2.50
+    cache_read_input_per_million: 0.03
+    cache_write_input_per_million: null
+    reasoning_output_per_million: 2.50
+    batch_discount_fraction: 0.50
+    cache_storage_per_million_tokens_hour: 1.00
+  capabilities:
+    generate_content: true
+    count_tokens: true
+    stream_generate_content: true
+    explicit_cache: true
+    streaming: true
+    batch: true
+    context_window_tokens: 1048576
+    tools: true
+    vision: true
+    json_mode: true
+  count_surface:
+    state: supported
+    id: gemini.models.count_tokens
+    projection_version: gemini-count-tokens-v1
+    accuracy: provider_measured
+    quota: shared
+  sources:
+    - https://ai.google.dev/api/tokens
+    - https://ai.google.dev/gemini-api/docs/caching
+    - https://ai.google.dev/gemini-api/docs/pricing
+    - https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite
+  verified_at: 2026-10-06T00:00:00Z
+  capabilities_verified_at: 2026-10-06T00:00:00Z

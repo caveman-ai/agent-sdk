@@ -1,8 +1,8 @@
 {
   "schema_version": "provider-catalog.generated.v1",
-  "catalog_semantic_sha256": "f9f74e012f52474ed3f0d4fdc40feef766cb035dd61eec1d97282946385942bb",
-  "price_provenance_sha256": "3712b1307ed08b02a1bb2c6ec4df1c3af14a6a3b619cba8b34f513f4bcc00035",
-  "source_sha256": "44f273c90cd7ab4707888fdf7ac5aea21d668e2204ef8a66683644e9151e1ce8",
+  "catalog_semantic_sha256": "7497b8837a5dc790b7ea487bc781d2fcb1e1c1d0ddaec8a63e5d1075fba9156f",
+  "price_provenance_sha256": "297e2b7e7b6f0480d5691804256e5d98b56f467a63b41ab695463681378f9516",
+  "source_sha256": "dbeaea6ec9cf97ee1faf437951f4339aee9b3073c5741553d93f50361ff932d8",
   "entries": [
     {
       "provider": "openai",
@@ -30,6 +30,7 @@
         "batch": "supported",
         "bedrock_mantle": "unknown",
         "chat_completions": "supported",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "unknown",
         "converse_stream": "unknown",
@@ -52,6 +53,7 @@
         "responses_api": "supported",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "supported",
         "vision": "supported",
         "json_mode": "supported",
@@ -89,7 +91,7 @@
           "v1/responses"
         ]
       },
-      "content_digest": "0e3971062b1c1a00fc3eb64a0287ae794518b286f412f8540fa0e16b9800ff2f",
+      "content_digest": "93b76ab7a78b389036f71497e48066f48bd95e6caf5daf1c84727f5ad8d70322",
       "sources": [
         "https://developers.openai.com/api/docs/guides/token-counting",
         "https://developers.openai.com/api/docs/guides/prompt-caching",
@@ -124,6 +126,7 @@
         "batch": "supported",
         "bedrock_mantle": "unknown",
         "chat_completions": "supported",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "unknown",
         "converse_stream": "unknown",
@@ -146,6 +149,7 @@
         "responses_api": "supported",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "supported",
         "vision": "supported",
         "json_mode": "supported",
@@ -183,7 +187,7 @@
           "v1/responses"
         ]
       },
-      "content_digest": "cbf307c344e8e72f7d033a3471591738d5a4a0d5564dfb517c5c73ff469a2ba4",
+      "content_digest": "7d016fecdf1f1d8cac474598697436af4ce10f75ecfdd99ba3ded4713551563b",
       "sources": [
         "https://developers.openai.com/api/docs/guides/token-counting",
         "https://developers.openai.com/api/docs/guides/prompt-caching",
@@ -220,6 +224,7 @@
         "batch": "supported",
         "bedrock_mantle": "unknown",
         "chat_completions": "supported",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "unknown",
         "converse_stream": "unknown",
@@ -242,6 +247,7 @@
         "responses_api": "supported",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "supported",
         "vision": "supported",
         "json_mode": "supported",
@@ -286,7 +292,7 @@
           "v1/responses"
         ]
       },
-      "content_digest": "b0281a4868f8e039e417ca7b8a45eb548f855114e147583efac1bdba4962cf0f",
+      "content_digest": "2dd2eca1c2a501cc40b86ebc4839a1e654a575d4d241f8a2c430ec03ff5c237b",
       "sources": [
         "https://developers.openai.com/api/docs/guides/token-counting",
         "https://openai.com/api/pricing/",
@@ -324,6 +330,7 @@
         "batch": "supported",
         "bedrock_mantle": "unknown",
         "chat_completions": "supported",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "unknown",
         "converse_stream": "unknown",
@@ -346,6 +353,7 @@
         "responses_api": "supported",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "supported",
         "vision": "supported",
         "json_mode": "supported",
@@ -390,7 +398,7 @@
           "v1/responses"
         ]
       },
-      "content_digest": "f93ba03bf884ff482c869ca74d75369937813f8c4ea59e8456241612c939035c",
+      "content_digest": "275892c6b6161f6b3325628c53935b00fca48bec0715126a5ca65a298a8d3f35",
       "sources": [
         "https://developers.openai.com/api/docs/guides/token-counting",
         "https://developers.openai.com/api/docs/guides/prompt-caching",
@@ -427,6 +435,7 @@
         "batch": "supported",
         "bedrock_mantle": "unknown",
         "chat_completions": "supported",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "unknown",
         "converse_stream": "unknown",
@@ -449,6 +458,7 @@
         "responses_api": "supported",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "supported",
         "vision": "supported",
         "json_mode": "supported",
@@ -486,7 +496,7 @@
           "v1/responses"
         ]
       },
-      "content_digest": "22af1d34855844f6904bf92bf86cd1eaff80698aaac3451641c4cf6105d20dde",
+      "content_digest": "4d68cd39b14f6dc591da0fdbcc374a6f978288e749b0d98870661b81668d89f3",
       "sources": [
         "https://developers.openai.com/api/docs/guides/token-counting",
         "https://openai.com/api/pricing/",
@@ -524,6 +534,7 @@
         "batch": "supported",
         "bedrock_mantle": "unknown",
         "chat_completions": "supported",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "unknown",
         "converse_stream": "unknown",
@@ -546,6 +557,7 @@
         "responses_api": "supported",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "supported",
         "vision": "supported",
         "json_mode": "supported",
@@ -583,7 +595,7 @@
           "v1/responses"
         ]
       },
-      "content_digest": "f36e090e6a85841cc8a5d2f73d2ef11659482fdad320dd865ae6c297f9eade8f",
+      "content_digest": "53bc6fea2e8ae53e21c1d44af4b6caf074fee4d8b097f0c935ee2ef0b2eda6f9",
       "sources": [
         "https://developers.openai.com/api/docs/guides/token-counting",
         "https://developers.openai.com/api/docs/guides/prompt-caching",
@@ -620,6 +632,7 @@
         "batch": "supported",
         "bedrock_mantle": "unknown",
         "chat_completions": "supported",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "unknown",
         "converse_stream": "unknown",
@@ -642,6 +655,7 @@
         "responses_api": "supported",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "supported",
         "vision": "supported",
         "json_mode": "supported",
@@ -673,7 +687,7 @@
       "cache_profile": {
         "state": "unknown"
       },
-      "content_digest": "cbe76b8ab2c5fcab59a9b74c78a78ade3fe4b13ed98f5d6598de3c6db3f77492",
+      "content_digest": "ec38994370005b72a55f68b0ea8af961cd995c9e98f74eb23ce8896e503032ee",
       "sources": [
         "https://developers.openai.com/api/docs/guides/token-counting",
         "https://developers.openai.com/api/docs/models/gpt-5.4-nano"
@@ -709,6 +723,7 @@
         "batch": "supported",
         "bedrock_mantle": "unknown",
         "chat_completions": "supported",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "unknown",
         "converse_stream": "unknown",
@@ -731,6 +746,7 @@
         "responses_api": "supported",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "supported",
         "vision": "supported",
         "json_mode": "supported",
@@ -755,7 +771,7 @@
       "cache_profile": {
         "state": "unknown"
       },
-      "content_digest": "a98b2c61c44451623cf354961c3d10b7021a5c9f80162d58c79571086202002c",
+      "content_digest": "bb9a2f39ea9f5ff97c457d8acddb5562c3497090bc3b4c866de156947ad7ad2e",
       "sources": [
         "https://developers.openai.com/api/docs/guides/token-counting",
         "https://developers.openai.com/api/docs/models/gpt-5.4-nano"
@@ -789,6 +805,7 @@
         "batch": "unknown",
         "bedrock_mantle": "unknown",
         "chat_completions": "unknown",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "unknown",
         "converse_stream": "unknown",
@@ -811,6 +828,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "unknown",
         "streaming": "unknown",
+        "thinking_disabled": "unknown",
         "tools": "unsupported",
         "vision": "unsupported",
         "json_mode": "unsupported",
@@ -831,7 +849,7 @@
       "cache_profile": {
         "state": "unknown"
       },
-      "content_digest": "65c37a9f88262c8d9c53639a165f4abd8f53bf9ca5e1ce4f341765c54e371352",
+      "content_digest": "f7144877db86f9042023d37b162ccb25e469907b15f4e3e4ab370c44ab4164fb",
       "sources": [
         "https://openai.com/api/pricing/",
         "https://developers.openai.com/api/docs/models/text-embedding-3-large"
@@ -865,6 +883,7 @@
         "batch": "unknown",
         "bedrock_mantle": "unknown",
         "chat_completions": "unknown",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "unknown",
         "converse_stream": "unknown",
@@ -887,6 +906,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "unknown",
         "streaming": "unknown",
+        "thinking_disabled": "unknown",
         "tools": "unsupported",
         "vision": "unsupported",
         "json_mode": "unsupported",
@@ -907,7 +927,7 @@
       "cache_profile": {
         "state": "unknown"
       },
-      "content_digest": "5db0b508dfbd77c9947bc135b4a0bb704cb7fd809b38fc0982709411b59a03c4",
+      "content_digest": "73d4a2cd668d5763c7fdfbadb160aac68b06a070c8d288b6e286b87ec09faffe",
       "sources": [
         "https://openai.com/api/pricing/",
         "https://developers.openai.com/api/docs/models/text-embedding-3-small"
@@ -943,6 +963,7 @@
         "batch": "unknown",
         "bedrock_mantle": "unknown",
         "chat_completions": "unknown",
+        "chat_completions_tools": "unknown",
         "context_editing": "supported",
         "converse": "unknown",
         "converse_stream": "unknown",
@@ -965,6 +986,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "supported",
         "vision": "supported",
         "json_mode": "supported",
@@ -1006,7 +1028,7 @@
           "v1/messages"
         ]
       },
-      "content_digest": "ff3798d07b409e27c79f7b87878d3587cd686c4619e34a5817324bd64cbe3d56",
+      "content_digest": "5b87386d6eff17736b10f6c23bc31782856aab23e9e7ef896f5d0f471beb60a9",
       "sources": [
         "https://platform.claude.com/docs/en/build-with-claude/token-counting",
         "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
@@ -1046,6 +1068,7 @@
         "batch": "unknown",
         "bedrock_mantle": "unknown",
         "chat_completions": "unknown",
+        "chat_completions_tools": "unknown",
         "context_editing": "supported",
         "converse": "unknown",
         "converse_stream": "unknown",
@@ -1068,6 +1091,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "supported",
         "vision": "supported",
         "json_mode": "supported",
@@ -1109,7 +1133,7 @@
           "v1/messages"
         ]
       },
-      "content_digest": "e99b8b998ce113e182033e17d4ddd8f7f89cef6792aa736a97066b7e1a73c758",
+      "content_digest": "f8fd8d0dcc72fc7679b0c21bb027f4ddc8ef9fb608692b51b2ae43d7b7e9c1e8",
       "sources": [
         "https://platform.claude.com/docs/en/build-with-claude/token-counting",
         "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
@@ -1149,6 +1173,7 @@
         "batch": "unknown",
         "bedrock_mantle": "unknown",
         "chat_completions": "unknown",
+        "chat_completions_tools": "unknown",
         "context_editing": "supported",
         "converse": "unknown",
         "converse_stream": "unknown",
@@ -1171,6 +1196,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "supported",
         "vision": "supported",
         "json_mode": "supported",
@@ -1211,7 +1237,7 @@
           "v1/messages"
         ]
       },
-      "content_digest": "819f95a1cd60790740fd8d730a944b416b70b22299cdc42e7cf4b566c3395780",
+      "content_digest": "bb85dfb25e53e68bb565a2787931898de07f9f76a5fdeb12513461bfce6663a1",
       "sources": [
         "https://platform.claude.com/docs/en/build-with-claude/token-counting",
         "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
@@ -1250,6 +1276,7 @@
         "batch": "unknown",
         "bedrock_mantle": "unknown",
         "chat_completions": "unknown",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "unknown",
         "converse_stream": "unknown",
@@ -1272,6 +1299,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "supported",
         "vision": "supported",
         "json_mode": "supported",
@@ -1306,7 +1334,7 @@
           "v1/messages"
         ]
       },
-      "content_digest": "12cf49b607ce65172b3668c1463bbce5d5a9945944a12d4585206d6182a4d62f",
+      "content_digest": "29bd2da0b9888712f86d69cc46825f7d65326b63059950e5b5d2a68b2e2869e4",
       "sources": [
         "https://platform.claude.com/docs/en/build-with-claude/token-counting",
         "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
@@ -1344,6 +1372,7 @@
         "batch": "unknown",
         "bedrock_mantle": "unknown",
         "chat_completions": "unknown",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "unknown",
         "converse_stream": "unknown",
@@ -1366,6 +1395,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "supported",
         "vision": "supported",
         "json_mode": "supported",
@@ -1400,7 +1430,7 @@
           "v1/messages"
         ]
       },
-      "content_digest": "8cabede1dd0ce977ae308afc0328f77e7a08ef666873bb2bd459b50e6f44abe7",
+      "content_digest": "da92b799553abc7946ea09a9360880c2bde0c2c5310967b02d4ed188409e73e9",
       "sources": [
         "https://platform.claude.com/docs/en/build-with-claude/token-counting",
         "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
@@ -1440,6 +1470,7 @@
         "batch": "unknown",
         "bedrock_mantle": "unknown",
         "chat_completions": "unknown",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "unknown",
         "converse_stream": "unknown",
@@ -1462,6 +1493,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "supported",
         "vision": "supported",
         "json_mode": "supported",
@@ -1503,7 +1535,7 @@
           "v1/messages"
         ]
       },
-      "content_digest": "4a9398970881e8cdbb058981a9b33ba45fefd4567730e52df5e0b7fdab88811e",
+      "content_digest": "f0d00e190d13c797dbcebee8e974fe815668c72b969563a987e1ff2e96015a9e",
       "sources": [
         "https://platform.claude.com/docs/en/build-with-claude/token-counting",
         "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
@@ -1541,6 +1573,7 @@
         "batch": "unknown",
         "bedrock_mantle": "unknown",
         "chat_completions": "unknown",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "unknown",
         "converse_stream": "unknown",
@@ -1563,6 +1596,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "supported",
         "vision": "supported",
         "json_mode": "supported",
@@ -1593,7 +1627,7 @@
           "v1/messages"
         ]
       },
-      "content_digest": "0955dcc3164f87f2bc56e88b3bee550fda5f298932cc37394a3820d83f0e9d85",
+      "content_digest": "226ea569dbf150f7b405816b6d656eddc58ce38d00719ad0010befba14dd63c6",
       "sources": [
         "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
         "https://platform.claude.com/docs/en/about-claude/pricing",
@@ -1630,6 +1664,7 @@
         "batch": "unknown",
         "bedrock_mantle": "unknown",
         "chat_completions": "unknown",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "unknown",
         "converse_stream": "unknown",
@@ -1652,6 +1687,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "supported",
         "vision": "supported",
         "json_mode": "supported",
@@ -1682,7 +1718,7 @@
           "v1/messages"
         ]
       },
-      "content_digest": "c3dede53907e5060eaf17e3eaf7bb11a3fbb18aef6ec5a71fa58780ad0ad6c66",
+      "content_digest": "bf0cfdfe64312aad221a1ae0b0260d7c1829a203de89139a951707c0405d23ec",
       "sources": [
         "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
         "https://platform.claude.com/docs/en/about-claude/pricing",
@@ -1719,6 +1755,7 @@
         "batch": "unknown",
         "bedrock_mantle": "unknown",
         "chat_completions": "unknown",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "unknown",
         "converse_stream": "unknown",
@@ -1741,6 +1778,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "supported",
         "vision": "supported",
         "json_mode": "supported",
@@ -1775,7 +1813,7 @@
           "v1/messages"
         ]
       },
-      "content_digest": "3c0c708e77951df459fb492a015b13eaca380d4f157c089f5adca9fec58b929d",
+      "content_digest": "fcdb27d4a53616b55c6c299d2557b6963c0ea49aa9d161426eabac632fb592d6",
       "sources": [
         "https://platform.claude.com/docs/en/build-with-claude/token-counting",
         "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
@@ -1813,6 +1851,7 @@
         "batch": "supported",
         "bedrock_mantle": "unknown",
         "chat_completions": "unknown",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "unknown",
         "converse_stream": "unknown",
@@ -1835,6 +1874,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "supported",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "supported",
         "vision": "supported",
         "json_mode": "supported",
@@ -1868,7 +1908,7 @@
           "generateContent"
         ]
       },
-      "content_digest": "780bcbd9fd792d47ef79a69270fe4fe8a56c8a65dd987f231797ba513bdafb93",
+      "content_digest": "18d70ebb9767c289124183ecfded5b1e7489daf5cc7d83a27227a9f5026204c7",
       "sources": [
         "https://ai.google.dev/api/tokens",
         "https://ai.google.dev/gemini-api/docs/caching",
@@ -1904,6 +1944,7 @@
         "batch": "supported",
         "bedrock_mantle": "unknown",
         "chat_completions": "unknown",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "unknown",
         "converse_stream": "unknown",
@@ -1926,6 +1967,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "supported",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "supported",
         "vision": "supported",
         "json_mode": "supported",
@@ -1959,7 +2001,7 @@
           "generateContent"
         ]
       },
-      "content_digest": "193b0a26f58cf480ed7b42c02e90df8da22bff6afa86380882fdfa119f03637c",
+      "content_digest": "6b4f830b8b6c8851a5087a891b7058a6786a0cd195b29695e4a3d04a1085acdf",
       "sources": [
         "https://ai.google.dev/api/tokens",
         "https://ai.google.dev/gemini-api/docs/caching",
@@ -1995,6 +2037,7 @@
         "batch": "unknown",
         "bedrock_mantle": "unknown",
         "chat_completions": "unknown",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "supported",
         "converse_stream": "supported",
@@ -2017,6 +2060,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "supported",
         "vision": "supported",
         "json_mode": "supported",
@@ -2050,7 +2094,7 @@
           "invoke-with-response-stream"
         ]
       },
-      "content_digest": "c9aeb2ef97e5011d59949e22895eef75e5f08e8bc734246a890f592f5a025065",
+      "content_digest": "6c809f5fdeaba94b0f827b8900b1fe31482301a6044fa008144d21556ae5fddd",
       "sources": [
         "https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html",
         "https://aws.amazon.com/bedrock/pricing/",
@@ -2085,6 +2129,7 @@
         "batch": "unknown",
         "bedrock_mantle": "unknown",
         "chat_completions": "unknown",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "supported",
         "converse_stream": "supported",
@@ -2107,6 +2152,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "supported",
         "vision": "supported",
         "json_mode": "supported",
@@ -2140,7 +2186,7 @@
           "invoke-with-response-stream"
         ]
       },
-      "content_digest": "0b0dfbcc292a152de9cb6929eaeb48dac36e3b32e719799ee84ddb467960131e",
+      "content_digest": "435246660a0505ab071ee636d436a79b8f14c3b9bb2cce02d208d1de62a64ddb",
       "sources": [
         "https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html",
         "https://aws.amazon.com/bedrock/pricing/",
@@ -2175,6 +2221,7 @@
         "batch": "unknown",
         "bedrock_mantle": "unknown",
         "chat_completions": "unknown",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "supported",
         "converse_stream": "supported",
@@ -2197,6 +2244,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "supported",
         "vision": "supported",
         "json_mode": "supported",
@@ -2230,7 +2278,7 @@
           "invoke-with-response-stream"
         ]
       },
-      "content_digest": "e53e3388a9a387b37543dc385f7869012712589c881e4c4214a1c4bed2605b42",
+      "content_digest": "7bb98f55eace8eccf57e2880650c8f26f5d3b0d0fe62087e784fa6e764408ea8",
       "sources": [
         "https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html",
         "https://aws.amazon.com/bedrock/pricing/",
@@ -2266,6 +2314,7 @@
         "batch": "unknown",
         "bedrock_mantle": "unknown",
         "chat_completions": "unknown",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "supported",
         "converse_stream": "supported",
@@ -2288,6 +2337,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "supported",
         "vision": "supported",
         "json_mode": "supported",
@@ -2321,7 +2371,7 @@
           "invoke-with-response-stream"
         ]
       },
-      "content_digest": "b7a6f0db4d833479741fd718e1595e29b77ff071277bb457365811874425077f",
+      "content_digest": "f8554e33cf3f82aa6b5221080b5f8a25abaa0c37a9d99aca596a233cdab86474",
       "sources": [
         "https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html",
         "https://aws.amazon.com/bedrock/pricing/",
@@ -2357,6 +2407,7 @@
         "batch": "unknown",
         "bedrock_mantle": "unknown",
         "chat_completions": "unknown",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "supported",
         "converse_stream": "supported",
@@ -2379,6 +2430,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "supported",
         "vision": "supported",
         "json_mode": "supported",
@@ -2412,7 +2464,7 @@
           "invoke-with-response-stream"
         ]
       },
-      "content_digest": "8b48eb644d8ca6284905b99ba8a94c0fd8e670c82d85a7c30296b9dc263c6089",
+      "content_digest": "5c44f739918586171d39cca0182b404877f006019f30bf08df3ec8576e1ad09f",
       "sources": [
         "https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html",
         "https://aws.amazon.com/bedrock/pricing/",
@@ -2448,6 +2500,7 @@
         "batch": "unknown",
         "bedrock_mantle": "unknown",
         "chat_completions": "unknown",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "supported",
         "converse_stream": "supported",
@@ -2470,6 +2523,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "unknown",
         "vision": "unknown",
         "json_mode": "unknown",
@@ -2490,7 +2544,7 @@
       "cache_profile": {
         "state": "unknown"
       },
-      "content_digest": "fc166ae3ba1af33cde1b37c8eedca62bfad96e493d9cb7c694b877b21ba21cfd",
+      "content_digest": "106c605f8ea74f3453ab40e36d43a7b5f4ac50c50674014f1f5d4a1c09828b16",
       "sources": [
         "https://aws.amazon.com/bedrock/pricing/",
         "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-2-lite.html"
@@ -2524,6 +2578,7 @@
         "batch": "unknown",
         "bedrock_mantle": "unknown",
         "chat_completions": "unknown",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "supported",
         "converse_stream": "supported",
@@ -2546,6 +2601,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "unknown",
         "vision": "unknown",
         "json_mode": "unknown",
@@ -2566,7 +2622,7 @@
       "cache_profile": {
         "state": "unknown"
       },
-      "content_digest": "22ac14d0f570a2e2d00abe51bf7432d2a937842b2410d9a2acdb5151b9786f4d",
+      "content_digest": "c5b9393d3460989fe1c422f7e3a4676c6e33b2e86cc37302464da1e0d7dee378",
       "sources": [
         "https://aws.amazon.com/bedrock/pricing/",
         "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-meta-llama-4-maverick-17b-instruct.html"
@@ -2600,6 +2656,7 @@
         "batch": "unknown",
         "bedrock_mantle": "unknown",
         "chat_completions": "unknown",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "supported",
         "converse_stream": "supported",
@@ -2622,6 +2679,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "unknown",
         "vision": "unknown",
         "json_mode": "unknown",
@@ -2642,7 +2700,7 @@
       "cache_profile": {
         "state": "unknown"
       },
-      "content_digest": "0823a0f39c0e20a4168d4eec055075ed8c39cf13154163361c5d063573e03765",
+      "content_digest": "583bf418d8fec8739d70a82d108861da563d65d30abfa2ad31e94e8c7a3c1675",
       "sources": [
         "https://aws.amazon.com/bedrock/pricing/",
         "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-meta-llama-4-scout-17b-instruct.html"
@@ -2676,6 +2734,7 @@
         "batch": "unknown",
         "bedrock_mantle": "supported",
         "chat_completions": "supported",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "supported",
         "converse_stream": "supported",
@@ -2698,6 +2757,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "unknown",
         "vision": "unknown",
         "json_mode": "unknown",
@@ -2718,7 +2778,7 @@
       "cache_profile": {
         "state": "unknown"
       },
-      "content_digest": "c95b7d0b9f94a215d3a4420f62e7bd31eacdd6d4a4df50cd9dfc5bb8e6bc8c77",
+      "content_digest": "c0dd668da390beca39f323f771d79c5efc9a7e35eede17349b84111802248611",
       "sources": [
         "https://aws.amazon.com/bedrock/pricing/",
         "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-mistral-ai-mistral-large-3.html"
@@ -2752,6 +2812,7 @@
         "batch": "unknown",
         "bedrock_mantle": "supported",
         "chat_completions": "supported",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "supported",
         "converse_stream": "supported",
@@ -2774,6 +2835,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "unknown",
         "vision": "unknown",
         "json_mode": "unknown",
@@ -2794,7 +2856,7 @@
       "cache_profile": {
         "state": "unknown"
       },
-      "content_digest": "198d79658a3ace00d821e91a15d75eb1d3645c371685c47236e775072fbc6f77",
+      "content_digest": "8c002b804884420e54e04d114cb16d06587c0814a2a41180d7d4e7de7f8d23fb",
       "sources": [
         "https://aws.amazon.com/bedrock/pricing/",
         "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-mistral-ai-mistral-large-3.html"
@@ -2828,6 +2890,7 @@
         "batch": "unknown",
         "bedrock_mantle": "supported",
         "chat_completions": "supported",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "supported",
         "converse_stream": "supported",
@@ -2850,6 +2913,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "unknown",
         "vision": "unknown",
         "json_mode": "unknown",
@@ -2870,7 +2934,7 @@
       "cache_profile": {
         "state": "unknown"
       },
-      "content_digest": "7b618f3fbf2a08cf6c8b162ad1bed9653706c1f2b8851641ebde7dfe96a2c8bb",
+      "content_digest": "8bde8ffdd83c0ff07d9754b4075229f7556fefd37efcfad910a2c84d341a4a9e",
       "sources": [
         "https://aws.amazon.com/bedrock/pricing/",
         "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-mistral-ai-mistral-large-3.html"
@@ -2904,6 +2968,7 @@
         "batch": "unknown",
         "bedrock_mantle": "supported",
         "chat_completions": "supported",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "supported",
         "converse_stream": "supported",
@@ -2926,6 +2991,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "unknown",
         "vision": "unknown",
         "json_mode": "unknown",
@@ -2946,7 +3012,7 @@
       "cache_profile": {
         "state": "unknown"
       },
-      "content_digest": "5d0de82673ded7665429a6bbaf220f5d479d242c879bb16293f73e6e32ce5a16",
+      "content_digest": "6e9dc843acbd47f2288bc3827d94379358c7278d282b02dd8ce99554ef398c04",
       "sources": [
         "https://aws.amazon.com/bedrock/pricing/",
         "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-mistral-ai-mistral-large-3.html"
@@ -2980,6 +3046,7 @@
         "batch": "unknown",
         "bedrock_mantle": "supported",
         "chat_completions": "supported",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "supported",
         "converse_stream": "supported",
@@ -3002,6 +3069,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "unknown",
         "vision": "unknown",
         "json_mode": "unknown",
@@ -3022,7 +3090,7 @@
       "cache_profile": {
         "state": "unknown"
       },
-      "content_digest": "b315146bc7a441b2edb8a17cd109adfa73ef51c967e934fbf767b4611b4d831d",
+      "content_digest": "f5454f7c1258537844fcdab4d77c033f69959f25ddd1ed8b969b16e2667446f0",
       "sources": [
         "https://aws.amazon.com/bedrock/pricing/",
         "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-mistral-ai-mistral-large-3.html"
@@ -3056,6 +3124,7 @@
         "batch": "unknown",
         "bedrock_mantle": "supported",
         "chat_completions": "supported",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "supported",
         "converse_stream": "supported",
@@ -3078,6 +3147,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "unknown",
         "vision": "unknown",
         "json_mode": "unknown",
@@ -3098,7 +3168,7 @@
       "cache_profile": {
         "state": "unknown"
       },
-      "content_digest": "1593248032e84d38c7c6e783476dc3bbd74715f12d3045aa9dbaaada5b4b78ae",
+      "content_digest": "b5905b7fbdd4b838fa81a0a244271fc4fc73717aeacdcf2eb032ed40e1917616",
       "sources": [
         "https://aws.amazon.com/bedrock/pricing/",
         "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-mistral-ai-mistral-large-3.html"
@@ -3132,6 +3202,7 @@
         "batch": "unknown",
         "bedrock_mantle": "supported",
         "chat_completions": "supported",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "supported",
         "converse_stream": "supported",
@@ -3154,6 +3225,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "unknown",
         "vision": "unknown",
         "json_mode": "unknown",
@@ -3174,7 +3246,7 @@
       "cache_profile": {
         "state": "unknown"
       },
-      "content_digest": "551cc348f29fa749700b5c795727b40ae779400a513750fb53fb9993a7c13bfe",
+      "content_digest": "c8841248986911d5014441f96ad3570b8bb065e0e58052394e5561e1c39a4990",
       "sources": [
         "https://aws.amazon.com/bedrock/pricing/",
         "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-mistral-ai-mistral-large-3.html"
@@ -3208,6 +3280,7 @@
         "batch": "unknown",
         "bedrock_mantle": "supported",
         "chat_completions": "supported",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "supported",
         "converse_stream": "supported",
@@ -3230,6 +3303,7 @@
         "responses_api": "unsupported",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "unknown",
         "vision": "unknown",
         "json_mode": "unknown",
@@ -3250,7 +3324,7 @@
       "cache_profile": {
         "state": "unknown"
       },
-      "content_digest": "eaecc0a76a7c08e45070ee9380c61b6e78787d5b033b8029eeaa074f7474db65",
+      "content_digest": "4aa348bcfbd05e3402b1e81dc3ddf09a8588bac6825c88a0829090e427ba511a",
       "sources": [
         "https://aws.amazon.com/bedrock/pricing/",
         "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-mistral-ai-ministral-3-8b.html"
@@ -3284,6 +3358,7 @@
         "batch": "unknown",
         "bedrock_mantle": "supported",
         "chat_completions": "supported",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "supported",
         "converse_stream": "supported",
@@ -3306,6 +3381,7 @@
         "responses_api": "unsupported",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "unknown",
         "vision": "unknown",
         "json_mode": "unknown",
@@ -3326,7 +3402,7 @@
       "cache_profile": {
         "state": "unknown"
       },
-      "content_digest": "19a2cc6253cac4baa89726e4a6d3b68d6447847374d2e35288835017fed8bc58",
+      "content_digest": "c37991eb740029ab3dc4239859eb788393b1bf74273effa791b1e888c7463267",
       "sources": [
         "https://aws.amazon.com/bedrock/pricing/",
         "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-mistral-ai-ministral-3-8b.html"
@@ -3360,6 +3436,7 @@
         "batch": "unknown",
         "bedrock_mantle": "supported",
         "chat_completions": "supported",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "supported",
         "converse_stream": "supported",
@@ -3382,6 +3459,7 @@
         "responses_api": "unsupported",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "unknown",
         "vision": "unknown",
         "json_mode": "unknown",
@@ -3402,7 +3480,7 @@
       "cache_profile": {
         "state": "unknown"
       },
-      "content_digest": "6606fa096821eb36ee39c6f1db44ea28cbbd452b53047077be187ede0c3b0e0e",
+      "content_digest": "4bdf910fe6bca834aabca213bc1fb2801fb82d176515a07d0ee79b1797462f4d",
       "sources": [
         "https://aws.amazon.com/bedrock/pricing/",
         "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-mistral-ai-ministral-3-8b.html"
@@ -3436,6 +3514,7 @@
         "batch": "unknown",
         "bedrock_mantle": "supported",
         "chat_completions": "supported",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "supported",
         "converse_stream": "supported",
@@ -3458,6 +3537,7 @@
         "responses_api": "unsupported",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "unknown",
         "vision": "unknown",
         "json_mode": "unknown",
@@ -3478,7 +3558,7 @@
       "cache_profile": {
         "state": "unknown"
       },
-      "content_digest": "e26f09c1cd06c801fa59118211082a6190ff4cc8da96dc9312ffdcb40ecd2cbb",
+      "content_digest": "d183c61ebf7ef3d3bb65c15e91d53ee701b17bdc4dfc62f0a3f6a6e608681eff",
       "sources": [
         "https://aws.amazon.com/bedrock/pricing/",
         "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-mistral-ai-ministral-3-8b.html"
@@ -3512,6 +3592,7 @@
         "batch": "unknown",
         "bedrock_mantle": "supported",
         "chat_completions": "supported",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "supported",
         "converse_stream": "supported",
@@ -3534,6 +3615,7 @@
         "responses_api": "unsupported",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "unknown",
         "vision": "unknown",
         "json_mode": "unknown",
@@ -3554,7 +3636,7 @@
       "cache_profile": {
         "state": "unknown"
       },
-      "content_digest": "7335aaa004aa0cd027ce2e58fb1e699103c036d88e8c76cc139e840e0f7f5917",
+      "content_digest": "d1afc9d99af2b7b3d78d7618a78eb69a7f7beb3d70ccb9b589593166bb235062",
       "sources": [
         "https://aws.amazon.com/bedrock/pricing/",
         "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-mistral-ai-ministral-3-8b.html"
@@ -3588,6 +3670,7 @@
         "batch": "unknown",
         "bedrock_mantle": "supported",
         "chat_completions": "supported",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "supported",
         "converse_stream": "supported",
@@ -3610,6 +3693,7 @@
         "responses_api": "unsupported",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "unknown",
         "vision": "unknown",
         "json_mode": "unknown",
@@ -3630,7 +3714,7 @@
       "cache_profile": {
         "state": "unknown"
       },
-      "content_digest": "ef4d2c04ea81585abfaf0c8076e6bd13477f5c6b44ba13671bb79df4a0d31327",
+      "content_digest": "08a5681bdbf5134ff70d1038a1dbfe1c534b433fefb902c4b914676f7ea28f32",
       "sources": [
         "https://aws.amazon.com/bedrock/pricing/",
         "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-mistral-ai-ministral-3-8b.html"
@@ -3664,6 +3748,7 @@
         "batch": "unknown",
         "bedrock_mantle": "supported",
         "chat_completions": "supported",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "supported",
         "converse_stream": "supported",
@@ -3686,6 +3771,7 @@
         "responses_api": "unsupported",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "unknown",
         "vision": "unknown",
         "json_mode": "unknown",
@@ -3706,7 +3792,7 @@
       "cache_profile": {
         "state": "unknown"
       },
-      "content_digest": "d142220afe3af97cdbf831333176b2d67a7729c3af13e89d8db360c446c41307",
+      "content_digest": "eb5fa5189e284bcfe67191396b58891674a537c3c9caf9ca34a88d48987518db",
       "sources": [
         "https://aws.amazon.com/bedrock/pricing/",
         "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-mistral-ai-ministral-3-8b.html"
@@ -3740,6 +3826,7 @@
         "batch": "unknown",
         "bedrock_mantle": "supported",
         "chat_completions": "supported",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "supported",
         "converse_stream": "supported",
@@ -3762,6 +3849,7 @@
         "responses_api": "unsupported",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "unknown",
         "vision": "unknown",
         "json_mode": "unknown",
@@ -3782,7 +3870,7 @@
       "cache_profile": {
         "state": "unknown"
       },
-      "content_digest": "b28caf139fb0cbb61c0f771d1fdc4e8be5b500cabbf44512833ece934cfbf982",
+      "content_digest": "62a0c66f64f04260c9f7a282e09808818b1feddeb50aa1d6e90b5be07f07c776",
       "sources": [
         "https://aws.amazon.com/bedrock/pricing/",
         "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-mistral-ai-ministral-3-8b.html"
@@ -3816,6 +3904,7 @@
         "batch": "unknown",
         "bedrock_mantle": "supported",
         "chat_completions": "supported",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "supported",
         "converse_stream": "supported",
@@ -3838,6 +3927,7 @@
         "responses_api": "unsupported",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "unknown",
         "vision": "unknown",
         "json_mode": "unknown",
@@ -3858,7 +3948,7 @@
       "cache_profile": {
         "state": "unknown"
       },
-      "content_digest": "7e87a002818f3893d29c12033798f67d3cda32c717e02c02ed73bdba25d48aea",
+      "content_digest": "3c6a53be1f8fda2360e5717003f3d45ea71c1ffacb71be312ef1060d98ff9281",
       "sources": [
         "https://aws.amazon.com/bedrock/pricing/",
         "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-mistral-ai-ministral-3-8b.html"
@@ -3892,6 +3982,7 @@
         "batch": "unknown",
         "bedrock_mantle": "supported",
         "chat_completions": "supported",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "supported",
         "converse_stream": "supported",
@@ -3914,6 +4005,7 @@
         "responses_api": "unsupported",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "unknown",
         "vision": "unknown",
         "json_mode": "unknown",
@@ -3934,7 +4026,7 @@
       "cache_profile": {
         "state": "unknown"
       },
-      "content_digest": "9848bc323c0a75dc8bd222e51562fa387a15d8fe458283cadbbbba4d442c0280",
+      "content_digest": "ab8220f8b2b2083c8aed1238aa851aebfda34c5b9b873aaf0ad8a91cc390fbc0",
       "sources": [
         "https://aws.amazon.com/bedrock/pricing/",
         "https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-mistral-ai-ministral-3-8b.html"
@@ -3970,6 +4062,7 @@
         "batch": "supported",
         "bedrock_mantle": "unknown",
         "chat_completions": "unknown",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "unknown",
         "converse_stream": "unknown",
@@ -3992,6 +4085,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "supported",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "supported",
         "vision": "supported",
         "json_mode": "supported",
@@ -4012,7 +4106,7 @@
       "cache_profile": {
         "state": "unknown"
       },
-      "content_digest": "1ffb1e76f4ca1366743a35c2cce12398d3fbc28610f928cefe5e965df5dcb0c1",
+      "content_digest": "b7691139b80ea209430e5cff978f407b3be21227cb4583164b1217863c65890c",
       "sources": [
         "https://cloud.google.com/vertex-ai/generative-ai/pricing",
         "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-pro"
@@ -4048,6 +4142,7 @@
         "batch": "supported",
         "bedrock_mantle": "unknown",
         "chat_completions": "unknown",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "unknown",
         "converse_stream": "unknown",
@@ -4070,6 +4165,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "supported",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "supported",
         "vision": "supported",
         "json_mode": "supported",
@@ -4090,7 +4186,7 @@
       "cache_profile": {
         "state": "unknown"
       },
-      "content_digest": "9a94657709d56c44a36ca0c49c00d0d02792844e7ecf68c3ece87315700f0a34",
+      "content_digest": "fd1e2b0e9fc38aa9c93954c22097b410bbb6d4e3f7be3a144fa4538b06daa5ff",
       "sources": [
         "https://cloud.google.com/vertex-ai/generative-ai/pricing",
         "https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash"
@@ -4124,6 +4220,7 @@
         "batch": "unknown",
         "bedrock_mantle": "unknown",
         "chat_completions": "unknown",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "unknown",
         "converse_stream": "unknown",
@@ -4146,6 +4243,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "supported",
         "vision": "supported",
         "json_mode": "supported",
@@ -4166,7 +4264,7 @@
       "cache_profile": {
         "state": "unknown"
       },
-      "content_digest": "2296d40948a3e55b3d30d834ca546faf81ce393c52f778f027c54975ff41f4cf",
+      "content_digest": "77b6a9011e34003ecae5982d9012f4d94265537442427da9afe84e7578515dab",
       "sources": [
         "https://cloud.google.com/vertex-ai/generative-ai/pricing",
         "https://platform.claude.com/docs/en/about-claude/pricing",
@@ -4201,6 +4299,7 @@
         "batch": "unknown",
         "bedrock_mantle": "unknown",
         "chat_completions": "unknown",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "unknown",
         "converse_stream": "unknown",
@@ -4223,6 +4322,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "supported",
         "vision": "supported",
         "json_mode": "supported",
@@ -4243,7 +4343,7 @@
       "cache_profile": {
         "state": "unknown"
       },
-      "content_digest": "3f58b79517db45f9231454aae5d492de2ad24c6c221d3867f93f49c16eab279d",
+      "content_digest": "0878b1290d88df517d433564bbacfa667e2f1948c6d1d511ab0dc1519cfc43a2",
       "sources": [
         "https://cloud.google.com/vertex-ai/generative-ai/pricing",
         "https://platform.claude.com/docs/en/about-claude/pricing",
@@ -4280,6 +4380,7 @@
         "batch": "unknown",
         "bedrock_mantle": "unknown",
         "chat_completions": "supported",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "unknown",
         "converse_stream": "unknown",
@@ -4302,6 +4403,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "supported",
         "vision": "unknown",
         "json_mode": "supported",
@@ -4381,7 +4483,7 @@
       "cache_profile": {
         "state": "unsupported"
       },
-      "content_digest": "bd27ed70bc3b81cc75e36ce4d6ee75cc8908ed5b83138c7ab47482d49fb2a02f",
+      "content_digest": "dc6f362b45006056077628a9d3c70d2c2e1e2395617cce5f8d9306129fdc02eb",
       "sources": [
         "https://api-docs.deepseek.com/quick_start/pricing",
         "https://api-docs.deepseek.com/guides/kv_cache",
@@ -4418,6 +4520,7 @@
         "batch": "unknown",
         "bedrock_mantle": "unknown",
         "chat_completions": "supported",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "unknown",
         "converse_stream": "unknown",
@@ -4440,6 +4543,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "supported",
         "vision": "unknown",
         "json_mode": "supported",
@@ -4519,7 +4623,7 @@
       "cache_profile": {
         "state": "unsupported"
       },
-      "content_digest": "6a355782df22b41737c43a91e8d63e12b43c0d3c756181e56e81502c613f8dab",
+      "content_digest": "0c62cd1a2d2ae3b81933f3c9f797f7ea7cb09d367e612f2a8b583e7c7928547d",
       "sources": [
         "https://api-docs.deepseek.com/quick_start/pricing",
         "https://api-docs.deepseek.com/guides/kv_cache",
@@ -4556,6 +4660,7 @@
         "batch": "unsupported",
         "bedrock_mantle": "unknown",
         "chat_completions": "supported",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "unknown",
         "converse_stream": "unknown",
@@ -4578,6 +4683,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "supported",
         "vision": "supported",
         "json_mode": "supported",
@@ -4607,7 +4713,7 @@
       "cache_profile": {
         "state": "unsupported"
       },
-      "content_digest": "95ff8acdfae2c6342cbafb550b71682c6c43522ff323f6d796c2faee5f6452b4",
+      "content_digest": "c6d78d819d511c71cde1ac72f480af3c8e07b226a71f538b2a3c58437f423751",
       "sources": [
         "https://platform.kimi.ai/docs/pricing/chat-k3",
         "https://platform.kimi.ai/docs/pricing/batch",
@@ -4646,6 +4752,7 @@
         "batch": "supported",
         "bedrock_mantle": "unknown",
         "chat_completions": "supported",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "unknown",
         "converse_stream": "unknown",
@@ -4668,6 +4775,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "supported",
         "vision": "supported",
         "json_mode": "supported",
@@ -4692,7 +4800,7 @@
       "cache_profile": {
         "state": "unsupported"
       },
-      "content_digest": "08c31886ceffde09bee81c228d75ede77b7c73db8ed2b73d074e77e35805253e",
+      "content_digest": "fc4fb6031a174e71b876ea41731ee57eb18287cb422af6bdbadf0363d4e0885d",
       "sources": [
         "https://platform.kimi.ai/docs/pricing/chat-k27-code",
         "https://platform.kimi.ai/docs/pricing/batch",
@@ -4730,6 +4838,7 @@
         "batch": "supported",
         "bedrock_mantle": "unknown",
         "chat_completions": "supported",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "unknown",
         "converse_stream": "unknown",
@@ -4752,6 +4861,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "supported",
         "vision": "supported",
         "json_mode": "supported",
@@ -4776,7 +4886,7 @@
       "cache_profile": {
         "state": "unsupported"
       },
-      "content_digest": "e7d5c62a72440db7f4a89763516a4d65a334b3c9af36ab7cfae6eae90cf75d4f",
+      "content_digest": "6090cdeb4eb6e3626e11512283818148752ba71c3cd761ed9fece070139921f9",
       "sources": [
         "https://platform.kimi.ai/docs/pricing/chat-k26",
         "https://platform.kimi.ai/docs/pricing/batch",
@@ -4816,6 +4926,7 @@
         "batch": "unsupported",
         "bedrock_mantle": "unknown",
         "chat_completions": "supported",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "unknown",
         "converse_stream": "unknown",
@@ -4838,6 +4949,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "supported",
         "vision": "supported",
         "json_mode": "supported",
@@ -4858,7 +4970,7 @@
       "cache_profile": {
         "state": "unsupported"
       },
-      "content_digest": "0d734f563ba71f9d386a2048252711a920c240a5627a7e554251735ecce67f9b",
+      "content_digest": "fdeddb0843c4d1824a31e7925564b8521cf786aa20229430df5bd3a5679a80cc",
       "sources": [
         "https://docs.x.ai/developers/pricing",
         "https://docs.x.ai/developers/advanced-api-usage/batch-api",
@@ -4898,6 +5010,7 @@
         "batch": "unsupported",
         "bedrock_mantle": "unknown",
         "chat_completions": "supported",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "unknown",
         "converse_stream": "unknown",
@@ -4920,6 +5033,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "supported",
         "vision": "supported",
         "json_mode": "supported",
@@ -4940,7 +5054,7 @@
       "cache_profile": {
         "state": "unsupported"
       },
-      "content_digest": "894e673f4a1828f1e4eddc114cfe241dc5b4fe69b23276fe5541da435d33bb5e",
+      "content_digest": "13473635ceb8c39863d9d34265b9ae8d9305ec3afa51d30f05a09178a6b9a0fd",
       "sources": [
         "https://docs.x.ai/developers/pricing",
         "https://docs.x.ai/developers/advanced-api-usage/batch-api",
@@ -4980,6 +5094,7 @@
         "batch": "supported",
         "bedrock_mantle": "unknown",
         "chat_completions": "supported",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "unknown",
         "converse_stream": "unknown",
@@ -5002,6 +5117,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "supported",
         "vision": "supported",
         "json_mode": "supported",
@@ -5028,7 +5144,7 @@
       "cache_profile": {
         "state": "unsupported"
       },
-      "content_digest": "bc63f2d6465e694428073e14487f2abd2e5a95abb3e0f7d79367d980eae2c7c2",
+      "content_digest": "363ed914abce924832c14350ff8d62903c006061bfdfe285efd5082360f1995d",
       "sources": [
         "https://docs.x.ai/developers/pricing",
         "https://docs.x.ai/developers/advanced-api-usage/batch-api",
@@ -5069,6 +5185,7 @@
         "batch": "supported",
         "bedrock_mantle": "unknown",
         "chat_completions": "supported",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "unknown",
         "converse_stream": "unknown",
@@ -5091,6 +5208,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "supported",
         "vision": "supported",
         "json_mode": "supported",
@@ -5111,7 +5229,7 @@
       "cache_profile": {
         "state": "unsupported"
       },
-      "content_digest": "a77fbce9a18c274f816b01e0afbc18142b427f9f6de442e6c2c398c4cc9e5453",
+      "content_digest": "04ccdc2604db70c8c2d004175bad81fcd195b6510e52ed7013a6f3dc918106c8",
       "sources": [
         "https://mistral.ai/pricing/api",
         "https://docs.mistral.ai/models/mistral-large-3-25-12",
@@ -5152,6 +5270,7 @@
         "batch": "supported",
         "bedrock_mantle": "unknown",
         "chat_completions": "supported",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "unknown",
         "converse_stream": "unknown",
@@ -5174,6 +5293,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "supported",
         "vision": "supported",
         "json_mode": "supported",
@@ -5198,7 +5318,7 @@
       "cache_profile": {
         "state": "unsupported"
       },
-      "content_digest": "faf63b7346cd465b6abe01a6ca1c9aacf6cdfef03e4fb44393411e185cbbb6fd",
+      "content_digest": "0ad8b4c7a8cf82dfa3927fdc0a6dcf8b994d2140220cd48e09c1cb5375bb3c3f",
       "sources": [
         "https://mistral.ai/pricing/api",
         "https://docs.mistral.ai/models/mistral-medium-3-5-26-04",
@@ -5240,6 +5360,7 @@
         "batch": "supported",
         "bedrock_mantle": "unknown",
         "chat_completions": "supported",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "unknown",
         "converse_stream": "unknown",
@@ -5262,6 +5383,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "supported",
         "vision": "unsupported",
         "json_mode": "supported",
@@ -5282,7 +5404,7 @@
       "cache_profile": {
         "state": "unsupported"
       },
-      "content_digest": "bbea9fdb02a85c4516d19e72828553133b0926ffadce3d2041948dd5742123b2",
+      "content_digest": "4f9466f815f2968b77a86aeeec4353b74460284756c89a0f1c3ad37306083f8d",
       "sources": [
         "https://mistral.ai/pricing/api",
         "https://docs.mistral.ai/models/codestral-25-08",
@@ -5321,6 +5443,7 @@
         "batch": "supported",
         "bedrock_mantle": "unknown",
         "chat_completions": "unsupported",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "unknown",
         "converse_stream": "unknown",
@@ -5343,6 +5466,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "supported",
         "vision": "unsupported",
         "json_mode": "unknown",
@@ -5364,7 +5488,7 @@
       "cache_profile": {
         "state": "unsupported"
       },
-      "content_digest": "d6846cdf40c01b712e3dced69be555626c76fc184f3aebbed819aea5fce21a4e",
+      "content_digest": "6754ac3d4a9001860195ad8d691db032574ee6c3c6ad902b7e67a4aad5de75f3",
       "sources": [
         "https://console.groq.com/docs/batch",
         "https://console.groq.com/docs/models",
@@ -5404,6 +5528,7 @@
         "batch": "supported",
         "bedrock_mantle": "unknown",
         "chat_completions": "unsupported",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "unknown",
         "converse_stream": "unknown",
@@ -5426,6 +5551,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "supported",
         "vision": "unsupported",
         "json_mode": "unknown",
@@ -5447,7 +5573,7 @@
       "cache_profile": {
         "state": "unsupported"
       },
-      "content_digest": "cfb6fdb67c63c310fa62dc887da9fc6e9470aa54a381a1648c9e29fafe211258",
+      "content_digest": "276e9a96a02425fd9dcf93bff40732245350a0529b8b8f8c745e1353784a9639",
       "sources": [
         "https://console.groq.com/docs/batch",
         "https://console.groq.com/docs/models",
@@ -5487,6 +5613,7 @@
         "batch": "supported",
         "bedrock_mantle": "unknown",
         "chat_completions": "supported",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "unknown",
         "converse_stream": "unknown",
@@ -5509,6 +5636,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "supported",
         "vision": "unsupported",
         "json_mode": "supported",
@@ -5534,7 +5662,7 @@
       "cache_profile": {
         "state": "unsupported"
       },
-      "content_digest": "d80c4c79586ade0f9492bd0973f41cf9c27029cbcf5a96fe66582428d444ff9a",
+      "content_digest": "f62c896673a5a36fbf2b78076685c6914ee70199bed3f5585bf8a2d6f312a59d",
       "sources": [
         "https://console.groq.com/docs/batch",
         "https://console.groq.com/docs/models",
@@ -5578,6 +5706,7 @@
         "batch": "supported",
         "bedrock_mantle": "unknown",
         "chat_completions": "supported",
+        "chat_completions_tools": "unknown",
         "context_editing": "unknown",
         "converse": "unknown",
         "converse_stream": "unknown",
@@ -5600,6 +5729,7 @@
         "responses_api": "unknown",
         "stream_generate_content": "unknown",
         "streaming": "supported",
+        "thinking_disabled": "unknown",
         "tools": "supported",
         "vision": "unsupported",
         "json_mode": "supported",
@@ -5625,7 +5755,7 @@
       "cache_profile": {
         "state": "unsupported"
       },
-      "content_digest": "c7524231904c86dacf9817a4a5f5b08c240d3725be87e15306ff79b53302c657",
+      "content_digest": "b3751a38eb620422ad5295b724bb1729cfb965987fa5420a7c5453ecb04ae1ff",
       "sources": [
         "https://console.groq.com/docs/batch",
         "https://console.groq.com/docs/models",
@@ -5640,6 +5770,1163 @@
       ],
       "verified_at": "2026-08-13T00:00:00Z",
       "capabilities_verified_at": "2026-08-13T00:00:00Z"
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-5.6-terra",
+      "region": "global",
+      "currency": "USD",
+      "pricing": {
+        "input_per_million": 2,
+        "output_per_million": 12,
+        "cache_read_input_per_million": 0.2,
+        "cache_write_input_per_million": 2.5,
+        "cache_write_1h_input_per_million": null,
+        "reasoning_output_per_million": 12,
+        "batch_discount_fraction": null,
+        "cache_storage_per_million_tokens_hour": null,
+        "long_context_threshold_tokens": 272000,
+        "long_context_threshold_inclusive": null,
+        "long_context_input_multiplier": 2,
+        "long_context_output_multiplier": 1.5,
+        "version": "2026-08-29"
+      },
+      "pricing_semantics": {},
+      "capabilities": {
+        "adaptive_thinking": "unknown",
+        "batch": "unknown",
+        "bedrock_mantle": "unknown",
+        "chat_completions": "supported",
+        "chat_completions_tools": "unknown",
+        "context_editing": "unknown",
+        "converse": "unknown",
+        "converse_stream": "unknown",
+        "count_tokens": "supported",
+        "embeddings": "unknown",
+        "explicit_cache": "unknown",
+        "flex": "unknown",
+        "generate_content": "unknown",
+        "geo_inference_profile": "unknown",
+        "global_inference_profile": "unknown",
+        "invoke_model": "unknown",
+        "message_batches": "unknown",
+        "messages_api": "unknown",
+        "manual_thinking": "unknown",
+        "prompt_cache": "unknown",
+        "prompt_cache_breakpoint": "unknown",
+        "prompt_cache_key": "unknown",
+        "prompt_cache_retention": "unknown",
+        "raw_predict": "unknown",
+        "responses_api": "supported",
+        "stream_generate_content": "unknown",
+        "streaming": "unknown",
+        "thinking_disabled": "unknown",
+        "tools": "supported",
+        "vision": "supported",
+        "json_mode": "supported",
+        "context_window_tokens": 1050000,
+        "default_effort": "medium",
+        "released_at": "2026-07-09T00:00:00Z"
+      },
+      "lifecycle": {
+        "status": "reviewed",
+        "observed_at": "2026-08-29T00:00:00Z"
+      },
+      "aliases": [],
+      "price_intervals": [],
+      "tokenizer": {
+        "state": "unknown",
+        "exact": false
+      },
+      "count_surface": {
+        "state": "supported",
+        "id": "openai.responses.input_tokens",
+        "projection_version": "openai-responses-input-tokens-v1",
+        "accuracy": "provider_measured",
+        "quota": "unknown"
+      },
+      "cache_profile": {
+        "state": "unknown"
+      },
+      "content_digest": "41a657cfd712d6ba226aeef5299db1a78fd31cc095a70ae2c120d86643db7d89",
+      "sources": [
+        "https://developers.openai.com/api/docs/models/gpt-5.6-terra",
+        "https://openai.com/api/pricing/",
+        "https://developers.openai.com/api/docs/guides/token-counting",
+        "https://developers.openai.com/api/docs/changelog"
+      ],
+      "verified_at": "2026-08-29T00:00:00Z",
+      "capabilities_verified_at": "2026-10-06T00:00:00Z"
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-6.1-sol",
+      "region": "global",
+      "currency": "USD",
+      "pricing": {
+        "input_per_million": 2,
+        "output_per_million": 10,
+        "cache_read_input_per_million": 0.1,
+        "cache_write_input_per_million": 2.5,
+        "cache_write_1h_input_per_million": null,
+        "reasoning_output_per_million": 10,
+        "batch_discount_fraction": 0.5,
+        "cache_storage_per_million_tokens_hour": null,
+        "long_context_threshold_tokens": 272000,
+        "long_context_threshold_inclusive": null,
+        "long_context_input_multiplier": 2,
+        "long_context_output_multiplier": 1.5,
+        "version": "2026-10-06"
+      },
+      "pricing_semantics": {
+        "regional_processing_multiplier": 1.1
+      },
+      "capabilities": {
+        "adaptive_thinking": "unknown",
+        "batch": "supported",
+        "bedrock_mantle": "unknown",
+        "chat_completions": "supported",
+        "chat_completions_tools": "unsupported",
+        "context_editing": "unknown",
+        "converse": "unknown",
+        "converse_stream": "unknown",
+        "count_tokens": "supported",
+        "embeddings": "unknown",
+        "explicit_cache": "unknown",
+        "flex": "supported",
+        "generate_content": "unknown",
+        "geo_inference_profile": "unknown",
+        "global_inference_profile": "unknown",
+        "invoke_model": "unknown",
+        "message_batches": "unknown",
+        "messages_api": "unknown",
+        "manual_thinking": "unknown",
+        "prompt_cache": "unknown",
+        "prompt_cache_breakpoint": "supported",
+        "prompt_cache_key": "supported",
+        "prompt_cache_retention": "unknown",
+        "raw_predict": "unknown",
+        "responses_api": "supported",
+        "stream_generate_content": "unknown",
+        "streaming": "supported",
+        "thinking_disabled": "unknown",
+        "tools": "supported",
+        "vision": "supported",
+        "json_mode": "supported",
+        "context_window_tokens": 922000,
+        "effort_levels": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "default_effort": "medium",
+        "released_at": "2026-09-29T00:00:00Z"
+      },
+      "lifecycle": {
+        "status": "reviewed"
+      },
+      "aliases": [],
+      "price_intervals": [],
+      "tokenizer": {
+        "state": "unknown",
+        "exact": false
+      },
+      "count_surface": {
+        "state": "supported",
+        "id": "openai.responses.input_tokens",
+        "projection_version": "openai-responses-input-tokens-v1",
+        "accuracy": "provider_measured",
+        "quota": "unknown"
+      },
+      "cache_profile": {
+        "state": "supported",
+        "id": "cave-cache-openai-explicit-v1",
+        "mode": "explicit",
+        "attribution": "causal",
+        "min_prefix_tokens": 1024,
+        "max_breakpoints": 4,
+        "ttl_seconds": 1800,
+        "rolling": true,
+        "routing_key": true,
+        "max_rpm_per_key": 15,
+        "endpoints": [
+          "v1/chat/completions",
+          "v1/responses"
+        ]
+      },
+      "content_digest": "1085d5c1f0a077ec2dde27f141bd39c3909ca34673ffd14fb2bf2edf51cdaacc",
+      "sources": [
+        "https://developers.openai.com/api/docs/pricing",
+        "https://developers.openai.com/api/docs/models/gpt-6.1-sol",
+        "https://developers.openai.com/api/docs/guides/prompt-caching",
+        "https://developers.openai.com/api/docs/guides/token-counting",
+        "https://developers.openai.com/api/docs/guides/reasoning",
+        "https://developers.openai.com/api/docs/changelog"
+      ],
+      "verified_at": "2026-10-06T00:00:00Z",
+      "capabilities_verified_at": "2026-10-06T00:00:00Z"
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-6-sol",
+      "region": "global",
+      "currency": "USD",
+      "pricing": {
+        "input_per_million": 2,
+        "output_per_million": 10,
+        "cache_read_input_per_million": 0.2,
+        "cache_write_input_per_million": 2.5,
+        "cache_write_1h_input_per_million": null,
+        "reasoning_output_per_million": 10,
+        "batch_discount_fraction": 0.5,
+        "cache_storage_per_million_tokens_hour": null,
+        "long_context_threshold_tokens": 272000,
+        "long_context_threshold_inclusive": null,
+        "long_context_input_multiplier": 2,
+        "long_context_output_multiplier": 1.5,
+        "version": "2026-10-06"
+      },
+      "pricing_semantics": {
+        "regional_processing_multiplier": 1.1
+      },
+      "capabilities": {
+        "adaptive_thinking": "unknown",
+        "batch": "supported",
+        "bedrock_mantle": "unknown",
+        "chat_completions": "supported",
+        "chat_completions_tools": "unsupported",
+        "context_editing": "unknown",
+        "converse": "unknown",
+        "converse_stream": "unknown",
+        "count_tokens": "supported",
+        "embeddings": "unknown",
+        "explicit_cache": "unknown",
+        "flex": "supported",
+        "generate_content": "unknown",
+        "geo_inference_profile": "unknown",
+        "global_inference_profile": "unknown",
+        "invoke_model": "unknown",
+        "message_batches": "unknown",
+        "messages_api": "unknown",
+        "manual_thinking": "unknown",
+        "prompt_cache": "unknown",
+        "prompt_cache_breakpoint": "supported",
+        "prompt_cache_key": "supported",
+        "prompt_cache_retention": "unknown",
+        "raw_predict": "unknown",
+        "responses_api": "supported",
+        "stream_generate_content": "unknown",
+        "streaming": "supported",
+        "thinking_disabled": "unknown",
+        "tools": "supported",
+        "vision": "supported",
+        "json_mode": "supported",
+        "context_window_tokens": 922000,
+        "effort_levels": [
+          "none",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "default_effort": "medium",
+        "released_at": "2026-09-22T00:00:00Z"
+      },
+      "lifecycle": {
+        "status": "reviewed"
+      },
+      "aliases": [],
+      "price_intervals": [],
+      "tokenizer": {
+        "state": "unknown",
+        "exact": false
+      },
+      "count_surface": {
+        "state": "supported",
+        "id": "openai.responses.input_tokens",
+        "projection_version": "openai-responses-input-tokens-v1",
+        "accuracy": "provider_measured",
+        "quota": "unknown"
+      },
+      "cache_profile": {
+        "state": "supported",
+        "id": "cave-cache-openai-explicit-v1",
+        "mode": "explicit",
+        "attribution": "causal",
+        "min_prefix_tokens": 1024,
+        "max_breakpoints": 4,
+        "ttl_seconds": 1800,
+        "rolling": true,
+        "routing_key": true,
+        "max_rpm_per_key": 15,
+        "endpoints": [
+          "v1/chat/completions",
+          "v1/responses"
+        ]
+      },
+      "content_digest": "72c36efaf7d481a206cf488eb1c63b97d98424bef4d85f6abdeb0dc3f59bd2c3",
+      "sources": [
+        "https://developers.openai.com/api/docs/pricing",
+        "https://developers.openai.com/api/docs/models/gpt-6-sol",
+        "https://developers.openai.com/api/docs/guides/prompt-caching",
+        "https://developers.openai.com/api/docs/guides/token-counting",
+        "https://developers.openai.com/api/docs/guides/reasoning",
+        "https://developers.openai.com/api/docs/changelog"
+      ],
+      "verified_at": "2026-10-06T00:00:00Z",
+      "capabilities_verified_at": "2026-10-06T00:00:00Z"
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-6-astra",
+      "region": "global",
+      "currency": "USD",
+      "pricing": {
+        "input_per_million": 10,
+        "output_per_million": 50,
+        "cache_read_input_per_million": 1,
+        "cache_write_input_per_million": 12.5,
+        "cache_write_1h_input_per_million": null,
+        "reasoning_output_per_million": 50,
+        "batch_discount_fraction": 0.5,
+        "cache_storage_per_million_tokens_hour": null,
+        "long_context_threshold_tokens": 272000,
+        "long_context_threshold_inclusive": null,
+        "long_context_input_multiplier": 2,
+        "long_context_output_multiplier": 1.5,
+        "version": "2026-10-06"
+      },
+      "pricing_semantics": {},
+      "capabilities": {
+        "adaptive_thinking": "unknown",
+        "batch": "supported",
+        "bedrock_mantle": "unknown",
+        "chat_completions": "supported",
+        "chat_completions_tools": "unknown",
+        "context_editing": "unknown",
+        "converse": "unknown",
+        "converse_stream": "unknown",
+        "count_tokens": "supported",
+        "embeddings": "unknown",
+        "explicit_cache": "unknown",
+        "flex": "supported",
+        "generate_content": "unknown",
+        "geo_inference_profile": "unknown",
+        "global_inference_profile": "unknown",
+        "invoke_model": "unknown",
+        "message_batches": "unknown",
+        "messages_api": "unknown",
+        "manual_thinking": "unknown",
+        "prompt_cache": "unknown",
+        "prompt_cache_breakpoint": "supported",
+        "prompt_cache_key": "supported",
+        "prompt_cache_retention": "unknown",
+        "raw_predict": "unknown",
+        "responses_api": "supported",
+        "stream_generate_content": "unknown",
+        "streaming": "supported",
+        "thinking_disabled": "unknown",
+        "tools": "supported",
+        "vision": "supported",
+        "json_mode": "supported",
+        "context_window_tokens": 922000,
+        "effort_levels": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "released_at": "2026-09-03T00:00:00Z"
+      },
+      "lifecycle": {
+        "status": "reviewed"
+      },
+      "aliases": [],
+      "price_intervals": [],
+      "tokenizer": {
+        "state": "unknown",
+        "exact": false
+      },
+      "count_surface": {
+        "state": "supported",
+        "id": "openai.responses.input_tokens",
+        "projection_version": "openai-responses-input-tokens-v1",
+        "accuracy": "provider_measured",
+        "quota": "unknown"
+      },
+      "cache_profile": {
+        "state": "supported",
+        "id": "cave-cache-openai-explicit-v1",
+        "mode": "explicit",
+        "attribution": "causal",
+        "min_prefix_tokens": 1024,
+        "max_breakpoints": 4,
+        "ttl_seconds": 1800,
+        "rolling": true,
+        "routing_key": true,
+        "max_rpm_per_key": 15,
+        "endpoints": [
+          "v1/chat/completions",
+          "v1/responses"
+        ]
+      },
+      "content_digest": "34ccb7ff08c6bd30c2925afe941ebe072c710c7724f6780a087dcc4c7afd8b78",
+      "sources": [
+        "https://developers.openai.com/api/docs/pricing",
+        "https://developers.openai.com/api/docs/models/gpt-6-astra",
+        "https://developers.openai.com/api/docs/guides/prompt-caching",
+        "https://developers.openai.com/api/docs/guides/token-counting",
+        "https://developers.openai.com/api/docs/guides/reasoning",
+        "https://developers.openai.com/api/docs/changelog"
+      ],
+      "verified_at": "2026-10-06T00:00:00Z",
+      "capabilities_verified_at": "2026-10-06T00:00:00Z"
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-6-luna",
+      "region": "global",
+      "currency": "USD",
+      "pricing": {
+        "input_per_million": 0.1,
+        "output_per_million": 0.5,
+        "cache_read_input_per_million": 0.01,
+        "cache_write_input_per_million": 0.125,
+        "cache_write_1h_input_per_million": null,
+        "reasoning_output_per_million": 0.5,
+        "batch_discount_fraction": 0.5,
+        "cache_storage_per_million_tokens_hour": null,
+        "long_context_threshold_tokens": 272000,
+        "long_context_threshold_inclusive": null,
+        "long_context_input_multiplier": 2,
+        "long_context_output_multiplier": 1.5,
+        "version": "2026-10-06"
+      },
+      "pricing_semantics": {
+        "regional_processing_multiplier": 1.1
+      },
+      "capabilities": {
+        "adaptive_thinking": "unknown",
+        "batch": "supported",
+        "bedrock_mantle": "unknown",
+        "chat_completions": "supported",
+        "chat_completions_tools": "unsupported",
+        "context_editing": "unknown",
+        "converse": "unknown",
+        "converse_stream": "unknown",
+        "count_tokens": "supported",
+        "embeddings": "unknown",
+        "explicit_cache": "unknown",
+        "flex": "supported",
+        "generate_content": "unknown",
+        "geo_inference_profile": "unknown",
+        "global_inference_profile": "unknown",
+        "invoke_model": "unknown",
+        "message_batches": "unknown",
+        "messages_api": "unknown",
+        "manual_thinking": "unknown",
+        "prompt_cache": "unknown",
+        "prompt_cache_breakpoint": "supported",
+        "prompt_cache_key": "supported",
+        "prompt_cache_retention": "unknown",
+        "raw_predict": "unknown",
+        "responses_api": "supported",
+        "stream_generate_content": "unknown",
+        "streaming": "supported",
+        "thinking_disabled": "unknown",
+        "tools": "supported",
+        "vision": "supported",
+        "json_mode": "supported",
+        "context_window_tokens": 922000,
+        "effort_levels": [
+          "none",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "default_effort": "medium",
+        "released_at": "2026-09-22T00:00:00Z"
+      },
+      "lifecycle": {
+        "status": "reviewed"
+      },
+      "aliases": [],
+      "price_intervals": [],
+      "tokenizer": {
+        "state": "unknown",
+        "exact": false
+      },
+      "count_surface": {
+        "state": "supported",
+        "id": "openai.responses.input_tokens",
+        "projection_version": "openai-responses-input-tokens-v1",
+        "accuracy": "provider_measured",
+        "quota": "unknown"
+      },
+      "cache_profile": {
+        "state": "supported",
+        "id": "cave-cache-openai-explicit-v1",
+        "mode": "explicit",
+        "attribution": "causal",
+        "min_prefix_tokens": 1024,
+        "max_breakpoints": 4,
+        "ttl_seconds": 1800,
+        "rolling": true,
+        "routing_key": true,
+        "max_rpm_per_key": 15,
+        "endpoints": [
+          "v1/chat/completions",
+          "v1/responses"
+        ]
+      },
+      "content_digest": "8be698097e798e2fee0a6b7f18a46bc73228c0b318a672c9da0e13854d5ca118",
+      "sources": [
+        "https://developers.openai.com/api/docs/pricing",
+        "https://developers.openai.com/api/docs/models/gpt-6-luna",
+        "https://developers.openai.com/api/docs/guides/prompt-caching",
+        "https://developers.openai.com/api/docs/guides/token-counting",
+        "https://developers.openai.com/api/docs/guides/reasoning",
+        "https://developers.openai.com/api/docs/changelog"
+      ],
+      "verified_at": "2026-10-06T00:00:00Z",
+      "capabilities_verified_at": "2026-10-06T00:00:00Z"
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-opus-5-5",
+      "region": "global",
+      "currency": "USD",
+      "pricing": {
+        "input_per_million": 4,
+        "output_per_million": 20,
+        "cache_read_input_per_million": 0.2,
+        "cache_write_input_per_million": 5,
+        "cache_write_1h_input_per_million": 8,
+        "reasoning_output_per_million": 20,
+        "batch_discount_fraction": 0.5,
+        "cache_storage_per_million_tokens_hour": null,
+        "long_context_threshold_tokens": null,
+        "long_context_threshold_inclusive": null,
+        "long_context_input_multiplier": null,
+        "long_context_output_multiplier": null,
+        "version": "2026-10-06"
+      },
+      "pricing_semantics": {
+        "inference_geo_us_multiplier": 1.1
+      },
+      "capabilities": {
+        "adaptive_thinking": "supported",
+        "batch": "unknown",
+        "bedrock_mantle": "unknown",
+        "chat_completions": "unknown",
+        "chat_completions_tools": "unknown",
+        "context_editing": "unknown",
+        "converse": "unknown",
+        "converse_stream": "unknown",
+        "count_tokens": "supported",
+        "embeddings": "unknown",
+        "explicit_cache": "unknown",
+        "flex": "unknown",
+        "generate_content": "unknown",
+        "geo_inference_profile": "unknown",
+        "global_inference_profile": "unknown",
+        "invoke_model": "unknown",
+        "message_batches": "supported",
+        "messages_api": "supported",
+        "manual_thinking": "unsupported",
+        "prompt_cache": "supported",
+        "prompt_cache_breakpoint": "unknown",
+        "prompt_cache_key": "unknown",
+        "prompt_cache_retention": "unknown",
+        "raw_predict": "unknown",
+        "responses_api": "unknown",
+        "stream_generate_content": "unknown",
+        "streaming": "supported",
+        "thinking_disabled": "unsupported",
+        "tools": "supported",
+        "vision": "supported",
+        "json_mode": "supported",
+        "context_window_tokens": 1000000,
+        "effort_levels": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "released_at": "2026-09-22T00:00:00Z"
+      },
+      "lifecycle": {
+        "status": "reviewed"
+      },
+      "aliases": [],
+      "price_intervals": [],
+      "tokenizer": {
+        "state": "unknown",
+        "exact": false
+      },
+      "count_surface": {
+        "state": "supported",
+        "id": "anthropic.messages.count_tokens",
+        "projection_version": "anthropic-messages-count-v1",
+        "accuracy": "provider_measured",
+        "quota": "independent"
+      },
+      "cache_profile": {
+        "state": "supported",
+        "id": "cave-cache-anthropic-v1",
+        "mode": "explicit",
+        "attribution": "causal",
+        "min_prefix_tokens": 512,
+        "max_breakpoints": 4,
+        "ttl_seconds": 300,
+        "rolling": true,
+        "endpoints": [
+          "v1/messages"
+        ]
+      },
+      "content_digest": "6034525fc4bd3353fc30ee1f0df3f4d11d2b85268cb5d4dc1d6103d18aabd9b8",
+      "sources": [
+        "https://platform.claude.com/docs/en/build-with-claude/token-counting",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+        "https://platform.claude.com/docs/en/about-claude/pricing",
+        "https://platform.claude.com/docs/en/about-claude/models/overview",
+        "https://platform.claude.com/docs/en/build-with-claude/effort",
+        "https://platform.claude.com/docs/en/build-with-claude/extended-thinking",
+        "https://platform.claude.com/docs/en/build-with-claude/thinking-troubleshooting",
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs",
+        "https://platform.claude.com/docs/en/models/opus-5-5/overview"
+      ],
+      "verified_at": "2026-10-06T00:00:00Z",
+      "capabilities_verified_at": "2026-10-06T00:00:00Z"
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-sonnet-5-5",
+      "region": "global",
+      "currency": "USD",
+      "pricing": {
+        "input_per_million": 2,
+        "output_per_million": 10,
+        "cache_read_input_per_million": 0.2,
+        "cache_write_input_per_million": 2.5,
+        "cache_write_1h_input_per_million": 4,
+        "reasoning_output_per_million": 10,
+        "batch_discount_fraction": 0.5,
+        "cache_storage_per_million_tokens_hour": null,
+        "long_context_threshold_tokens": null,
+        "long_context_threshold_inclusive": null,
+        "long_context_input_multiplier": null,
+        "long_context_output_multiplier": null,
+        "version": "2026-10-06"
+      },
+      "pricing_semantics": {
+        "inference_geo_us_multiplier": 1.1
+      },
+      "capabilities": {
+        "adaptive_thinking": "supported",
+        "batch": "unknown",
+        "bedrock_mantle": "unknown",
+        "chat_completions": "unknown",
+        "chat_completions_tools": "unknown",
+        "context_editing": "unknown",
+        "converse": "unknown",
+        "converse_stream": "unknown",
+        "count_tokens": "supported",
+        "embeddings": "unknown",
+        "explicit_cache": "unknown",
+        "flex": "unknown",
+        "generate_content": "unknown",
+        "geo_inference_profile": "unknown",
+        "global_inference_profile": "unknown",
+        "invoke_model": "unknown",
+        "message_batches": "supported",
+        "messages_api": "supported",
+        "manual_thinking": "unsupported",
+        "prompt_cache": "supported",
+        "prompt_cache_breakpoint": "unknown",
+        "prompt_cache_key": "unknown",
+        "prompt_cache_retention": "unknown",
+        "raw_predict": "unknown",
+        "responses_api": "unknown",
+        "stream_generate_content": "unknown",
+        "streaming": "supported",
+        "thinking_disabled": "unsupported",
+        "tools": "supported",
+        "vision": "supported",
+        "json_mode": "supported",
+        "context_window_tokens": 1000000,
+        "effort_levels": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "released_at": "2026-09-28T00:00:00Z"
+      },
+      "lifecycle": {
+        "status": "reviewed"
+      },
+      "aliases": [],
+      "price_intervals": [],
+      "tokenizer": {
+        "state": "unknown",
+        "exact": false
+      },
+      "count_surface": {
+        "state": "supported",
+        "id": "anthropic.messages.count_tokens",
+        "projection_version": "anthropic-messages-count-v1",
+        "accuracy": "provider_measured",
+        "quota": "independent"
+      },
+      "cache_profile": {
+        "state": "supported",
+        "id": "cave-cache-anthropic-v1",
+        "mode": "explicit",
+        "attribution": "causal",
+        "min_prefix_tokens": 512,
+        "max_breakpoints": 4,
+        "ttl_seconds": 300,
+        "rolling": true,
+        "endpoints": [
+          "v1/messages"
+        ]
+      },
+      "content_digest": "0a4c807598b9023f77127428b21b18c7b5b5a37baba1f6072187e1b00867d8a5",
+      "sources": [
+        "https://platform.claude.com/docs/en/build-with-claude/token-counting",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+        "https://platform.claude.com/docs/en/about-claude/pricing",
+        "https://platform.claude.com/docs/en/about-claude/models/overview",
+        "https://platform.claude.com/docs/en/build-with-claude/effort",
+        "https://platform.claude.com/docs/en/build-with-claude/extended-thinking",
+        "https://platform.claude.com/docs/en/build-with-claude/thinking-troubleshooting",
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs",
+        "https://platform.claude.com/docs/en/models/sonnet-5-5/overview"
+      ],
+      "verified_at": "2026-10-06T00:00:00Z",
+      "capabilities_verified_at": "2026-10-06T00:00:00Z"
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-haiku-5-5",
+      "region": "global",
+      "currency": "USD",
+      "pricing": {
+        "input_per_million": 0.1,
+        "output_per_million": 0.5,
+        "cache_read_input_per_million": 0.01,
+        "cache_write_input_per_million": 0.125,
+        "cache_write_1h_input_per_million": 0.2,
+        "reasoning_output_per_million": 0.5,
+        "batch_discount_fraction": 0.5,
+        "cache_storage_per_million_tokens_hour": null,
+        "long_context_threshold_tokens": 100000,
+        "long_context_threshold_inclusive": null,
+        "long_context_input_multiplier": 5,
+        "long_context_output_multiplier": 5,
+        "version": "2026-10-15"
+      },
+      "pricing_semantics": {
+        "inference_geo_us_multiplier": 1.1
+      },
+      "capabilities": {
+        "adaptive_thinking": "supported",
+        "batch": "unknown",
+        "bedrock_mantle": "unknown",
+        "chat_completions": "unknown",
+        "chat_completions_tools": "unknown",
+        "context_editing": "unknown",
+        "converse": "unknown",
+        "converse_stream": "unknown",
+        "count_tokens": "supported",
+        "embeddings": "unknown",
+        "explicit_cache": "unknown",
+        "flex": "unknown",
+        "generate_content": "unknown",
+        "geo_inference_profile": "unknown",
+        "global_inference_profile": "unknown",
+        "invoke_model": "unknown",
+        "message_batches": "supported",
+        "messages_api": "supported",
+        "manual_thinking": "unsupported",
+        "prompt_cache": "supported",
+        "prompt_cache_breakpoint": "unknown",
+        "prompt_cache_key": "unknown",
+        "prompt_cache_retention": "unknown",
+        "raw_predict": "unknown",
+        "responses_api": "unknown",
+        "stream_generate_content": "unknown",
+        "streaming": "supported",
+        "thinking_disabled": "unknown",
+        "tools": "supported",
+        "vision": "supported",
+        "json_mode": "unknown",
+        "context_window_tokens": 1000000,
+        "effort_levels": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "default_effort": "medium",
+        "released_at": "2026-10-07T00:00:00Z"
+      },
+      "lifecycle": {
+        "status": "reviewed"
+      },
+      "aliases": [],
+      "price_intervals": [],
+      "tokenizer": {
+        "state": "unknown",
+        "exact": false
+      },
+      "count_surface": {
+        "state": "supported",
+        "id": "anthropic.messages.count_tokens",
+        "projection_version": "anthropic-messages-count-v1",
+        "accuracy": "provider_measured",
+        "quota": "independent"
+      },
+      "cache_profile": {
+        "state": "supported",
+        "id": "cave-cache-anthropic-v1",
+        "mode": "explicit",
+        "attribution": "causal",
+        "min_prefix_tokens": 512,
+        "max_breakpoints": 4,
+        "ttl_seconds": 300,
+        "rolling": true,
+        "endpoints": [
+          "v1/messages"
+        ]
+      },
+      "content_digest": "e8236c1d7d28b3693a6c22465d562996da902bae365e5f4bc300831d70be17e0",
+      "sources": [
+        "https://platform.claude.com/docs/en/about-claude/pricing",
+        "https://platform.claude.com/docs/en/models/haiku-5-5/overview",
+        "https://platform.claude.com/docs/en/about-claude/models/overview",
+        "https://platform.claude.com/docs/en/build-with-claude/effort",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+        "https://platform.claude.com/docs/en/build-with-claude/token-counting"
+      ],
+      "verified_at": "2026-10-15T00:00:00Z",
+      "capabilities_verified_at": "2026-10-15T00:00:00Z"
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-fable-5-1",
+      "region": "global",
+      "currency": "USD",
+      "pricing": {
+        "input_per_million": 10,
+        "output_per_million": 50,
+        "cache_read_input_per_million": 0.25,
+        "cache_write_input_per_million": 12.5,
+        "cache_write_1h_input_per_million": 20,
+        "reasoning_output_per_million": 50,
+        "batch_discount_fraction": 0.5,
+        "cache_storage_per_million_tokens_hour": null,
+        "long_context_threshold_tokens": null,
+        "long_context_threshold_inclusive": null,
+        "long_context_input_multiplier": null,
+        "long_context_output_multiplier": null,
+        "version": "2026-10-06"
+      },
+      "pricing_semantics": {
+        "inference_geo_us_multiplier": 1.1
+      },
+      "capabilities": {
+        "adaptive_thinking": "supported",
+        "batch": "unknown",
+        "bedrock_mantle": "unknown",
+        "chat_completions": "unknown",
+        "chat_completions_tools": "unknown",
+        "context_editing": "unknown",
+        "converse": "unknown",
+        "converse_stream": "unknown",
+        "count_tokens": "supported",
+        "embeddings": "unknown",
+        "explicit_cache": "unknown",
+        "flex": "unknown",
+        "generate_content": "unknown",
+        "geo_inference_profile": "unknown",
+        "global_inference_profile": "unknown",
+        "invoke_model": "unknown",
+        "message_batches": "supported",
+        "messages_api": "supported",
+        "manual_thinking": "unsupported",
+        "prompt_cache": "supported",
+        "prompt_cache_breakpoint": "unknown",
+        "prompt_cache_key": "unknown",
+        "prompt_cache_retention": "unknown",
+        "raw_predict": "unknown",
+        "responses_api": "unknown",
+        "stream_generate_content": "unknown",
+        "streaming": "supported",
+        "thinking_disabled": "unsupported",
+        "tools": "supported",
+        "vision": "supported",
+        "json_mode": "supported",
+        "context_window_tokens": 1000000,
+        "effort_levels": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "released_at": "2026-09-01T00:00:00Z"
+      },
+      "lifecycle": {
+        "status": "reviewed"
+      },
+      "aliases": [],
+      "price_intervals": [],
+      "tokenizer": {
+        "state": "unknown",
+        "exact": false
+      },
+      "count_surface": {
+        "state": "supported",
+        "id": "anthropic.messages.count_tokens",
+        "projection_version": "anthropic-messages-count-v1",
+        "accuracy": "provider_measured",
+        "quota": "independent"
+      },
+      "cache_profile": {
+        "state": "supported",
+        "id": "cave-cache-anthropic-v1",
+        "mode": "explicit",
+        "attribution": "causal",
+        "min_prefix_tokens": 512,
+        "max_breakpoints": 4,
+        "ttl_seconds": 300,
+        "rolling": true,
+        "endpoints": [
+          "v1/messages"
+        ]
+      },
+      "content_digest": "2601b2dfd9efa442fd55350df5e2998fa896eb1f4f15ef0c652e30d02194b719",
+      "sources": [
+        "https://platform.claude.com/docs/en/build-with-claude/token-counting",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+        "https://platform.claude.com/docs/en/about-claude/pricing",
+        "https://platform.claude.com/docs/en/about-claude/models/overview",
+        "https://platform.claude.com/docs/en/build-with-claude/effort",
+        "https://platform.claude.com/docs/en/build-with-claude/extended-thinking",
+        "https://platform.claude.com/docs/en/build-with-claude/thinking-troubleshooting",
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs",
+        "https://platform.claude.com/docs/en/models/fable-5-1/overview"
+      ],
+      "verified_at": "2026-10-06T00:00:00Z",
+      "capabilities_verified_at": "2026-10-06T00:00:00Z"
+    },
+    {
+      "provider": "gemini",
+      "model": "gemini-3.8-flash",
+      "region": "global",
+      "currency": "USD",
+      "pricing": {
+        "input_per_million": 0.75,
+        "output_per_million": 3.75,
+        "cache_read_input_per_million": 0.075,
+        "cache_write_input_per_million": null,
+        "cache_write_1h_input_per_million": null,
+        "reasoning_output_per_million": 3.75,
+        "batch_discount_fraction": 0.5,
+        "cache_storage_per_million_tokens_hour": 0.5,
+        "long_context_threshold_tokens": null,
+        "long_context_threshold_inclusive": null,
+        "long_context_input_multiplier": null,
+        "long_context_output_multiplier": null,
+        "version": "2026-10-06"
+      },
+      "pricing_semantics": {},
+      "capabilities": {
+        "adaptive_thinking": "unknown",
+        "batch": "supported",
+        "bedrock_mantle": "unknown",
+        "chat_completions": "unknown",
+        "chat_completions_tools": "unknown",
+        "context_editing": "unknown",
+        "converse": "unknown",
+        "converse_stream": "unknown",
+        "count_tokens": "supported",
+        "embeddings": "unknown",
+        "explicit_cache": "supported",
+        "flex": "unknown",
+        "generate_content": "supported",
+        "geo_inference_profile": "unknown",
+        "global_inference_profile": "unknown",
+        "invoke_model": "unknown",
+        "message_batches": "unknown",
+        "messages_api": "unknown",
+        "manual_thinking": "unknown",
+        "prompt_cache": "unknown",
+        "prompt_cache_breakpoint": "unknown",
+        "prompt_cache_key": "unknown",
+        "prompt_cache_retention": "unknown",
+        "raw_predict": "unknown",
+        "responses_api": "unknown",
+        "stream_generate_content": "supported",
+        "streaming": "supported",
+        "thinking_disabled": "unknown",
+        "tools": "supported",
+        "vision": "supported",
+        "json_mode": "supported",
+        "context_window_tokens": 1048576
+      },
+      "lifecycle": {
+        "status": "reviewed"
+      },
+      "aliases": [],
+      "price_intervals": [],
+      "recurring_utc_pricing": {
+        "effective_from": "2027-01-01T00:00:00Z",
+        "default_pricing": {
+          "input_per_million": 1.5,
+          "output_per_million": 7.5,
+          "cache_read_input_per_million": 0.15,
+          "cache_write_input_per_million": null,
+          "cache_write_1h_input_per_million": null,
+          "reasoning_output_per_million": 7.5,
+          "batch_discount_fraction": 0.5,
+          "cache_storage_per_million_tokens_hour": 1,
+          "long_context_threshold_tokens": null,
+          "long_context_threshold_inclusive": null,
+          "long_context_input_multiplier": null,
+          "long_context_output_multiplier": null,
+          "version": "2026-10-06"
+        },
+        "windows": [],
+        "verified_at": "2026-10-06T00:00:00Z"
+      },
+      "tokenizer": {
+        "state": "unknown",
+        "exact": false
+      },
+      "count_surface": {
+        "state": "supported",
+        "id": "gemini.models.count_tokens",
+        "projection_version": "gemini-count-tokens-v1",
+        "accuracy": "provider_measured",
+        "quota": "shared"
+      },
+      "cache_profile": {
+        "state": "supported",
+        "id": "cave-cache-gemini-implicit-v1",
+        "mode": "implicit",
+        "attribution": "organic",
+        "min_prefix_tokens": 4096,
+        "max_breakpoints": 1,
+        "rolling": true,
+        "endpoints": [
+          "generateContent"
+        ]
+      },
+      "content_digest": "9485ac1bdb1221532de67c631ed295b529af5466b58d5d1df171824b028830c5",
+      "sources": [
+        "https://ai.google.dev/api/tokens",
+        "https://ai.google.dev/gemini-api/docs/caching",
+        "https://ai.google.dev/gemini-api/docs/pricing",
+        "https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash"
+      ],
+      "verified_at": "2026-10-06T00:00:00Z",
+      "capabilities_verified_at": "2026-10-06T00:00:00Z"
+    },
+    {
+      "provider": "gemini",
+      "model": "gemini-3.5-flash-lite",
+      "region": "global",
+      "currency": "USD",
+      "pricing": {
+        "input_per_million": 0.3,
+        "output_per_million": 2.5,
+        "cache_read_input_per_million": 0.03,
+        "cache_write_input_per_million": null,
+        "cache_write_1h_input_per_million": null,
+        "reasoning_output_per_million": 2.5,
+        "batch_discount_fraction": 0.5,
+        "cache_storage_per_million_tokens_hour": 1,
+        "long_context_threshold_tokens": null,
+        "long_context_threshold_inclusive": null,
+        "long_context_input_multiplier": null,
+        "long_context_output_multiplier": null,
+        "version": "2026-10-06"
+      },
+      "pricing_semantics": {},
+      "capabilities": {
+        "adaptive_thinking": "unknown",
+        "batch": "supported",
+        "bedrock_mantle": "unknown",
+        "chat_completions": "unknown",
+        "chat_completions_tools": "unknown",
+        "context_editing": "unknown",
+        "converse": "unknown",
+        "converse_stream": "unknown",
+        "count_tokens": "supported",
+        "embeddings": "unknown",
+        "explicit_cache": "supported",
+        "flex": "unknown",
+        "generate_content": "supported",
+        "geo_inference_profile": "unknown",
+        "global_inference_profile": "unknown",
+        "invoke_model": "unknown",
+        "message_batches": "unknown",
+        "messages_api": "unknown",
+        "manual_thinking": "unknown",
+        "prompt_cache": "unknown",
+        "prompt_cache_breakpoint": "unknown",
+        "prompt_cache_key": "unknown",
+        "prompt_cache_retention": "unknown",
+        "raw_predict": "unknown",
+        "responses_api": "unknown",
+        "stream_generate_content": "supported",
+        "streaming": "supported",
+        "thinking_disabled": "unknown",
+        "tools": "supported",
+        "vision": "supported",
+        "json_mode": "supported",
+        "context_window_tokens": 1048576
+      },
+      "lifecycle": {
+        "status": "reviewed"
+      },
+      "aliases": [],
+      "price_intervals": [],
+      "tokenizer": {
+        "state": "unknown",
+        "exact": false
+      },
+      "count_surface": {
+        "state": "supported",
+        "id": "gemini.models.count_tokens",
+        "projection_version": "gemini-count-tokens-v1",
+        "accuracy": "provider_measured",
+        "quota": "shared"
+      },
+      "cache_profile": {
+        "state": "unknown"
+      },
+      "content_digest": "a7ec1613569819acb6abaddba6a90061ae79997e20610b8c6936580571b4777c",
+      "sources": [
+        "https://ai.google.dev/api/tokens",
+        "https://ai.google.dev/gemini-api/docs/caching",
+        "https://ai.google.dev/gemini-api/docs/pricing",
+        "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite"
+      ],
+      "verified_at": "2026-10-06T00:00:00Z",
+      "capabilities_verified_at": "2026-10-06T00:00:00Z"
     }
   ]
 }
