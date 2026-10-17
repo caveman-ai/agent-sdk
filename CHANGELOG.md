@@ -10,6 +10,10 @@ Versioning policy and what counts as breaking: [docs/RELEASING.md](docs/RELEASIN
 
 ### Changed
 
+- `@caveman-ai/agent/code`: the `Workspace: <path>` line moved from the
+  top of the coding instructions to the very end, after the host's
+  `instructionSections`. Sessions on two checkouts of one repo now share
+  every prompt byte before it, so the second one reads the first one's cache.
 - `@caveman-ai/agent/code`: `createCodingAgent` defaults to `toolMode:
   "hybrid"`: the coding tools stay declared, plus one code tool for tools that
   are not declared (MCP, connectors, browser), tool search and fan-out. Tools a

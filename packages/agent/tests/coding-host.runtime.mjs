@@ -198,7 +198,7 @@ test("host instruction sections follow the SDK text in order; the SDK reads no w
     for (const toolMode of ["hybrid", "programmatic", "direct"]) {
       const codingAgent = createCodingAgent({ ...options, toolMode });
       const instructions = String(codingAgent.definition.instructions);
-      assert.ok(instructions.endsWith("Host addition.\n\n# AGENTS.md\n\nRun make test-fast.\n\n# Memory\n\nPrefers pnpm."), toolMode);
+      assert.ok(instructions.endsWith(`Host addition.\n\n# AGENTS.md\n\nRun make test-fast.\n\n# Memory\n\nPrefers pnpm.\n\nWorkspace: ${workspace}`), toolMode);
       assert.doesNotMatch(instructions, /Project instructions/, "an empty section is left out");
       assert.doesNotMatch(instructions, /AUTO_DISCOVERED_SENTINEL/);
       // Same input, same bytes: the prefix is cache-stable across agents.
@@ -206,6 +206,23 @@ test("host instruction sections follow the SDK text in order; the SDK reads no w
     }
     assert.throws(() => createCodingAgent({ ...options, instructionSections: [{ title: "two\nlines", text: "x" }] }),
       /coding_instruction_section_title_invalid/);
+  });
+});
+
+test("the workspace line comes last, so two checkouts of one repo share every byte before it", async () => {
+  await withWorkspace(async (first) => {
+    await withWorkspace(async (second) => {
+      const sections = [{ title: "AGENTS.md", text: "Run make test-fast." }, { title: "Memory", text: "Prefers pnpm." }];
+      for (const toolMode of ["hybrid", "programmatic", "direct"]) {
+        const text = (workspace) => String(createCodingAgent({
+          workspace, model: "openai/gpt-5.4", toolMode, instructionSections: sections,
+        }).definition.instructions);
+        const [a, b] = [text(first), text(second)];
+        assert.ok(a.endsWith(`\n\nWorkspace: ${first}`), toolMode);
+        assert.equal(a.split("Workspace: ").length, 2, "the workspace appears once");
+        assert.equal(a.slice(0, a.lastIndexOf("\n")), b.slice(0, b.lastIndexOf("\n")), toolMode);
+      }
+    });
   });
 });
 

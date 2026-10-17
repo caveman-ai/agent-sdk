@@ -185,7 +185,7 @@ export const OBSERVE_ONLY_BANNER = [
   "  Turn optimized mode on: npm i -g @caveman-ai/cli && caveman start",
 ].join("\n");
 
-function codingInstructions(toolSet: CodingToolSet, workspace: string, hybridToolName?: string): string {
+function codingInstructions(toolSet: CodingToolSet, hybridToolName?: string): string {
   const toolInstructions = toolSet === "pebble-v1"
     ? PEBBLE_V1_TOOL_INSTRUCTIONS
     : FULL_TOOL_INSTRUCTIONS;
@@ -198,7 +198,6 @@ function codingInstructions(toolSet: CodingToolSet, workspace: string, hybridToo
       ].join("\n");
   return [
     "You are a coding agent working inside one workspace directory.",
-    `Workspace: ${workspace}`,
     "",
     "Work like an engineer: read before you edit, prefer the smallest change that",
     "solves the task, and verify with a command when a command can verify it.",
@@ -349,12 +348,13 @@ export function createCodingAgent(options: CodingAgentOptions = {}): CodingAgent
   const coreTools = toolSet === "pebble-v1"
     ? ["read_file", "bash", "write_file", "edit_file"] as const
     : ["read_file", "grep", "bash", "write_file", "edit_file", "read_tool_output"] as const;
-  // SDK text first, then the host's in its order: the SDK part never moves.
+  // SDK text, then the host's in order, then the workspace: checkouts of one repo share the prefix.
   const instructions = [
-    codingInstructions(toolSet, workspace, toolMode === "hybrid" ? codeToolName : undefined),
+    codingInstructions(toolSet, toolMode === "hybrid" ? codeToolName : undefined),
     options.instructions,
     options.mcp === undefined ? undefined : renderMcpServersSection(options.mcp.servers, codeToolName),
     options.instructionSections === undefined ? undefined : renderCodingInstructionSections(options.instructionSections),
+    `Workspace: ${workspace}`,
   ].filter((text): text is string => text !== undefined).join("\n\n");
   const caps = { ...CODING_TOOL_OUTPUT_CAPS, ...options.outputCaps };
   const samples: ToolOutputSample[] = [];
