@@ -112,6 +112,21 @@ test("bash runs one bounded command in the workspace", async () => {
   });
 });
 
+test("bash gets the host's processEnv on top of the allowlist, never the ambient environment", async () => {
+  await withWorkspace(async (workspace) => {
+    process.env.CAVE_SHELL_TOOLS_AMBIENT = "leaked";
+    try {
+      const tools = byName(shellTools({ workspace, tools: ["bash"], processEnv: { CAVE_SHELL_TOOLS_HOST: "given" } }));
+      assert.equal(
+        await tools.bash.execute({ command: 'echo "${CAVE_SHELL_TOOLS_HOST:-none} ${CAVE_SHELL_TOOLS_AMBIENT:-none}"' }),
+        "exit 0\ngiven none\n",
+      );
+    } finally {
+      delete process.env.CAVE_SHELL_TOOLS_AMBIENT;
+    }
+  });
+});
+
 test("paths outside the workspace are refused, symlinked or not", async () => {
   await withWorkspace(async (workspace) => {
     const outside = await mkdtemp(resolve(tmpdir(), "caveman-shell-outside-"));

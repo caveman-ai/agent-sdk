@@ -137,9 +137,9 @@ export interface ShellToolsOptions {
   outputCaps?: Partial<Record<ShellToolName, number>>;
   /** Interactive bash sessions (local backend only). Omit for one-shot bounded bash. */
   commandSessions?: CommandSessionRuntime;
-  /** Observes every capped tool output. */
-  onOutput?: (label: string, text: string) => void;
-  /** Directory file tools may touch (default `workspace`); relative paths resolve against `workspace`. */ fileRoot?: string;
+  /** Observes every capped tool output. */ onOutput?: (label: string, text: string) => void;
+  /** Directory file tools may touch (default `workspace`); relative paths resolve against `workspace`. */ fileRoot?: string | undefined;
+  /** Variables the host adds to bash's environment on top of the coding allowlist; nothing is inherited ambiently. */ processEnv?: Readonly<Record<string, string>> | undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -342,7 +342,7 @@ export function shellTools(options: ShellToolsOptions): ToolDefinition[] {
       const yieldTimeMs = "yieldTimeMs" in input ? input.yieldTimeMs : undefined;
       validateBashWait(yieldTimeMs, "yieldTimeMs");
       const local = localBackendInternals(executionBackend) !== undefined;
-      const env = buildCodingProcessEnv(local);
+      const env = { ...buildCodingProcessEnv(local), ...options.processEnv };
       const shell = local
         ? hostShellInvocation(input.command, process.platform, env)
         : { command: "sh", args: ["-c", input.command] as readonly string[] };

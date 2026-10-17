@@ -253,8 +253,8 @@ export interface CodingAgentOptions {
   commandSessionSpill?: CommandSessionSpillOptions;
   /** Interactive bash sessions. Defaults on locally and off for non-local backends. */
   commandSessions?: boolean;
-  /** Workspace and process execution. Defaults to the local host backend. */
-  executionBackend?: ExecutionBackend;
+  /** Workspace and process execution. Defaults to the local host backend. */ executionBackend?: ExecutionBackend;
+  /** Variables the host adds to bash's environment on top of the coding allowlist. */ processEnv?: Readonly<Record<string, string>>;
   /** Trusted product adapters applied before direct/programmatic tool finalization. */
   definitionTransforms?: readonly AgentDefinitionTransform[];
   /** Provider-visible composite tool name. Product wrappers may brand it; default `caveman_code`. */
@@ -403,7 +403,7 @@ export function createCodingAgent(options: CodingAgentOptions = {}): CodingAgent
       executionBackend,
       tools: coreTools,
       outputCaps: caps,
-      ...(options.fileRoot === undefined ? {} : { fileRoot: options.fileRoot }),
+      fileRoot: options.fileRoot, processEnv: options.processEnv,
       ...(commandSessions === undefined ? {} : { commandSessions }),
       onOutput: record,
     }),
