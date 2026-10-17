@@ -5,6 +5,7 @@
  */
 import type { McpFetch } from "@earendil-works/pi-mcp";
 import type { OAuthChallenge } from "@earendil-works/pi-mcp/oauth";
+import type { Agent } from "undici";
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
 /** OAuth metadata, registration, and token responses are small JSON documents. */
@@ -41,6 +42,18 @@ async function cappedBody(body: ReadableStream<Uint8Array>, maxBytes: number): P
 }
 
 /**
+ * A loopback server (a host's own, like an app runtime's /mcp) may hold a call
+ * open as long as its timeoutMs (a person answering, a subagent's wait), but
+ * undici's 300 s header and body timeouts would cut it first. The client's
+ * per-call timeout and abort signal bound those calls instead.
+ * ponytail: remote servers keep the global dispatcher (and with it a host's
+ * proxy), so a remote call still stops after 300 s without a byte.
+ */
+let untimedDispatcher: Promise<Agent> | undefined;
+const loopbackDispatcher = () =>
+  (untimedDispatcher ??= import("undici").then(({ Agent }) => new Agent({ headersTimeout: 0, bodyTimeout: 0 })));
+
+/**
  * Fetch for MCP traffic: redirects are refused (configured headers and tokens
  * must not follow one to another origin or to http), bodies are size-capped
  * except successful event streams when `streams` is set (pi-mcp caps each
@@ -50,11 +63,14 @@ function guardedFetch(options: {
   readonly allowed: (url: URL) => boolean;
   readonly streams: boolean;
   readonly maxBodyBytes: number;
+  readonly untimedLoopback?: boolean;
 }): McpFetch {
   return async (input, init) => {
     const url = new URL(input);
     if (!options.allowed(url)) throw new Error(`mcp_fetch_insecure_url:${url.origin}`);
-    const response = await globalThis.fetch(input, { ...init, redirect: "manual" });
+    const dispatcher = options.untimedLoopback === true && isLoopback(url) ? await loopbackDispatcher() : undefined;
+    // `dispatcher` is Node's fetch extension (undici), absent from the DOM RequestInit type.
+    const response = await globalThis.fetch(input, { ...init, redirect: "manual", ...(dispatcher === undefined ? {} : { dispatcher }) } as RequestInit);
     if (response.status >= 300 && response.status < 400 && response.status !== 304) {
       await response.body?.cancel().catch(() => undefined);
       const location = URL.canParse(response.headers.get("location") ?? "", url)
@@ -76,7 +92,12 @@ export const oauthFetch = (serverUrl: string): McpFetch => guardedFetch({
   streams: false,
   maxBodyBytes: MAX_OAUTH_BODY_BYTES,
 });
-export const TRANSPORT_FETCH = guardedFetch({ allowed: () => true, streams: true, maxBodyBytes: MAX_TRANSPORT_BODY_BYTES });
+export const TRANSPORT_FETCH = guardedFetch({
+  allowed: () => true,
+  streams: true,
+  maxBodyBytes: MAX_TRANSPORT_BODY_BYTES,
+  untimedLoopback: true,
+});
 
 /** Only a same-origin `resource_metadata` from a 401 challenge is followed. */
 export function trustedChallenge(challenge: OAuthChallenge, serverUrl: string): OAuthChallenge {

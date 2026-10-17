@@ -178,7 +178,10 @@ export interface McpDirectTool {
   readonly description: string;
   /** JSON Schema of the arguments, as the server lists them. */
   readonly input: Record<string, unknown>;
-  /** How long one call waits for the server's answer. Defaults to the server's `timeout`. */
+  /**
+   * How long one call waits for the server's answer. Defaults to the server's
+   * `timeout`. Past 300 s it holds only for a loopback HTTP server (or stdio).
+   */
   readonly timeoutMs?: number;
 }
 

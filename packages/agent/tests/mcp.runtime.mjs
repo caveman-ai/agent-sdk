@@ -799,6 +799,39 @@ test("HTTP transport refuses redirects, so configured headers never follow one",
   }
 });
 
+test("a loopback MCP call has no undici header or body timeout; its own timeout bounds it", async () => {
+  const { TRANSPORT_FETCH } = await import("../dist/mcp-guards.js");
+  // Node's fetch stops a request after 300 s without headers or body bytes, which a person
+  // answering or a long subagent wait passes. Loopback calls get a dispatcher without those limits.
+  const seen = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => (seen.push({ url: String(input), dispatcher: init?.dispatcher }), new Response("{}"));
+  try {
+    await TRANSPORT_FETCH("http://127.0.0.1:9/mcp", { method: "POST", body: "{}" });
+    await TRANSPORT_FETCH("https://mcp.example/mcp", { method: "POST", body: "{}" });
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  const options = (dispatcher) => dispatcher?.[Object.getOwnPropertySymbols(dispatcher).find((key) => key.description === "options")];
+  assert.deepEqual([options(seen[0].dispatcher)?.headersTimeout, options(seen[0].dispatcher)?.bodyTimeout], [0, 0]);
+  assert.equal(seen[1].dispatcher, undefined, "a remote server keeps the global dispatcher (and a host's proxy)");
+
+  // Headers after 300 ms, the body 300 ms later: it arrives, and the caller's signal (pi-mcp's per-call timeout) still ends a call.
+  const server = createServer((_request, response) => setTimeout(() => {
+    response.writeHead(200, { "content-type": "application/json" });
+    response.flushHeaders();
+    setTimeout(() => response.end('{"ok":true}'), 300);
+  }, 300));
+  await new Promise((done) => server.listen(0, "127.0.0.1", done));
+  const url = `http://127.0.0.1:${server.address().port}/mcp`;
+  try {
+    assert.deepEqual(await (await TRANSPORT_FETCH(url, { method: "POST", body: "{}" })).json(), { ok: true });
+    await assert.rejects(TRANSPORT_FETCH(url, { method: "POST", body: "{}", signal: AbortSignal.timeout(100) }), { name: "TimeoutError" });
+  } finally {
+    server.close();
+  }
+});
+
 test("an invalid resolved header value is reported by name only", async () => {
   const host = attach(codeRuntime(), [{
     name: "hdr",

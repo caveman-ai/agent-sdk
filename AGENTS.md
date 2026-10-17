@@ -43,7 +43,8 @@ must never land here. Only Apache-2.0 protocol remains in this repository.
   custom agents, but never executes them. MCP servers launch only when a host
   passes explicit entries to `McpHost` (`packages/agent/src/mcp.ts`): stdio with
   `inheritEnv: false` and the coding env allowlist plus the entry's own `env`,
-  tools nested in the code tool (never declared), never retried or speculated.
+  tools nested in the code tool (declared only when a host names one in
+  hybrid mode's `CodingMcpOptions.direct`), never retried or speculated.
 
 ## Checks
 
