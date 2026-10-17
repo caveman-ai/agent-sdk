@@ -828,7 +828,7 @@ export async function runCodingTurn(
   // Runtime-owned routing is authoritative for session health. A caller stream
   // override is honestly observe-only for that bill, but says nothing about the
   // pinned gateway route used by later turns.
-  if (runtimeOwnedRoute && result.mode === "observe-only") degrade(session);
+  if (runtimeOwnedRoute && result.mode === "observe-only" && session.options.cave !== "local") degrade(session); // local: no gateway, not a lost engine
   return recordCodingTurn(session, input, result, startedOptimized);
 }
 
@@ -1010,7 +1010,7 @@ export async function* streamCodingTurn(
           return { failed: true, receipt: event.receipt };
         }
         if (event.type === "run_end") {
-          if (runtimeOwnedRoute && event.result.mode === "observe-only") degrade(session);
+          if (runtimeOwnedRoute && event.result.mode === "observe-only" && session.options.cave !== "local") degrade(session);
           for (const translated of encodeRunEvent(encoder, event)) yield translated;
           return recordCodingTurn(session, input, event.result, startedOptimized);
         }

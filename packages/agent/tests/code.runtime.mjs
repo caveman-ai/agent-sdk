@@ -734,6 +734,30 @@ test("a capped tool output reaches the engine whole, and the cap applies to what
   });
 });
 
+test("a local-engine session keeps its plan after the first turn", async () => {
+  await withWorkspace(async (workspace) => {
+    const store = process.env.CAVE_FAKE_ENGINE_STORE;
+    const codingAgent = createCodingAgent({ workspace, model: "anthropic/faux-1", outputCaps: { bash: 2_048 } });
+    const notices = [];
+    const session = await startCodingSession(codingAgent, { cave: "local", engineBin: FAKE_ENGINE, onNotice: (line) => notices.push(line) });
+    const faux = fauxAnthropic();
+    const model = { ...faux.getModel(), api: "anthropic-messages", provider: "anthropic" };
+    const command = `node -e 'process.stdout.write("x".repeat(40000) + "\\n")'`;
+    const engineInputs = async () => (await readdir(store)).filter((name) => name.startsWith("ccr_")).length;
+    for (const [turnIndex, ask] of ["first ask", "second ask"].entries()) {
+      const before = await engineInputs();
+      faux.setResponses([fauxAssistantMessage(fauxToolCall("bash", { command }, { id: `bash-${turnIndex}` })), fauxAssistantMessage("done")]);
+      const turn = await runCodingTurn(session, ask, { model, models: payloadModels(faux, []), providerPayloadContract: "pi-on-payload-v1" });
+      assert.equal(turn.text, "done");
+      // Each turn's capped output still reaches the local engine: the plan survived the turn before.
+      assert.equal(await engineInputs() > before, true, `turn ${turnIndex + 1} skipped the engine`);
+      assert.equal(turn.degraded, false);
+    }
+    assert.equal(session.mode, "optimized");
+    assert.deepEqual(notices, []);
+  });
+});
+
 test("a local plan run lets the model router set each call's reasoning", async () => {
   await withWorkspace(async (workspace) => {
     const codingAgent = createCodingAgent({ workspace, model: "anthropic/faux-1" });
