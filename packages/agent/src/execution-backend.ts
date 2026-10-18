@@ -20,7 +20,7 @@
  * Server enforces its workspace root for paths, including symlink targets.
  */
 import { spawn } from "node:child_process";
-import { readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
 import {
   killProcessTree,
@@ -90,6 +90,7 @@ export function localExecutionBackend(): ExecutionBackend {
       return (await stat(path)).isFile();
     },
     async writeFile(path, data, exclusive) {
+      await mkdir(dirname(path), { recursive: true });
       await writeFile(path, data, { flag: exclusive ? "wx" : "w" });
     },
   };

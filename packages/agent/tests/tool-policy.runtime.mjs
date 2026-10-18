@@ -251,3 +251,25 @@ test("RunResult.output carries the parsed final message and the prompt renders t
   assert.ok(diagnostics.staticContextBytes > withoutSchema.staticContextBytes + 40,
     "the declared JSON Schema is rendered into the system prompt");
 });
+
+test("a policy's timeoutMs lets one that asks a person wait past 10s; past it, or out of range, the run fails closed", async () => {
+  const input = { runId: "r", agentId: "a", agentPath: [], toolCallId: "t", name: "x", effect: "write", args: {} };
+  const slow = (ms, decision, timeoutMs) => Object.assign(() => new Promise((resolve) => setTimeout(() => resolve(decision), ms)), { timeoutMs });
+  assert.deepEqual(await decideToolCall(slow(40, { deny: "declined" }, 200), input), { block: true, reason: "cave_tool_denied:declined" });
+  await assert.rejects(decideToolCall(slow(200, undefined, 40), input), /cave_tool_policy_failed/);
+  for (const timeoutMs of [0, -1, 1.5, 86_400_001]) {
+    await assert.rejects(decideToolCall(slow(1, undefined, timeoutMs), input), (error) => error.message === "cave_tool_policy_failed" && /timeout_invalid/.test(String(error.cause)));
+  }
+  // In a run: the slow approval admits the write.
+  const log = [];
+  const result = await run(policyAgent("policy-slow-approval", log), "go", {
+    ...base(),
+    toolPolicy: Object.assign((call) => (call.effect === "write" ? new Promise((resolve) => setTimeout(() => resolve({ allow: true }), 50)) : undefined), { timeoutMs: 5_000 }),
+    streamFn: scriptedStream([
+      { toolCalls: [{ name: "write_thing", args: { key: "b" } }] },
+      { text: "done" },
+    ]),
+  });
+  assert.equal(result.stopReason, "complete");
+  assert.deepEqual(log, ["write:b"]);
+});

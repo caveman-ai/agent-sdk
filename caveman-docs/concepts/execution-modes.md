@@ -1,14 +1,14 @@
 # Execution modes
 
-The default is **direct**: your key, your provider, no proxy. The receipt value
-for a direct run is `observe-only`, which is what `RunResult.mode` carries.
-`optimized` is the optional second mode and requires the local Caveman gateway.
-The difference is visible in every receipt.
+The runtime defaults to `cave: "auto"`: use an available Caveman gateway for
+supported providers, otherwise call the provider directly. Set `cave: "off"`
+to guarantee a direct run without contacting or starting the gateway.
+`RunResult.mode` reports the path the run actually used.
 
 | Mode | Receipt value | What happens | What is claimed |
 | --- | --- | --- | --- |
-| direct (default) | `observe-only` | The provider's own base URL, no transform, no gateway telemetry | Nothing. Provider usage and local context estimates remain available |
-| optimized (opt-in) | `optimized` | Traffic routes through the local Caveman gateway; eligible context transforms and context telemetry apply | Local reductions, basis `inferred` |
+| direct | `observe-only` | The provider's own base URL, no transform, no gateway telemetry | No optimization claim. Provider usage and local context estimates remain available |
+| gateway | `optimized` | Traffic routes through the Caveman gateway; eligible context transforms and context telemetry apply | Any local reduction stays `inferred`; the mode alone proves no savings |
 
 ## How a run picks its mode
 
@@ -23,9 +23,11 @@ direct and report `observe-only`.
 
 ## The degradation is never silent
 
-A run that carries a Cave Build lock or a candidate plan refuses to degrade on
-its own. It fails with `cave_gateway_required_for_locked_plan`, and only that
-failure earns one retry without the plan.
+A run that carries a Cave Build lock or a candidate plan refuses to degrade.
+It fails with `cave_gateway_required_for_locked_plan`. Public `runLocked()`
+does not retry as an unlocked run. The interactive coding wrapper may handle
+this specific failure by retrying its default candidate without a plan and
+reporting the change.
 
 Interactive surfaces print the banner rather than quietly downgrading:
 

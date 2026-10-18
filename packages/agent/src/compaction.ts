@@ -99,6 +99,22 @@ export interface CompactionOptions {
     /** 1-based rollover number within this run. */
     readonly generation: number;
   }) => string | Promise<string>;
+  /**
+   * Pi's `compaction.reserveTokens`: context-window tokens kept free for the
+   * response. The ladder also runs when the provider-reported prompt plus what
+   * the turn appended would leave less than this. Omitted: wallet trigger only.
+   */
+  readonly reserveTokens?: number;
+  /**
+   * Pi's `compaction.modelOverrides`, keyed by exact `provider/modelId`. Each
+   * value falls back independently to the run-wide setting.
+   */
+  readonly modelOverrides?: Readonly<Record<string, CompactionModelOverride>>;
+}
+
+export interface CompactionModelOverride {
+  readonly reserveTokens?: number;
+  readonly keepRecentTokens?: number;
 }
 
 export interface NormalizedCompaction {
@@ -112,6 +128,8 @@ export interface NormalizedCompaction {
   readonly summarizerModel: Model<Api> | undefined;
   readonly mode: "summarize" | "new-context";
   readonly newContext: CompactionOptions["newContext"];
+  readonly reserveTokens: number | undefined;
+  readonly modelOverrides: Readonly<Record<string, CompactionModelOverride>>;
 }
 
 const DEFAULTS = Object.freeze({
@@ -163,12 +181,51 @@ export function normalizeCompaction(options: CompactionOptions = {}): Normalized
   if (mode === "new-context" && options.newContext === undefined) {
     throw new Error("cave_compaction_new_context_sink_required");
   }
+  const overrides = options.modelOverrides ?? {};
+  if (typeof overrides !== "object" || overrides === null) throw new Error("cave_compaction_option_invalid");
+  for (const entry of [options, ...Object.values(overrides)]) {
+    if (typeof entry !== "object" || entry === null ||
+        (entry.reserveTokens !== undefined && !(Number.isSafeInteger(entry.reserveTokens) && entry.reserveTokens >= 0)) ||
+        (entry.keepRecentTokens !== undefined && !(Number.isSafeInteger(entry.keepRecentTokens) && entry.keepRecentTokens > 0))) {
+      throw new Error("cave_compaction_option_invalid");
+    }
+  }
   return Object.freeze({
     ...merged,
     summarizerModel: options.summarizerModel,
     mode,
     newContext: options.newContext,
+    reserveTokens: options.reserveTokens,
+    modelOverrides: Object.freeze(Object.fromEntries(Object.entries(overrides)
+      .map(([model, entry]) => [model, Object.freeze({ ...entry })]))),
   });
+}
+
+/** Run-wide settings with the active model's override applied, value by value. */
+export function compactionForModel(config: NormalizedCompaction, model: string): NormalizedCompaction {
+  const override = Object.hasOwn(config.modelOverrides, model) ? config.modelOverrides[model] : undefined;
+  return override === undefined ? config : Object.freeze({
+    ...config,
+    keepRecentTokens: override.keepRecentTokens ?? config.keepRecentTokens,
+    reserveTokens: override.reserveTokens ?? config.reserveTokens,
+  });
+}
+
+/**
+ * Pi's `reserveTokens` trigger: the provider-reported prompt plus what the turn
+ * appended leaves less than the model's reserve free. The reserve is clamped
+ * so the trigger never fires below `minYieldTokens`, where no rung frees enough.
+ */
+export function contextWindowFull(
+  config: NormalizedCompaction,
+  model: Model<Api>,
+  previous: { readonly inputTokens?: number; readonly cacheReadTokens: number; readonly cacheWriteTokens: number } | undefined,
+  appended: readonly AgentMessage[],
+): boolean {
+  const reserve = compactionForModel(config, `${model.provider}/${model.id}`).reserveTokens;
+  return reserve !== undefined && previous !== undefined &&
+    (previous.inputTokens ?? 0) + previous.cacheReadTokens + previous.cacheWriteTokens + messagesTokens(appended) >
+      Math.max(model.contextWindow - reserve, config.minYieldTokens);
 }
 
 /** Version of the summary contract the summarizer is asked to emit. */
@@ -320,6 +377,8 @@ export function contextSummarySources(
     const message = messages[index];
     if (message === undefined) throw new Error("cave_compaction_source_missing");
     const messageRole = role(message);
+    // The system prompt is pinned, never a source a summary may replace.
+    if (messageRole === "system") throw new Error("cave_compaction_source_system");
     const sourceRole: ContextSummarySourceRole = isContextSummaryMessage(message)
       ? "capsule"
       : messageRole === "user"
@@ -547,6 +606,9 @@ export function planCompaction(
   const summarizable: number[] = [];
 
   let pinnedBudget = config.pinnedUserTokens;
+  // Pi 1.0 transcripts lead with a system message (prompt and tool
+  // declarations). It is carried verbatim, outside the user-intent budget.
+  messages.forEach((message, index) => { if (role(message) === "system") pinned.push(index); });
   const firstUser = messages.findIndex((message) =>
     role(message) === "user" && !isContextSummaryMessage(message));
   if (config.preserveFirstUserMessage && firstUser >= 0) {
@@ -658,8 +720,8 @@ export function newContextMessages(
     ...plan.pinned.map((index) => messages[index]!),
     {
       role: "user",
+      // No summary schema version: a rollover is not a summary.
       content: `<cave-context-summary>\n${JSON.stringify({
-        schema_version: SUMMARY_SCHEMA_VERSION,
         kind: "notes.thread_hint",
         hint,
       })}\n</cave-context-summary>`,
@@ -770,7 +832,7 @@ function openToolCallOwners(messages: readonly AgentMessage[], cut: number): num
   }
   let lowest = cut;
   for (let index = cut - 1; index >= 0; index--) {
-    const message = messages[index];
+    const message: unknown = messages[index];
     if (!isRecord(message) || message.role !== "assistant" || !Array.isArray(message.content)) {
       continue;
     }

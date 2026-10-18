@@ -4,7 +4,12 @@ import { loadAgentDir, run } from "@caveman-ai/agent";
 
 const rootDir = fileURLToPath(new URL(".", import.meta.url));
 const ticketPath = process.argv[2];
-if (!ticketPath) {
+if (ticketPath === "--help" || ticketPath === "-h") {
+  console.log("usage: npm run ticket -- tickets/<name>.md");
+  console.log("example: npm run ticket -- tickets/refund-request.md");
+  process.exit(0);
+}
+if (!ticketPath || process.argv.length !== 3) {
   console.error("usage: npm run ticket -- tickets/<name>.md");
   process.exit(1);
 }

@@ -14,6 +14,7 @@ import {
   type RuntimeContextSegment,
 } from "./context-ir.js";
 import type { AgentDefinition } from "./index.js";
+import type { ToolDefinition } from "./primitives.js";
 import { PI_NATIVE_COMPILER_CONTRACT } from "./runtime-identity.js";
 
 export function lowerAgentContext(
@@ -190,4 +191,52 @@ export function validateProviderUsage(
     priced: priced.priced,
     catalogCostUsd: priced.priced ? priced.usd : 0,
   });
+}
+
+/** The receipt and journal record of one settled call; unreadable usage is an unpriced zero. */
+export function providerCallRecord(
+  model: { readonly provider: string; readonly id: string },
+  usage: ValidatedProviderUsage | undefined,
+) {
+  return usage === undefined ? {
+    provider: model.provider, model: model.id, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0,
+    cacheWriteTokens: 0, reasoningTokens: 0, estimatedUsd: 0, unpriced: true, usageBasis: "unavailable" as const,
+  } : {
+    provider: usage.provider, model: usage.model, inputTokens: usage.inputTokens, outputTokens: usage.outputTokens,
+    cacheReadTokens: usage.cacheReadTokens, cacheWriteTokens: usage.cacheWriteTokens,
+    reasoningTokens: usage.reasoningTokens, estimatedUsd: usage.catalogCostUsd, unpriced: !usage.priced,
+    usageBasis: "provider_reported" as const,
+  };
+}
+
+export function enforceSemanticBudgets(
+  bill: Readonly<Record<string, number>>,
+  outputMaxTokens: number,
+  plan: CavePlan,
+): void {
+  const slots: Array<[keyof CavePlan["budgets"], number]> = [
+    ["instructions", bill.instruction ?? 0],
+    ["tools", bill.tool_schema ?? 0],
+    ["memory", bill.memory ?? 0],
+    ["history", bill.history ?? 0],
+    ["results_artifacts", (bill.artifact ?? 0) + (bill.skill ?? 0) + (bill.tool_result ?? 0)],
+    ["output", outputMaxTokens],
+  ];
+  for (const [slot, used] of slots) {
+    if (used > plan.budgets[slot]) throw new Error(`cave_${slot}_budget_exceeded`);
+  }
+}
+
+export function volatileStablePrefix(instructions: string, tools: readonly ToolDefinition[]): boolean {
+  const value = `${instructions}\n${stableStringify(tools.map((item) => ({
+    name: item.name,
+    description: item.description,
+    input: item.input,
+  })))}`;
+  return [
+    /\b20[0-9]{2}-[01][0-9]-[0-3][0-9][T ][0-2][0-9]:[0-5][0-9]/,
+    /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/i,
+    /["'](?:run|request|build|trace|span)[_-]?id["']\s*:/i,
+    /["']nonce["']\s*:/i,
+  ].some((pattern) => pattern.test(value));
 }

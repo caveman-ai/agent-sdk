@@ -247,7 +247,7 @@ function recurringUTCPricing(value, mode, key, label) {
   if (value === undefined || value === null) return null;
   if (typeof value !== "object" || Array.isArray(value) ||
       typeof value.effective_from !== "string" || !Number.isFinite(Date.parse(value.effective_from)) ||
-      !Array.isArray(value.windows) || value.windows.length === 0) {
+      !Array.isArray(value.windows)) { // no windows: one scheduled price change at effective_from
     throw new Error(`${label}: ${key}.recurring_utc_pricing is malformed`);
   }
   const timeOfDay = (text, field) => {
@@ -675,6 +675,15 @@ export function catalogPriceVerifiedAt(
   model: string,
 ): string | undefined {
   return PRICES[\`\${catalogProvider(provider)}/\${model}\`]?.verifiedAt;
+}
+
+/** Cache billing semantics in force at a request time; undefined when unpriced then. */
+export function catalogCacheMode(
+  provider: string,
+  model: string,
+  accountingAt?: Date,
+): CatalogPriceRates["cacheMode"] | undefined {
+  return catalogPriceResolution(PRICES[\`\${catalogProvider(provider)}/\${model}\`], accountingAt)?.price.cacheMode;
 }
 
 export function catalogCost(

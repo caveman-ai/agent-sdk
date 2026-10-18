@@ -37,7 +37,17 @@ import {
   fauxProvider as upstreamFauxProvider,
   fauxToolCall,
 } from "@earendil-works/pi-ai/providers/faux";
-import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
+import {
+  createAssistantMessageEventStream,
+  getCurrentSystemPrompt,
+  getCurrentTools,
+} from "@earendil-works/pi-ai";
+
+// Pi 1.0 stream functions receive a transcript whose system messages carry the
+// prompt and tool declarations. Provider-payload fixtures split them back out.
+const promptOf = (context) => getCurrentSystemPrompt(context.messages);
+const toolsOf = (context) => getCurrentTools(context.messages);
+const turnsOf = (context) => context.messages.filter((message) => message.role !== "system");
 import sandboxAgent from "./fixtures/sandbox-agent.mjs";
 import nestedSandboxAgent from "./fixtures/nested-sandbox-agent.mjs";
 import {
@@ -1275,7 +1285,7 @@ test("locked Pi runtime binds static Context IR and installed adapter identity",
     transformRegistrySha256: "3".repeat(64),
     runtimeVersion: "0.2.0",
     adapterVersion: "0.2.0",
-    upstreamVersion: "0.83.0",
+    upstreamVersion: "1.0.0",
     runner: async () => ({
       terminal: true,
       provider: "anthropic",
@@ -1439,9 +1449,9 @@ test("conversation rotates cache epoch on definition change without losing histo
   const streamFn = (selected, context, options) => {
     const payload = {
       model: selected.id,
-      system: context.systemPrompt,
-      tools: context.tools,
-      messages: context.messages,
+      system: promptOf(context),
+      tools: toolsOf(context),
+      messages: turnsOf(context),
     };
     forwarded.push({
       payload: structuredClone(options.onPayload(payload, selected)),
@@ -1481,6 +1491,10 @@ test("conversation rotates cache epoch on definition change without losing histo
 
   assert.match(JSON.stringify(forwarded[1].payload.system), /NEW INSTRUCTIONS/);
   assert.doesNotMatch(JSON.stringify(forwarded[1].payload.system), /OLD INSTRUCTIONS/);
+  // The committed conversation holds no system message, so the next run's
+  // prompt comes from its own definition, never from stale stored state.
+  assert.doesNotMatch(JSON.stringify(forwarded[1].payload), /OLD INSTRUCTIONS/);
+  assert.equal(conversation.snapshot().messages.some((message) => message.role === "system"), false);
   assert.match(JSON.stringify(forwarded[1].payload.messages), /First prompt/);
   assert.match(JSON.stringify(forwarded[1].payload.messages), /First answer/);
   assert.match(JSON.stringify(forwarded[1].payload.messages), /Second prompt/);
@@ -1575,8 +1589,8 @@ test("conversation rolls back failed turn after provider payload", async () => {
     providerMessages.push(structuredClone(context.messages));
     options.onPayload({
       model: selected.id,
-      system: context.systemPrompt,
-      messages: context.messages,
+      system: promptOf(context),
+      messages: turnsOf(context),
     }, selected);
     return faux.provider.streamSimple(selected, context, { ...options, onPayload: undefined });
   };
@@ -3197,14 +3211,14 @@ test("provider-visible cache drift fails request open to original frozen prefix"
   let turn = 0;
   const forwarded = [];
   const streamFn = (selected, context, options) => {
-    const text = turn++ === 0 ? context.systemPrompt : `${context.systemPrompt}\nMUTATED`;
+    const text = turn++ === 0 ? promptOf(context) : `${promptOf(context)}\nMUTATED`;
     const payload = {
       model: selected.id,
       messages: [],
       max_tokens: 1024,
       stream: true,
       system: [{ type: "text", text, cache_control: { type: "ephemeral" } }],
-      tools: (context.tools ?? []).map((item) => ({
+      tools: toolsOf(context).map((item) => ({
         name: item.name,
         description: item.description,
         input_schema: item.parameters,
@@ -3241,11 +3255,11 @@ test("mutated cached history byte fails open to prior provider-visible bytes", a
   const streamFn = (selected, context, options) => {
     const payload = {
       model: selected.id,
-      messages: structuredClone(context.messages),
+      messages: turnsOf(context),
       max_tokens: 1024,
       stream: true,
-      system: context.systemPrompt,
-      tools: context.tools.map((item) => ({
+      system: promptOf(context),
+      tools: toolsOf(context).map((item) => ({
         name: item.name,
         description: item.description,
         input_schema: item.parameters,
@@ -3285,13 +3299,13 @@ test("Mistral Conversations cache drift fails open to prior provider-visible byt
   let call = 0;
   const streamFn = (selected, context, options) => {
     const messages = [
-      { role: "system", content: context.systemPrompt },
-      ...structuredClone(context.messages),
+      { role: "system", content: promptOf(context) },
+      ...turnsOf(context),
     ];
     const payload = {
       model: selected.id,
       messages,
-      tools: (context.tools ?? []).map((item) => ({
+      tools: toolsOf(context).map((item) => ({
         type: "function",
         function: {
           name: item.name,
@@ -3332,10 +3346,10 @@ test("Google nested config drift fails open to prior system and tools", async ()
   const streamFn = (selected, context, options) => {
     const payload = {
       model: selected.id,
-      contents: structuredClone(context.messages),
+      contents: turnsOf(context),
       config: {
-        systemInstruction: call === 0 ? context.systemPrompt : `${context.systemPrompt}\nMUTATED`,
-        tools: (context.tools ?? []).map((item) => ({
+        systemInstruction: call === 0 ? promptOf(context) : `${promptOf(context)}\nMUTATED`,
+        tools: toolsOf(context).map((item) => ({
           name: item.name,
           description: call === 0 ? item.description : "MUTATED TOOL",
           parameters: item.parameters,
@@ -3375,10 +3389,10 @@ test("Bedrock toolConfig drift fails open to prior provider-visible tools", asyn
   const streamFn = (selected, context, options) => {
     const payload = {
       modelId: selected.id,
-      messages: structuredClone(context.messages),
-      system: [{ text: context.systemPrompt }],
+      messages: turnsOf(context),
+      system: [{ text: promptOf(context) }],
       toolConfig: {
-        tools: (context.tools ?? []).map((item) => ({
+        tools: toolsOf(context).map((item) => ({
           toolSpec: {
             name: item.name,
             description: call === 0 ? item.description : "MUTATED TOOL",
@@ -3412,19 +3426,14 @@ test("Pi Messages nested context drift fails open to prior provider-visible pref
   const forwarded = [];
   let call = 0;
   const streamFn = (selected, context, options) => {
-    const payload = {
-      model: selected.id,
-      context: {
-        systemPrompt: call === 0 ? context.systemPrompt : `${context.systemPrompt}\nMUTATED`,
-        messages: structuredClone(context.messages),
-        tools: (context.tools ?? []).map((item) => ({
-          name: item.name,
-          description: call === 0 ? item.description : "MUTATED TOOL",
-          parameters: item.parameters,
-        })),
-      },
-      options: {},
-    };
+    // Pi 1.0 sends the transcript itself: the leading system message carries
+    // the prompt and the tool declarations.
+    const messages = structuredClone(context.messages);
+    if (call > 0) {
+      messages[0].content += "\nMUTATED";
+      for (const item of messages[0].toolsAdded ?? []) item.description = "MUTATED TOOL";
+    }
+    const payload = { model: selected.id, context: { messages }, options: {} };
     call++;
     const outgoing = options.onPayload(payload, { ...selected, api: "pi-messages" });
     forwarded.push(structuredClone(outgoing));
@@ -3446,8 +3455,8 @@ test("Pi Messages nested context drift fails open to prior provider-visible pref
   });
   assert.equal(result.cacheBoundaryKnown, true);
   assert.equal(result.cacheBust, true);
-  assert.equal(forwarded[1].context.systemPrompt, forwarded[0].context.systemPrompt);
-  assert.deepEqual(forwarded[1].context.tools, forwarded[0].context.tools);
+  assert.equal(forwarded[0].context.messages[0].role, "system");
+  assert.deepEqual(forwarded[1].context.messages[0], forwarded[0].context.messages[0]);
 });
 
 test("locked efficiency plan executes engine transform and proves byte-exact recovery", async () => {
@@ -3489,7 +3498,7 @@ test("locked efficiency plan executes engine transform and proves byte-exact rec
     const faux = fauxAnthropic();
     faux.setResponses([
       (context) => {
-        observed = context.systemPrompt;
+        observed = promptOf(context);
         return fauxAssistantMessage("done");
       },
     ]);
@@ -3500,7 +3509,7 @@ test("locked efficiency plan executes engine transform and proves byte-exact rec
     };
     const streamFn = (selected, context, options) => {
       const payload = {
-        system: [{ type: "text", text: context.systemPrompt, cache_control: { type: "ephemeral" } }],
+        system: [{ type: "text", text: promptOf(context), cache_control: { type: "ephemeral" } }],
         messages: [],
       };
       const outgoing = options.onPayload(payload, selected);
@@ -3580,14 +3589,14 @@ test("transform afterTokens counts the wrapped bytes actually sent, not the engi
     const faux = fauxAnthropic();
     faux.setResponses([
       (context) => {
-        observed = context.systemPrompt;
+        observed = promptOf(context);
         return fauxAssistantMessage("done");
       },
     ]);
     const model = { ...faux.getModel(), api: "anthropic-messages", provider: "anthropic" };
     const streamFn = (selected, context, options) => {
       const payload = {
-        system: [{ type: "text", text: context.systemPrompt, cache_control: { type: "ephemeral" } }],
+        system: [{ type: "text", text: promptOf(context), cache_control: { type: "ephemeral" } }],
         messages: [],
       };
       options.onPayload(payload, selected);
@@ -3668,8 +3677,8 @@ test("locked tool-schema winner changes actual provider tools and preserves reco
     let providerTools = [];
     const streamFn = (selected, context, options) => {
       const payload = {
-        system: context.systemPrompt,
-        tools: context.tools.map((item) => ({
+        system: promptOf(context),
+        tools: toolsOf(context).map((item) => ({
           name: item.name,
           description: item.description,
           input_schema: item.parameters,
@@ -3813,13 +3822,13 @@ test("locked history and tool-result winners transform real Pi transcript bytes"
     const streamFn = (selected, context, options) => {
       providerContexts.push(structuredClone(context.messages));
       options.onPayload({
-        system: context.systemPrompt,
-        tools: context.tools.map((item) => ({
+        system: promptOf(context),
+        tools: toolsOf(context).map((item) => ({
           name: item.name,
           description: item.description,
           input_schema: item.parameters,
         })),
-        messages: context.messages,
+        messages: turnsOf(context),
       }, selected);
       return faux.provider.streamSimple(selected, context, { ...options, onPayload: undefined });
     };

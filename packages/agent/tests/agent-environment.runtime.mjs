@@ -13,6 +13,7 @@ import {
   readAgentSkillResource,
   renderAgentPluginCommandInvocation,
   renderAgentSkillInvocation,
+  renderAgentSkillsIndex,
 } from "../dist/agent-environment.js";
 import { createCodingAgent } from "../dist/code.js";
 import { agent } from "../dist/index.js";
@@ -116,6 +117,13 @@ test("environment loads Agent Plugins v1 and OpenPlugin skills and commands", as
       ["vercel-plugin", "open-plugin"],
     ]);
     assert.equal(environment.plugins.every((entry) => entry.hasMcp), true);
+    // Plugin MCP is parsed for hosts to report; plugin loading never launches it.
+    assert.deepEqual(environment.plugins.map((entry) => entry.mcpServers.map((server) => [server.name, server.config.url])), [
+      [],
+      [["vercel", "https://mcp.vercel.com"]],
+    ]);
+    assert.ok(environment.diagnostics.some((entry) =>
+      entry.message === "plugin MCP servers parsed (1) but never launched by plugin loading"));
     assert.equal(
       environment.diagnostics.some((entry) => entry.code === "agent_environment_unsupported_plugin_field"),
       true,
@@ -224,4 +232,24 @@ test("generic definitions receive same environment contexts and lazy loader", as
   } finally {
     await rm(base, { recursive: true, force: true });
   }
+});
+
+test("skill index caps its size by shortening descriptions, never by dropping skills", () => {
+  const entry = (id, description) => ({ id, name: id, description, root: `/skills/${id}`, file: `/skills/${id}/SKILL.md`, body: "" });
+  const few = [entry("review", "Review code."), entry("deploy", "Deploy services.")];
+  assert.equal(renderAgentSkillsIndex(few).split("\n").slice(2).join("\n"), "- review: Review code.\n- deploy: Deploy services.");
+  const long = entry("verbose", "x".repeat(1000));
+  assert.match(renderAgentSkillsIndex([long]), /\n- verbose: x{319}…$/);
+
+  const many = Array.from({ length: 64 }, (_, index) =>
+    entry(`skill-${String(index).padStart(2, "0")}`, `Use for task family ${index}. ${"detail ".repeat(64)}`));
+  const index = renderAgentSkillsIndex(many);
+  assert.ok(index.length <= 8_192, `index is ${index.length} chars`);
+  for (const skill of many) assert.match(index, new RegExp(`\\n- ${skill.id}: Use for task family`));
+  assert.equal(index, renderAgentSkillsIndex(many), "cap is deterministic");
+
+  const crowded = Array.from({ length: 400 }, (_, index) => entry(`s-${index}-${"n".repeat(20)}`, "Does a thing."));
+  const names = renderAgentSkillsIndex(crowded);
+  assert.equal(names.split("\n").length, 402, "names survive even past the cap");
+  assert.doesNotMatch(names, /Does a thing/);
 });

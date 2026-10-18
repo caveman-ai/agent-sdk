@@ -37,7 +37,11 @@ export async function backendContainedPath(
   backend: ExecutionBackend,
   workspace: string,
   candidate: string,
+  fileRoot?: string,
 ): Promise<string> {
+  if (fileRoot !== undefined) {
+    return backendContainedPath(backend, await backendWorkspaceRoot(backend, fileRoot), resolve(workspace, candidate));
+  }
   const internals = localBackendInternals(backend);
   if (internals !== undefined) return internals.resolvePath(workspace, candidate);
   const target = resolve(workspace, candidate);

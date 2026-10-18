@@ -23,6 +23,7 @@ import {
   fauxAssistantMessage,
   fauxProvider,
 } from "@earendil-works/pi-ai/providers/faux";
+import { getCurrentTools } from "@earendil-works/pi-ai";
 import {
   createCodingAgent,
   startCodingSession,
@@ -256,9 +257,11 @@ test("native agent runtime injects prior-turn recall without mutating conversati
   const second = fauxProvider({ provider: "anthropic" });
   let secondContext = "";
   let toolNames = [];
+  let secondMessages = [];
   second.setResponses([(context) => {
     secondContext = JSON.stringify(context.messages);
-    toolNames = context.tools.map((tool) => tool.name);
+    secondMessages = context.messages;
+    toolNames = getCurrentTools(context.messages).map((tool) => tool.name);
     return fauxAssistantMessage("second answer");
   }]);
   await run(defined, "Continue.", {
@@ -270,6 +273,14 @@ test("native agent runtime injects prior-turn recall without mutating conversati
   });
   assert.match(secondContext, /cave-memory-recall/);
   assert.match(secondContext, /Refund window is fourteen days/);
+  // Recall is live-zone context: after Pi's leading system message, directly
+  // before the current prompt, never ahead of the system prompt.
+  const recallIndex = secondMessages.findIndex((message) =>
+    JSON.stringify(message).includes("cave-memory-recall"));
+  assert.equal(secondMessages[0].role, "system");
+  assert.equal(secondMessages.filter((message) => message.role === "system").length, 1);
+  assert.equal(recallIndex > 0, true);
+  assert.match(JSON.stringify(secondMessages[recallIndex + 1]), /Continue\./);
   assert.equal(toolNames.includes("cave_memory_session_search"), true);
   assert.equal(JSON.stringify(conversation.snapshot()).includes("cave-memory-recall"), false);
   await engine.endSession(conversation.sessionId);

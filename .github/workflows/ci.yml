@@ -81,7 +81,9 @@ jobs:
       # throwaway project outside the checkout. Fails if a package ships a
       # local dependency spec, misses a file, or breaks its documented entry
       # points. No provider credential, so this exercises packaging only.
-      - run: npm pack --workspaces --pack-destination "$RUNNER_TEMP/tgz"
+      - run: |
+          mkdir -p "$RUNNER_TEMP/tgz"
+          npm pack --workspaces --pack-destination "$RUNNER_TEMP/tgz"
       - name: Install packed tarballs and run documented entry points
         working-directory: ${{ runner.temp }}
         run: |

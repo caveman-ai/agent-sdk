@@ -45,6 +45,7 @@ function directDefinitionWithTools(tools: AgentDefinition["tools"]): AgentDefini
     workspace: process.cwd(),
     model: "openai/gpt-5.4",
     toolSet: "pebble-v1",
+    toolMode: "direct",
   });
   return Object.freeze({ ...base.definition, tools: Object.freeze([...tools]) });
 }
@@ -354,7 +355,8 @@ async function feedCodeStream(
 
 test("coding agent exposes programmatic mode with speculation enabled by default", () => {
   const model = "openai/gpt-5.4";
-  const direct = createCodingAgent({ model });
+  assert.equal(createCodingAgent({ model }).toolMode, "hybrid");
+  const direct = createCodingAgent({ model, toolMode: "direct" });
   assert.equal(direct.toolMode, "direct");
   const programmatic = createCodingAgent({ model, toolMode: "programmatic" });
   assert.equal(programmatic.toolMode, "programmatic");
@@ -366,15 +368,16 @@ test("coding agent exposes programmatic mode with speculation enabled by default
     1,
   );
   assert.equal(
-    programmaticInstructions.match(/Say what you changed and why\./g)?.length,
+    programmaticInstructions.match(/Be terse: no narration between tool calls/g)?.length,
     1,
   );
   for (const instructions of [directInstructions, programmaticInstructions]) {
-    assert.equal(instructions.match(/<cave-compressed>/g)?.length, 1);
-    assert.equal(instructions.match(/\bcave_retrieve\b/g)?.length, 1);
-    assert.equal(instructions.match(/\brecovery_handle\b/g)?.length, 1);
-    assert.equal(instructions.match(/before guessing/gi)?.length, 1);
+    // Recovery guidance travels with cave_retrieve itself, present only when recovery is active.
+    assert.doesNotMatch(instructions, /<cave-compressed>|\bcave_retrieve\b|recovery_handle/);
   }
+  // Code-cell declarations carry every tool description; only direct mode restates them.
+  assert.match(directInstructions, /\nTools:\n- read_file prefixes each line/);
+  assert.doesNotMatch(programmaticInstructions, /\nTools:\n|- read_file prefixes each line/);
   assert.ok(
     Buffer.byteLength(programmaticInstructions) - Buffer.byteLength(directInstructions) <= 700,
   );
@@ -384,24 +387,15 @@ test("coding agent exposes programmatic mode with speculation enabled by default
   );
 });
 
-test("programmatic recovery fallback deduplicates only complete appended guidance", () => {
-  for (const instructions of [
-    programmaticToolInstructions(undefined),
-    programmaticToolInstructions("Use cave_retrieve when useful."),
-  ]) {
-    assert.match(instructions, /<cave-compressed>/);
-    assert.match(instructions, /recovery_handle before guessing/i);
-  }
-
+test("programmatic instructions carry no recovery text and keep additions verbatim", () => {
+  assert.doesNotMatch(programmaticToolInstructions(undefined), /cave_retrieve|cave-compressed/);
   const complete = [
     "Older turns may contain <cave-compressed> markers.",
     "Call cave_retrieve with recovery_handle before guessing.",
   ].join("\n");
-  const deduplicated = programmaticToolInstructions(complete);
-  assert.equal(deduplicated.match(/<cave-compressed>/g)?.length, 1);
-  assert.equal(deduplicated.match(/\bcave_retrieve\b/g)?.length, 1);
-  assert.equal(deduplicated.match(/\brecovery_handle\b/g)?.length, 1);
-  assert.equal(deduplicated.match(/before guessing/gi)?.length, 1);
+  const appended = programmaticToolInstructions(complete);
+  assert.ok(appended.endsWith(`\n\n${complete}`));
+  assert.equal(appended.match(/\bcave_retrieve\b/g)?.length, 1);
 });
 
 test("programmatic instructions support one validated branded tool name", () => {
@@ -429,6 +423,7 @@ test("programmatic runtime collapses ordinary tools into one typed code surface"
     workspace: process.cwd(),
     model: "openai/gpt-5.4",
     toolSet: "pebble-v1",
+    toolMode: "direct",
   });
   assert.equal(direct.definition.tools.length, 4);
   const runtime = createProgrammaticToolRuntime(direct.definition, {
@@ -494,6 +489,7 @@ test("programmatic runtime supports product-specific provider tool names", () =>
     workspace: process.cwd(),
     model: "openai/gpt-5.4",
     toolSet: "pebble-v1",
+    toolMode: "direct",
   });
   const runtime = createProgrammaticToolRuntime(direct.definition, { toolName: "pebble_code" });
 
@@ -909,6 +905,7 @@ test("one code cell runs multiple tools but returns only selected output", async
       workspace,
       model: "openai/gpt-5.4",
       toolSet: "pebble-v1",
+      toolMode: "direct",
     });
     const runtime = createProgrammaticToolRuntime(direct.definition, { speculate: false });
     const codeTool = runtime.definition.tools[0]!;
@@ -937,6 +934,7 @@ test("code cell exposes tool capabilities without Worker globals", async () => {
     workspace: process.cwd(),
     model: "openai/gpt-5.4",
     toolSet: "pebble-v1",
+    toolMode: "direct",
   });
   const runtime = createProgrammaticToolRuntime(direct.definition, { speculate: false });
   const codeTool = runtime.definition.tools[0]!;
@@ -1200,7 +1198,7 @@ test("inline ESM parent flags do not break eval Worker startup", async () => {
   const script = [
     'import { createCodingAgent } from "./dist/code.js";',
     'import { createProgrammaticToolRuntime } from "./dist/programmatic-tools.js";',
-    'const direct = createCodingAgent({ workspace: process.cwd(), model: "openai/gpt-5.4", toolSet: "pebble-v1" });',
+    'const direct = createCodingAgent({ workspace: process.cwd(), model: "openai/gpt-5.4", toolSet: "pebble-v1", toolMode: "direct" });',
     'const runtime = createProgrammaticToolRuntime(direct.definition, { speculate: false });',
     'const result = await runtime.definition.tools[0].execute({ code: `print("esm-ok")` });',
     'runtime.close();',
@@ -1236,4 +1234,445 @@ test("tool-bearing direct execution fails closed without kernel context", async 
     })),
     /cave_program_execution_failed:cave_program_nested_dispatch_unavailable/,
   );
+});
+
+function registryContext(codeTool: ToolDefinition, parentToolCallId = "registry-parent"): ToolExecutionContext {
+  const registry = programmaticToolMetadata(codeTool)!.registry;
+  return {
+    toolCallId: parentToolCallId,
+    parentToolCallId,
+    async dispatch(name, input, options) {
+      const definition = registry.get(name);
+      if (definition === undefined) throw new Error(`test_unknown_tool:${name}`);
+      return definition.execute(input, options?.signal);
+    },
+  };
+}
+
+async function cellError(codeTool: ToolDefinition, code: string): Promise<string> {
+  try {
+    await codeTool.execute({ code }, undefined, registryContext(codeTool));
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+  throw new Error("test_cell_unexpectedly_succeeded");
+}
+
+const lookupTool = tool({
+  name: "lookup",
+  description: "Read one value from the key store.",
+  input: schema.object({
+    key: schema.string(),
+    limit: schema.optional(schema.integer()),
+    items: schema.optional(schema.array(schema.object({ name: schema.string() }))),
+  }),
+  effect: "read",
+  result: "inline",
+  execute: ({ key }) => `value:${key}`,
+});
+
+test("nested argument errors name each invalid path and the expected call", async () => {
+  const runtime = createProgrammaticToolRuntime(directDefinitionWithTools([lookupTool]), { speculate: false });
+  const codeTool = runtime.definition.tools[0]!;
+  const message = await cellError(codeTool, 'await lookup({ key: 3, limit: 1.5, items: [{}] });');
+  assert.match(message, /^cave_program_execution_failed:cave_program_tool_arguments_invalid:lookup\n/);
+  assert.match(message, /\n {2}- key: expected string, got number\n/);
+  assert.match(message, /\n {2}- limit: expected integer, got number\n/);
+  assert.match(message, /\n {2}- items\[0\]\.name: required\n/);
+  assert.match(message, /\nExpected lookup\(args: \{ key: string; limit\?: number; items\?: Array<\{ name: string \}> \}\)/);
+  assert.match(message, /No tool calls ran\./);
+
+  const coding = createCodingAgent({
+    workspace: process.cwd(),
+    model: "openai/gpt-5.4",
+    toolSet: "pebble-v1",
+    toolMode: "programmatic",
+  });
+  try {
+    // A union reports its closest member instead of "no member matched".
+    const union = await cellError(coding.definition.tools[0]!, 'await bash({ cmd: "ls" });');
+    assert.match(union, /cave_program_tool_arguments_invalid:bash\n {2}- command: required\n/);
+  } finally {
+    await coding.close();
+  }
+});
+
+test("unknown tools and globals fail with close-match hints", async () => {
+  const runtime = createProgrammaticToolRuntime(directDefinitionWithTools([lookupTool]), { speculate: false });
+  const codeTool = runtime.definition.tools[0]!;
+  assert.match(
+    await cellError(codeTool, 'await tools.Lookup({ key: "x" });'),
+    /tools\.Lookup does not exist\. Did you mean tools\.lookup\? ALL_TOOLS lists every tool; searchTools\(query\) finds tools by topic\./,
+  );
+  assert.match(
+    await cellError(codeTool, 'await lookUp({ key: "x" });'),
+    /lookUp is not defined\. Did you mean lookup\? ALL_TOOLS lists every tool; searchTools\(query\) finds tools by topic\./,
+  );
+  // An undeclared variable that merely contains a tool name gets no tool hint.
+  assert.match(await cellError(codeTool, "lookup_result = 1;"), /^cave_program_execution_failed:lookup_result is not defined\n/);
+  assert.match(
+    await cellError(codeTool, "await tools.deploy({});"),
+    /tools\.deploy does not exist\. Available: lookup\. ALL_TOOLS/,
+  );
+  const probes = await codeTool.execute({
+    code: 'return { then: typeof tools.then, has: "missing" in tools, all: ALL_TOOLS.map((item) => item.name) };',
+  }, undefined, registryContext(codeTool));
+  assert.equal(probes, '{"then":"undefined","has":false,"all":["lookup"]}');
+});
+
+test("failed cells keep partial output, cell frames, and calls that ran", async () => {
+  const notes: string[] = [];
+  const writeNote = tool({
+    name: "write_note",
+    description: "Append one note.",
+    input: schema.object({ text: schema.string() }),
+    effect: "write",
+    result: "inline",
+    execute: ({ text }) => {
+      notes.push(text);
+      return "written";
+    },
+  });
+  const runtime = createProgrammaticToolRuntime(directDefinitionWithTools([lookupTool, writeNote]), {
+    speculate: false,
+  });
+  const codeTool = runtime.definition.tools[0]!;
+  const message = await cellError(codeTool, [
+    'print("before");',
+    'await write_note({ text: "a" });',
+    'await lookup({ key: "x" }).catch(() => {});',
+    'throw new Error("after writes");',
+  ].join("\n"));
+  assert.match(message, /^cave_program_execution_failed:after writes\nat cell\.js:4:\d+\n/);
+  assert.match(message, /\nOutput before the failure:\nbefore\n/);
+  assert.match(message, /\nThese calls ran and are not undone: write_note \(ok\), lookup \(ok\)\.$/);
+  assert.deepEqual(notes, ["a"]);
+  assert.match(await cellError(codeTool, 'throw new Error("early");'), /early\nat cell\.js:1:\d+\nNo tool calls ran\.$/);
+  assert.match(
+    await cellError(codeTool, "const a = 1;\nconst b = ;"),
+    /^cave_program_execution_failed:Unexpected token ';'\ncell\.js:2\nconst b = ;\n {10}\^\nNo tool calls ran\.$/,
+  );
+});
+
+test("limit errors explain the limit and how to continue", async () => {
+  const runtime = createProgrammaticToolRuntime(directDefinitionWithTools([lookupTool]), { speculate: false });
+  const codeTool = runtime.definition.tools[0]!;
+  assert.match(
+    await cellError(codeTool, 'for (let i = 0; i < 9; i++) await lookup({ key: String(i) });'),
+    /cave_program_tool_call_budget_exceeded: this cell already made 8 tool calls, the per-cell limit\. Print or return what you have, then continue in a new cell\./,
+  );
+  assert.match(
+    await cellError(codeTool, 'for (let i = 0; i < 4; i++) await lookup({ key: "same" });'),
+    /cave_program_repeated_tool_call: lookup already ran 3 times with these exact arguments in this cell\. Reuse the earlier result/,
+  );
+  await assert.rejects(
+    Promise.resolve(codeTool.execute({ code: `//${"x".repeat(64 * 1024)}` }, undefined, registryContext(codeTool))),
+    /^Error: cave_program_source_limit: this cell is 65538 bytes; the limit is 65536\. Split the work across several smaller cells\.$/,
+  );
+  assert.match(
+    await cellError(codeTool, "while (true) {}"),
+    /Script execution timed out after 2000ms Synchronous code before the first await may run 2000 ms; avoid busy loops\./,
+  );
+});
+
+test("declarations render declared result types", async () => {
+  const counted = tool({
+    name: "count_names",
+    description: "Count names.",
+    input: schema.object({ prefix: schema.string() }),
+    output: schema.object({ count: schema.integer(), names: schema.array(schema.string()) }),
+    effect: "read",
+    result: "inline",
+    execute: () => ({ count: 1, names: ["a"] }),
+  });
+  const runtime = createProgrammaticToolRuntime(directDefinitionWithTools([counted, lookupTool]), { speculate: false });
+  const description = runtime.definition.tools[0]!.description;
+  assert.match(description, /declare function count_names\(args: \{ prefix: string \}\): Promise<\{ count: number; names: Array<string> \}>;/);
+  assert.match(description, /declare function lookup\(args: .*\): Promise<string>;/);
+  assert.equal(
+    await runtime.definition.tools[0]!.execute({ code: 'return (await count_names({ prefix: "a" })).names[0];' }, undefined,
+      registryContext(runtime.definition.tools[0]!)),
+    "a",
+  );
+  const coding = createCodingAgent({
+    workspace: process.cwd(),
+    model: "openai/gpt-5.4",
+    toolSet: "pebble-v1",
+    toolMode: "programmatic",
+  });
+  assert.match(
+    coding.definition.tools[0]!.description,
+    /declare function bash\(args: .*\): Promise<\{ exitCode: number \| null; state: string; output: string; truncated: boolean; sessionId\?: string; cursor\?: number \}>;/,
+  );
+  await coding.close();
+});
+
+test("script bash resolves to a structured result while direct bash stays text", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "programmatic-bash-"));
+  const coding = createCodingAgent({ workspace, model: "openai/gpt-5.4", toolSet: "pebble-v1", toolMode: "programmatic" });
+  const direct = createCodingAgent({ workspace, model: "openai/gpt-5.4", toolSet: "pebble-v1", toolMode: "direct" });
+  try {
+    const codeTool = coding.definition.tools[0]!;
+    const context = registryContext(codeTool);
+    const result = JSON.parse(String(await codeTool.execute({
+      code: 'return await bash({ command: "printf \'hi\\\\n\'; exit 3" });',
+    }, undefined, context)));
+    assert.equal(result.exitCode, 3);
+    assert.equal(result.state, "exited");
+    assert.equal(result.output, "hi\n");
+    assert.equal(result.truncated, false);
+    assert.match(result.sessionId, /^cmd_[a-f0-9]{32}$/);
+    assert.match(String(await codeTool.execute({
+      code: `try { await bash({ sessionId: ${JSON.stringify(result.sessionId)}, action: "write", input: "x" }); } ` +
+        "catch (error) { return error.message; }",
+    }, undefined, context)), /^caveman-code: stdin not accepted; session cmd_[a-f0-9]{32} is exited$/);
+    // Scripts filter large output locally; the cut keeps the tail and a way back.
+    const large = JSON.parse(String(await codeTool.execute({
+      code: [
+        'const r = await bash({ command: "node -e \\"process.stdout.write(\'a\'.repeat(1500000) + \'END\')\\"" });',
+        "return { truncated: r.truncated, bytes: r.output.length, end: r.output.endsWith(\"END\"), cursor: r.cursor };",
+      ].join("\n"),
+    }, undefined, context)));
+    assert.deepEqual(large, { truncated: true, bytes: 1024 * 1024, end: true, cursor: 0 });
+    const wide = JSON.parse(String(await codeTool.execute({
+      code: [
+        'const r = await bash({ command: "node -e \\"process.stdout.write(\'\u20ac\'.repeat(400000))\\"" });',
+        'return { chars: r.output.length, clean: !r.output.includes("\\uFFFD") && r.output[0] === "\u20ac" };',
+      ].join("\n"),
+    }, undefined, context)));
+    // 1,200,000 bytes of 3-byte characters: the 1 MiB cut would split one, so it moves forward.
+    assert.deepEqual(wide, { chars: 349_525, clean: true }, "the cut lands on a character start");
+    const text = await direct.definition.tools.find((item) => item.name === "bash")!
+      .execute({ command: "printf 'hi\\n'; exit 3" });
+    assert.equal(text, "exit 3\nhi\n");
+  } finally {
+    await coding.close();
+    await direct.close();
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("oversized cell output spills into the retained-output store", async () => {
+  const coding = createCodingAgent({
+    workspace: process.cwd(),
+    model: "openai/gpt-5.4",
+    toolSet: "pebble-v1",
+    toolMode: "programmatic",
+  });
+  try {
+    const codeTool = coding.definition.tools[0]!;
+    assert.deepEqual(codeTool.nestedTools?.map((item) => item.name), ["read_file", "bash", "write_file", "edit_file"]);
+    const context = registryContext(codeTool);
+    const spilled = String(await codeTool.execute({
+      code: 'print("a".repeat(20000) + "MIDDLE" + "b".repeat(20000));',
+    }, undefined, context));
+    assert.ok(Buffer.byteLength(spilled) < 25 * 1024);
+    const marker = /\[\.\.\. (\d+) of 40006 output bytes omitted; read them with tools\.read_tool_output\((\{.*?\})\) \.\.\.\]/
+      .exec(spilled);
+    assert.ok(marker, spilled.slice(12_000, 12_400));
+    const page = await codeTool.execute({
+      code: `return await tools.read_tool_output({ ...${marker[2]}, query: "MIDDLE", limit: 6 });`,
+    }, undefined, context);
+    assert.match(String(page), /^code cell output · bytes 20000-20006 of 40006 · complete capture\nMIDDLE\n/);
+  } finally {
+    await coding.close();
+  }
+});
+
+test("discovery finds nested tools without changing the provider description", async () => {
+  const deploy = tool({
+    name: "deploy_service",
+    description: "Deploy one service to production.",
+    input: schema.object({ service: schema.string() }),
+    effect: "external",
+    result: "inline",
+    execute: ({ service }) => `deployed ${service}`,
+  });
+  const huge = tool({
+    name: "huge_reference",
+    description: `Look up archived reference data. ${"Detail. ".repeat(1_700)}`,
+    input: schema.object({ id: schema.string() }),
+    effect: "read",
+    result: "inline",
+    execute: ({ id }) => `reference ${id}`,
+  });
+  const runtime = createProgrammaticToolRuntime(directDefinitionWithTools([lookupTool, deploy, huge]), {
+    speculate: false,
+  });
+  const codeTool = runtime.definition.tools[0]!;
+  const description = codeTool.description;
+  assert.match(description, /declare function deploy_service/);
+  assert.doesNotMatch(description, /huge_reference/);
+  assert.match(description, /\n1 more tools are callable; describeTool\(name\) shows one\.$/);
+  const found = JSON.parse(String(await codeTool.execute({
+    code: [
+      'const search = await searchTools("deploy production service");',
+      'const declaration = await describeTool("huge_reference");',
+      'const called = await huge_reference({ id: "7" });',
+      'return { first: search[0].name, declared: declaration.includes("declare function huge_reference"),',
+      '  called, missing: await describeTool("nope"), none: await describeNamespace("tracker") ?? null };',
+    ].join("\n"),
+  }, undefined, registryContext(codeTool))));
+  assert.deepEqual(found, { first: "deploy_service", declared: true, called: "reference 7", none: null });
+
+  const createIssue = tool({
+    name: "create_issue",
+    description: "Create one tracker issue.",
+    input: schema.object({ title: schema.string() }),
+    effect: "write",
+    result: "inline",
+    execute: ({ title }) => `issue ${title}`,
+  });
+  runtime.registerNestedTools([createIssue], { name: "tracker", description: "Issue tracker." });
+  assert.equal(codeTool.description, description, "late tools never change the cached prefix");
+  const late = JSON.parse(String(await codeTool.execute({
+    code: [
+      'const created = await tools.create_issue({ title: "x" });',
+      'const scoped = await searchTools("issue", { namespace: "tracker" });',
+      'return { created, scoped: scoped.map((item) => item.namespace + "/" + item.name),',
+      '  namespace: await describeNamespace("tracker"), listed: ALL_TOOLS.some((item) => item.name === "create_issue") };',
+    ].join("\n"),
+  }, undefined, registryContext(codeTool))));
+  assert.deepEqual(late, {
+    created: "issue x",
+    scoped: ["tracker/create_issue"],
+    namespace: { name: "tracker", description: "Issue tracker.", tools: ["create_issue"] },
+    listed: true,
+  });
+  assert.throws(() => runtime.registerNestedTools([createIssue]), /cave_program_registered_tool_duplicate:create_issue/);
+  assert.throws(
+    () => runtime.registerNestedTools([{ ...createIssue, name: "forged" } as ToolDefinition]),
+    /cave_program_registered_tool_untrusted/,
+  );
+  assert.throws(() => runtime.registerNestedTools([lookupTool], { name: "bad name" }), /cave_program_namespace_invalid/);
+  // Locked and durable runs refuse unverified schema semantics; late tools may not bypass that.
+  const dynamicFormat = tool({
+    name: "notify_email",
+    description: "Notify one address.",
+    input: schema.object({ to: { ...schema.string(), format: "email" } as ReturnType<typeof schema.string> }),
+    effect: "external",
+    result: "inline",
+    execute: () => "sent",
+  });
+  assert.throws(() => runtime.registerNestedTools([dynamicFormat]), /cave_program_registered_tool_unsupported:notify_email/);
+  const bounded = await cellError(codeTool, [
+    'await searchTools("x".repeat(257));',
+  ].join("\n"));
+  assert.match(bounded, /searchTools\(query\) expects a query string of at most 256 characters/);
+  assert.match(
+    await cellError(codeTool, 'for (let i = 0; i < 33; i++) await describeTool("lookup");'),
+    /cave_program_discovery_budget_exceeded: this cell already made 32 discovery calls/,
+  );
+});
+
+test("late-registered tools dispatch through the run kernel", async () => {
+  const runtime = createProgrammaticToolRuntime(directDefinitionWithTools([lookupTool]));
+  // A speculative read that this code tool never declared must not try to claim speculation.
+  runtime.registerNestedTools([tool({
+    name: "late_lookup",
+    description: "Read one value from a late server.",
+    input: schema.object({ key: schema.string() }),
+    effect: "read",
+    speculative: true,
+    result: "inline",
+    execute: ({ key }) => `late:${key}`,
+  })], { name: "late" });
+  const faux = fauxProvider();
+  let calls = 0;
+  let toolResult = "";
+  const result = await run(runtime.definition, "use the late tool", {
+    ensureRuntime: false,
+    model: faux.getModel(),
+    streamFn(selected, context: Context) {
+      calls++;
+      const last = context.messages.at(-1);
+      if (last?.role === "toolResult") {
+        toolResult = last.content.map((item) => item.type === "text" ? item.text : "").join("");
+      }
+      return calls === 1
+        ? toolCallStream(selected, 'print(await tools.late_lookup({ key: "z" }));')
+        : textStream(selected, "done");
+    },
+  });
+  assert.equal(result.text, "done");
+  assert.equal(toolResult, "late:z");
+  assert.deepEqual(result.toolCalls, [PROGRAMMATIC_TOOL_NAME, "late_lookup"]);
+});
+
+test("a cell awaiting a promise that can never settle fails fast", async () => {
+  const slow = tool({
+    name: "slow_read",
+    description: "Answer after a short delay.",
+    input: schema.object({}),
+    effect: "read",
+    result: "inline",
+    execute: () => new Promise<string>((accept) => setTimeout(() => accept("late"), 150)),
+  });
+  const runtime = createProgrammaticToolRuntime(directDefinitionWithTools([slow]), { speculate: false });
+  const codeTool = runtime.definition.tools[0]!;
+  const started = performance.now();
+  assert.match(
+    await cellError(codeTool, "await new Promise(() => {});"),
+    /^cave_program_stalled: this cell awaits a promise that can never settle: no tool call is pending, and cells have no timers\./,
+  );
+  assert.ok(performance.now() - started < 2_000);
+  assert.match(
+    await cellError(codeTool, 'await slow_read({}); await { then() {} };'),
+    /cave_program_stalled[\s\S]*These calls ran and are not undone: slow_read \(ok\)\./,
+  );
+  // A pending host call is progress, not a stall.
+  assert.equal(await codeTool.execute({
+    code: "return await new Promise((accept) => slow_read({}).then(accept));",
+  }, undefined, registryContext(codeTool)), "late");
+});
+
+test("guest-patched then() never receives Worker-realm functions", async () => {
+  const runtime = createProgrammaticToolRuntime(directDefinitionWithTools([lookupTool]), { speculate: false });
+  const codeTool = runtime.definition.tools[0]!;
+  const result = await codeTool.execute({
+    code: [
+      "const original = Promise.prototype.then;",
+      "Promise.prototype.then = function (yes, no) {",
+      "  for (const fn of [yes, no]) {",
+      '    try { if (typeof fn === "function" && fn.constructor("return process")()) print("ESCAPED"); } catch {}',
+      "  }",
+      "  return original.call(this, yes, no);",
+      "};",
+      'await lookup({ key: "x" });',
+      "return 1;",
+    ].join("\n"),
+  }, undefined, registryContext(codeTool));
+  assert.equal(result, "1");
+});
+
+test("speculate:false cells call speculative reads through the run kernel", async () => {
+  const speculativeLookup = tool({
+    name: "spec_lookup",
+    description: "Read one value.",
+    input: schema.object({ key: schema.string() }),
+    effect: "read",
+    speculative: true,
+    result: "inline",
+    execute: ({ key }) => `spec:${key}`,
+  });
+  const runtime = createProgrammaticToolRuntime(directDefinitionWithTools([speculativeLookup]), { speculate: false });
+  const faux = fauxProvider();
+  let calls = 0;
+  let toolResult = "";
+  const result = await run(runtime.definition, "read once", {
+    ensureRuntime: false,
+    model: faux.getModel(),
+    streamFn(selected, context: Context) {
+      calls++;
+      const last = context.messages.at(-1);
+      if (last?.role === "toolResult") {
+        toolResult = last.content.map((item) => item.type === "text" ? item.text : "").join("");
+      }
+      return calls === 1
+        ? toolCallStream(selected, 'print(await spec_lookup({ key: "q" }));')
+        : textStream(selected, "done");
+    },
+  });
+  assert.equal(result.text, "done");
+  assert.equal(toolResult, "spec:q");
 });

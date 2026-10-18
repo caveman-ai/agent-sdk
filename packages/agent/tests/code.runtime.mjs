@@ -8,7 +8,12 @@ import {
   fauxProvider as upstreamFauxProvider,
   fauxToolCall,
 } from "@earendil-works/pi-ai/providers/faux";
-import { createAssistantMessageEventStream, createModels } from "@earendil-works/pi-ai";
+import {
+  createAssistantMessageEventStream,
+  createModels,
+  getCurrentSystemPrompt,
+  getCurrentTools,
+} from "@earendil-works/pi-ai";
 import {
   CODING_RUN_BREAKERS,
   CODING_TOOL_OUTPUT_CAPS,
@@ -27,6 +32,7 @@ import {
   runCodingTurn,
   sessionBill,
   startCodingSession,
+  streamCodingTurn,
   summarizeCodingTaskAttempts,
 } from "../dist/code.js";
 
@@ -100,32 +106,33 @@ function payloadStreamFn(faux, seen = []) {
   return (selected, context, options) => {
     seen.push(structuredClone(context.messages));
     options.onPayload({
-      system: context.systemPrompt,
-      tools: context.tools.map((item) => ({
+      system: getCurrentSystemPrompt(context.messages),
+      tools: getCurrentTools(context.messages).map((item) => ({
         name: item.name,
         description: item.description,
         input_schema: item.parameters,
       })),
-      messages: context.messages,
+      messages: context.messages.filter((message) => message.role !== "system"),
     }, selected);
     return faux.provider.streamSimple(selected, context, { ...options, onPayload: undefined });
   };
 }
 
-function payloadModels(faux, seen = []) {
+function payloadModels(faux, seen = [], streamOptions = []) {
   const models = createModels();
   models.setProvider({
     ...faux.provider,
     streamSimple(selected, context, options) {
       seen.push(structuredClone(context.messages));
+      streamOptions.push({ reasoning: options?.reasoning });
       options.onPayload({
-        system: context.systemPrompt,
-        tools: context.tools.map((item) => ({
+        system: getCurrentSystemPrompt(context.messages),
+        tools: getCurrentTools(context.messages).map((item) => ({
           name: item.name,
           description: item.description,
           input_schema: item.parameters,
         })),
-        messages: context.messages,
+        messages: context.messages.filter((message) => message.role !== "system"),
       }, selected);
       return faux.provider.streamSimple(selected, context, { ...options, onPayload: undefined });
     },
@@ -149,7 +156,12 @@ async function withWorkspace(body) {
 }
 
 test("default coding plan routes only recoverable transforms over the live zone", () => {
-  const plan = defaultCodingPlan("anthropic/claude-sonnet-4-6", "caveman-code");
+  // Default lever: the engine only bounds runaway tool output, history stays as it is.
+  assert.deepEqual(
+    defaultCodingPlan("anthropic/claude-sonnet-4-6", "caveman-code").segment_routes.map((route) => route.segment_kind),
+    ["tool_result"],
+  );
+  const plan = defaultCodingPlan("anthropic/claude-sonnet-4-6", "caveman-code", "all");
   const kinds = plan.segment_routes.map((route) => route.segment_kind).sort();
   assert.deepEqual(kinds, ["history", "tool_result"]);
   for (const route of plan.segment_routes) {
@@ -178,14 +190,16 @@ test("created coding agent is host sandboxed, unlocked, and capped before compre
   const codingAgent = createCodingAgent({ workspace: tmpdir(), model: "anthropic/faux-1" });
   assert.equal(codingAgent.definition.sandbox, "host");
   assert.equal(codingAgent.definition.reasoning, "off");
+  assert.equal(codingAgent.toolMode, "hybrid");
   assert.deepEqual(
     codingAgent.definition.tools.map((item) => item.name).sort(),
-    ["bash", "edit_file", "grep", "read_file", "read_tool_output", "write_file"],
+    ["bash", "caveman_code", "edit_file", "grep", "read_file", "read_tool_output", "write_file"],
   );
   assert.deepEqual(
     codingAgent.definition.tools.map((item) => [item.name, item.effect]).sort(),
     [
       ["bash", "external"],
+      ["caveman_code", "idempotent"],
       ["edit_file", "write"],
       ["grep", "read"],
       ["read_file", "read"],
@@ -231,6 +245,7 @@ test("Pebble v1 coding surface exposes only read, shell, write, and edit", async
     workspace: tmpdir(),
     model: "anthropic/faux-1",
     toolSet: "pebble-v1",
+    toolMode: "direct",
     outputCaps: { bash: 128 },
   });
   assert.deepEqual(
@@ -600,6 +615,307 @@ test("bash cannot read the framework's account/provider credentials", async () =
   });
 });
 
+test("a local session compresses tool results with the engine and no gateway, keyed to the ask", async () => {
+  await withWorkspace(async (workspace) => {
+    const body = Array.from(
+      { length: 240 },
+      (_, index) => `line ${index}: the quick brown fox jumps over the lazy dog repeatedly`,
+    ).join("\n");
+    await writeFile(resolve(workspace, "big.txt"), body, "utf8");
+    const argvLog = resolve(process.env.CAVE_FAKE_ENGINE_STORE, "argv.jsonl");
+    const codingAgent = createCodingAgent({ workspace, model: "anthropic/faux-1", levers: { compression: "all" } });
+    // No gateway, nothing probed: a gateway fetch would fail the test.
+    const session = await startCodingSession(codingAgent, {
+      cave: "local",
+      engineBin: FAKE_ENGINE,
+      fetch: async () => { throw new Error("local mode must not contact the gateway"); },
+    });
+    assert.equal(session.mode, "optimized");
+    assert.deepEqual(session.notices, []);
+    const faux = fauxAnthropic();
+    const model = { ...faux.getModel(), api: "anthropic-messages", provider: "anthropic" };
+    const seen = [];
+    faux.setResponses([
+      fauxAssistantMessage(fauxToolCall("bash", { command: "cat big.txt" }, { id: "read-1" })),
+      fauxAssistantMessage(fauxToolCall("bash", { command: "cat big.txt" }, { id: "read-2" })),
+      (context) => {
+        const handle = JSON.stringify(context.messages).match(/recovery_handle=\\"(ccr_[0-9a-f]+)\\"/)[1];
+        return fauxAssistantMessage(fauxToolCall("cave_retrieve", { recovery_handle: handle }, { id: "get-1" }));
+      },
+      fauxAssistantMessage("big.txt is a repeated pangram"),
+    ]);
+    const turn = await runCodingTurn(session, "which line mentions the lazy dog?", {
+      model,
+      models: payloadModels(faux, seen),
+      providerPayloadContract: "pi-on-payload-v1",
+    });
+    // Transforms ran in process; with no gateway telemetry the label stays observe-only.
+    assert.equal(turn.bill.mode, "observe-only");
+    assert.deepEqual(turn.bill.transformFailures, []);
+    assert.equal(turn.bill.recoveryResolved, true);
+    assert.equal(turn.bill.transformIDs.includes("caveman.engine.terminal.v1"), true);
+    assert.match(JSON.stringify(seen[1]), /cave-compressed/);
+    // The compressed result is reused byte for byte on the next call.
+    const first = seen[1].find((message) => message.role === "toolResult");
+    assert.deepEqual(seen[2].find((message) => message.role === "toolResult"), first);
+    // The recovered original reaches the model as it is, never compressed again.
+    const recovered = seen[3].find((message) => message.role === "toolResult" && message.toolName === "cave_retrieve");
+    assert.match(JSON.stringify(recovered), /line 239: the quick brown fox/);
+    assert.doesNotMatch(JSON.stringify(recovered), /cave-compressed/);
+    // Keep (trim-1) gets the current ask as its query, from a file only this user can read,
+    // never on the engine's command line, and the file is gone afterwards.
+    const calls = (await readFile(argvLog, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+    const compress = calls.filter((argv) => argv[0] === "compress");
+    assert.equal(compress.length > 0, true);
+    for (const argv of compress) {
+      assert.equal(argv.includes("--query-file"), true);
+      assert.doesNotMatch(JSON.stringify(argv), /lazy dog/);
+    }
+    const queries = (await readFile(resolve(process.env.CAVE_FAKE_ENGINE_STORE, "queries.jsonl"), "utf8"))
+      .trim().split("\n").map((line) => JSON.parse(line));
+    assert.equal(queries.length, compress.length);
+    for (const entry of queries) {
+      assert.equal(entry.query, "which line mentions the lazy dog?");
+      assert.equal(entry.mode, 0o600);
+      await assert.rejects(stat(entry.path));
+    }
+  });
+});
+
+test("a capped tool output reaches the engine whole, and the cap applies to what compression returns", async () => {
+  await withWorkspace(async (workspace) => {
+    const store = process.env.CAVE_FAKE_ENGINE_STORE;
+    const codingAgent = createCodingAgent({ workspace, model: "anthropic/faux-1", outputCaps: { bash: 2_048 } });
+    const session = await startCodingSession(codingAgent, { cave: "local", engineBin: FAKE_ENGINE });
+    const faux = fauxAnthropic();
+    const model = { ...faux.getModel(), api: "anthropic-messages", provider: "anthropic" };
+    const seen = [];
+    const command = `node -e 'process.stdout.write("HEAD_SENTINEL FAKE_ENGINE_HALF\\n" + "x".repeat(40000) + "\\nTAIL_SENTINEL\\n")'`;
+    faux.setResponses([
+      fauxAssistantMessage(fauxToolCall("bash", { command }, { id: "bash-1" })),
+      (context) => {
+        const handle = JSON.stringify(context.messages).match(/recovery_handle=\\"(ccr_[0-9a-f]+)\\"/)[1];
+        return fauxAssistantMessage(fauxToolCall("cave_retrieve", { recovery_handle: handle }, { id: "get-1" }));
+      },
+      (context) => {
+        const handle = JSON.stringify(context.messages).match(/recovery_handle=\\"(ccr_[0-9a-f]+)\\"/)[1];
+        return fauxAssistantMessage(fauxToolCall("cave_retrieve", { recovery_handle: handle, offset: 32_000 }, { id: "get-2" }));
+      },
+      fauxAssistantMessage("done"),
+    ]);
+    const turn = await runCodingTurn(session, "why does the head say what it says?", {
+      model,
+      models: payloadModels(faux, seen),
+      providerPayloadContract: "pi-on-payload-v1",
+    });
+    assert.equal(turn.text, "done");
+    // The engine read the whole output, head included: the tool's tail cap did not run first.
+    const inputs = await Promise.all((await readdir(store)).filter((name) => name.startsWith("ccr_"))
+      .map((name) => readFile(resolve(store, name), "utf8")));
+    assert.equal(inputs.some((input) => input.includes("HEAD_SENTINEL") && input.includes("TAIL_SENTINEL")), true);
+    // What reaches the model is the compression, capped at the tool's cap, after the exit line.
+    const result = seen[1].find((message) => message.role === "toolResult").content[0].text;
+    assert.match(result, /^exit 0\n<cave-compressed /);
+    assert.match(result, /compressed output capped from 20\d{3} bytes/);
+    // Over the cap only by the wrapper: its tag and the line that says what was cut.
+    assert.equal(Buffer.byteLength(result) <= 2_048 + 320, true);
+    assert.equal(turn.bill.transformFailures.length, 0);
+    // The bill and the trace count the capped output the model would otherwise read, not the whole.
+    assert.equal(turn.bill.contextBill.tool_result <= 600, true);
+    assert.equal(turn.bill.transformedTokensBefore <= 600, true);
+    // The marker says what was cut and how to get all of it back.
+    assert.match(result, /Kept \d+ of 3 lines for the task; cave_retrieve with this recovery_handle and no query returns all of it/);
+    // Recovering the whole original is paged under the 32 KiB inline ceiling, with the next offset.
+    const recovered = seen[2].find((message) => message.toolName === "cave_retrieve").content[0].text;
+    assert.match(recovered, /^HEAD_SENTINEL/);
+    assert.match(recovered, /\[cave_retrieve: bytes 0-32000 of 40046; pass offset 32000 for the next page\]$/);
+    assert.equal(Buffer.byteLength(recovered) <= 32_768, true);
+    const rest = seen[3].findLast((message) => message.toolName === "cave_retrieve").content[0].text;
+    assert.match(rest, /TAIL_SENTINEL\n\n\[cave_retrieve: bytes 32000-40046 of 40046\]$/);
+  });
+});
+
+// caveman-code's TUI runs streamCodingTurn; runCodingSession and hosts run runCodingTurn.
+const turnRunners = {
+  runCodingTurn: (session, ask, overrides) => runCodingTurn(session, ask, overrides),
+  async streamCodingTurn(session, ask, overrides) {
+    const stream = streamCodingTurn(session, ask, { overrides });
+    for (;;) {
+      const next = await stream.next();
+      if (next.done) return next.value;
+    }
+  },
+};
+
+for (const [runner, runTurn] of Object.entries(turnRunners)) {
+  test(`a local-engine session keeps its plan after the first turn (${runner})`, async () => {
+    await withWorkspace(async (workspace) => {
+      const store = process.env.CAVE_FAKE_ENGINE_STORE;
+      const codingAgent = createCodingAgent({ workspace, model: "anthropic/faux-1", outputCaps: { bash: 2_048 } });
+      const notices = [];
+      const session = await startCodingSession(codingAgent, { cave: "local", engineBin: FAKE_ENGINE, onNotice: (line) => notices.push(line) });
+      const faux = fauxAnthropic();
+      const model = { ...faux.getModel(), api: "anthropic-messages", provider: "anthropic" };
+      // Each turn's output differs: the fake engine stores an input under its digest.
+      const command = (turn) => `node -e 'process.stdout.write("turn ${turn} " + "x".repeat(40000) + "\\n")'`;
+      const engineInputs = async () => (await readdir(store)).filter((name) => name.startsWith("ccr_")).length;
+      for (const [turnIndex, ask] of ["first ask", "second ask"].entries()) {
+        const before = await engineInputs();
+        faux.setResponses([fauxAssistantMessage(fauxToolCall("bash", { command: command(turnIndex) }, { id: `bash-${turnIndex}` })), fauxAssistantMessage("done")]);
+        const turn = await runTurn(session, ask, { model, models: payloadModels(faux, []), providerPayloadContract: "pi-on-payload-v1" });
+        assert.equal(turn.text, "done");
+        // Each turn's capped output still reaches the local engine: the plan survived the turn before.
+        assert.equal(await engineInputs() > before, true, `turn ${turnIndex + 1} skipped the engine`);
+        assert.equal(turn.degraded, false);
+      }
+      assert.equal(session.mode, "optimized");
+      assert.deepEqual(notices, []);
+    });
+  });
+}
+
+test("a local plan run lets the model router set each call's reasoning", async () => {
+  await withWorkspace(async (workspace) => {
+    const codingAgent = createCodingAgent({ workspace, model: "anthropic/faux-1" });
+    const locked = [];
+    const session = await startCodingSession(codingAgent, {
+      cave: "local",
+      engineBin: FAKE_ENGINE,
+      modelRouter: (input) => {
+        locked.push(input.reasoningLocked);
+        return { model: input.currentModel, reason: "test", signals: [], reasoning: "xhigh" };
+      },
+    });
+    const faux = fauxAnthropic();
+    const model = { ...faux.getModel(), api: "anthropic-messages", provider: "anthropic" };
+    const streamOptions = [];
+    faux.setResponses([fauxAssistantMessage("done")]);
+    const turn = await runCodingTurn(session, "think hard", {
+      model,
+      models: payloadModels(faux, [], streamOptions),
+      providerPayloadContract: "pi-on-payload-v1",
+    });
+    assert.equal(turn.text, "done");
+    // No gateway priced the plan, so nothing locks the level: the router's level is sent.
+    assert.deepEqual(locked, [false]);
+    assert.deepEqual(streamOptions.map((options) => options.reasoning), ["xhigh"]);
+  });
+});
+
+test("a gateway plan run still pins reasoning: a router may not change it", async () => {
+  await withWorkspace(async (workspace) => {
+    const codingAgent = createCodingAgent({ workspace, model: "anthropic/faux-1" });
+    const locked = [];
+    const session = await startCodingSession(codingAgent, {
+      ensureRuntime: false,
+      engineBin: FAKE_ENGINE,
+      fetch: healthzOnly,
+      modelRouter: (input) => {
+        locked.push(input.reasoningLocked);
+        return { model: input.currentModel, reason: "test", signals: [], reasoning: "xhigh" };
+      },
+    });
+    assert.equal(session.mode, "optimized");
+    const faux = fauxAnthropic();
+    const model = { ...faux.getModel(), api: "anthropic-messages", provider: "anthropic" };
+    faux.setResponses([fauxAssistantMessage("done")]);
+    await assert.rejects(runCodingTurn(session, "think hard", {
+      model,
+      models: payloadModels(faux),
+      providerPayloadContract: "pi-on-payload-v1",
+    }), /cave_model_route_reasoning_locked/);
+    assert.deepEqual(locked, [true]);
+  });
+});
+
+test("an engine without --query-file compresses without Keep; the ask never goes on its command line", async () => {
+  await withWorkspace(async (workspace) => {
+    await writeFile(resolve(workspace, "big.txt"), Array.from({ length: 240 }, (_, index) =>
+      `line ${index}: the quick brown fox jumps over the lazy dog repeatedly`).join("\n"), "utf8");
+    await writeFile(resolve(process.env.CAVE_FAKE_ENGINE_STORE, "no-query-file"), "");
+    const codingAgent = createCodingAgent({ workspace, model: "anthropic/faux-1", levers: { compression: "all" } });
+    const session = await startCodingSession(codingAgent, { cave: "local", engineBin: FAKE_ENGINE });
+    const faux = fauxAnthropic();
+    const model = { ...faux.getModel(), api: "anthropic-messages", provider: "anthropic" };
+    const seen = [];
+    faux.setResponses([
+      fauxAssistantMessage(fauxToolCall("bash", { command: "cat big.txt" }, { id: "read-1" })),
+      fauxAssistantMessage("done"),
+    ]);
+    await runCodingTurn(session, "which line mentions the lazy dog?", {
+      model, models: payloadModels(faux, seen), providerPayloadContract: "pi-on-payload-v1",
+    });
+    assert.match(JSON.stringify(seen[1]), /cave-compressed/);
+    const argv = (await readFile(resolve(process.env.CAVE_FAKE_ENGINE_STORE, "argv.jsonl"), "utf8")).trim().split("\n");
+    assert.doesNotMatch(argv.join("\n"), /lazy dog/);
+    // Every --query-file attempt was refused and retried without a query.
+    const refused = argv.filter((line) => line.includes("--query-file")).length;
+    assert.equal(refused > 0, true);
+    assert.equal(argv.filter((line) => line.startsWith('["compress"')).length, 2 * refused);
+  });
+});
+
+test("file reads and short outputs reach the model as they are; the prompt explains compressed results once", async () => {
+  await withWorkspace(async (workspace) => {
+    await writeFile(resolve(workspace, "big.txt"), Array.from({ length: 240 }, (_, index) =>
+      `line ${index}: the quick brown fox jumps over the lazy dog repeatedly`).join("\n"), "utf8");
+    const codingAgent = createCodingAgent({ workspace, model: "anthropic/faux-1", levers: { compression: "all" } });
+    const session = await startCodingSession(codingAgent, { cave: "local", engineBin: FAKE_ENGINE });
+    const faux = fauxAnthropic();
+    const model = { ...faux.getModel(), api: "anthropic-messages", provider: "anthropic" };
+    const seen = [];
+    faux.setResponses([
+      fauxAssistantMessage(fauxToolCall("read_file", { path: "big.txt" }, { id: "read-1" })),
+      fauxAssistantMessage(fauxToolCall("bash", { command: "head -c 4000 big.txt" }, { id: "short-1" })),
+      fauxAssistantMessage(fauxToolCall("bash", { command: "cat big.txt" }, { id: "long-1" })),
+      fauxAssistantMessage("done"),
+    ]);
+    await runCodingTurn(session, "which line mentions the lazy dog?", {
+      model, models: payloadModels(faux, seen), providerPayloadContract: "pi-on-payload-v1",
+    });
+    const results = Object.fromEntries(seen.at(-1).filter((message) => message.role === "toolResult")
+      .map((message) => [message.toolCallId, message.content[0].text]));
+    // The agent asked for exactly this file, or the output is short enough to read whole.
+    assert.match(results["read-1"], /^1\tline 0: the quick brown fox/);
+    assert.match(results["short-1"], /^exit 0\nline 0: the quick brown fox/);
+    assert.doesNotMatch(`${results["read-1"]}${results["short-1"]}`, /cave-compressed/);
+    assert.match(results["long-1"], /^<cave-compressed /);
+    // One fixed line explains compressed results, byte for byte the same on every call.
+    const systems = seen.map((messages) => getCurrentSystemPrompt(messages));
+    assert.equal(systems.length, 4);
+    assert.match(systems[0], /A tool result inside <cave-compressed> was shortened by Caveman/);
+    assert.equal(new Set(systems).size, 1);
+  });
+});
+
+test("a long local run is not stopped by the gateway trace header's 64-entry limit", async () => {
+  await withWorkspace(async (workspace) => {
+    const codingAgent = createCodingAgent({ workspace, model: "anthropic/faux-1", levers: { compression: "all" } });
+    const session = await startCodingSession(codingAgent, { cave: "local", engineBin: FAKE_ENGINE });
+    const faux = fauxAnthropic();
+    const model = { ...faux.getModel(), api: "anthropic-messages", provider: "anthropic" };
+    faux.setResponses([
+      ...Array.from({ length: 70 }, (_, index) =>
+        // Writes change state, so the no-progress breaker stays out of it.
+        // A short text per turn: a history segment the engine cannot shrink.
+        fauxAssistantMessage([{ type: "text", text: `file ${index}` },
+          fauxToolCall("write_file", { path: `out-${index}.txt`, content: "x".repeat(400) }, { id: `write-${index}` })])),
+      fauxAssistantMessage("wrote seventy files"),
+    ]);
+    const turn = await runCodingTurn(session, "write seventy files", {
+      model,
+      models: payloadModels(faux),
+      providerPayloadContract: "pi-on-payload-v1",
+    });
+    assert.equal(turn.text, "wrote seventy files");
+    assert.equal(turn.bill.transformIDs.includes("caveman.engine.terminal.v1"), true);
+    // Each segment is decided once per run, kept or not: no engine call per segment per request.
+    const argv = (await readFile(resolve(process.env.CAVE_FAKE_ENGINE_STORE, "argv.jsonl"), "utf8")).trim().split("\n");
+    // 70 tool results + 70 short texts; per request instead it was 2,555.
+    assert.equal(argv.filter((line) => line.startsWith('["compress"')).length, 140);
+  });
+});
+
 test("tools refuse to leave the workspace", async () => {
   await withWorkspace(async (workspace) => {
     const codingAgent = createCodingAgent({ workspace, model: "anthropic/faux-1" });
@@ -618,7 +934,7 @@ test("optimized turn bills token counts from run telemetry and proves recovery",
       (_, index) => `line ${index}: the quick brown fox jumps over the lazy dog repeatedly`,
     ).join("\n");
     await writeFile(resolve(workspace, "big.txt"), body, "utf8");
-    const codingAgent = createCodingAgent({ workspace, model: "anthropic/faux-1" });
+    const codingAgent = createCodingAgent({ workspace, model: "anthropic/faux-1", levers: { compression: "all" } });
     const session = await startCodingSession(codingAgent, {
       ensureRuntime: false,
       engineBin: FAKE_ENGINE,
@@ -640,7 +956,7 @@ test("optimized turn bills token counts from run telemetry and proves recovery",
 
     const seen = [];
     faux.setResponses([
-      fauxAssistantMessage(fauxToolCall("read_file", { path: "big.txt" }, { id: "read-1" })),
+      fauxAssistantMessage(fauxToolCall("bash", { command: "cat big.txt" }, { id: "read-1" })),
       fauxAssistantMessage("big.txt is a repeated pangram"),
     ]);
     const turn = await runCodingTurn(session, "read big.txt and summarize it", {
@@ -693,7 +1009,7 @@ test("optimized turn bills token counts from run telemetry and proves recovery",
     const proof = await proveRecovery(session);
     assert.equal(proof.outcome, "recovered");
     assert.equal(proof.originalSHA256, proof.recoveredSHA256);
-    assert.match(proof.segment, /^read_file:big\.txt$/);
+    assert.match(proof.segment, /^bash:cat big\.txt$/);
     assert.match(formatRecoveryProof(proof), /round-trip OK \(sha256 match/);
   });
 });
@@ -892,14 +1208,14 @@ test("caveman_code drives command sessions through canonical nested dispatch", a
       ].join("");
       const code = [
         `const started=await bash(${JSON.stringify({ command, yieldTimeMs: 10 })});`,
-        "const sessionId=started.match(/session (cmd_[a-f0-9]{32})/)?.[1];",
-        "let cursor=Number(started.match(/next cursor (\\d+)/)?.[1]);",
+        "const sessionId=started.sessionId;",
+        "let cursor=started.cursor;",
         'if(!sessionId)throw new Error("missing command session");',
-        "let transcript=started;",
+        "let transcript=started.output;",
         "for(let reads=0;reads<3&&!transcript.includes('nested-second');reads++){",
         "const page=await bash({sessionId,action:'read',cursor,waitMs:1000});",
-        "transcript+='\\n'+page;",
-        "cursor=Number(page.match(/next cursor (\\d+)/)?.[1]);",
+        "transcript+='\\n'+page.output;",
+        "cursor=page.cursor;",
         "}",
         "if(!transcript.includes('nested-second'))throw new Error('missing resumed output');",
         "print(transcript);",
@@ -927,7 +1243,7 @@ test("caveman_code drives command sessions through canonical nested dispatch", a
   });
 });
 
-test("programmatic bash formats literal search without exposing its query", async () => {
+test("programmatic bash returns literal search pages without exposing its query", async () => {
   await withWorkspace(async (workspace) => {
     const codingAgent = createCodingAgent({
       workspace,
@@ -952,18 +1268,21 @@ test("programmatic bash formats literal search without exposing its query", asyn
       const result = await codeTool.execute({
         code: [
           `const started=await bash(${JSON.stringify({ command, yieldTimeMs: 10 })});`,
-          "const sessionId=/cmd_[a-f0-9]{32}/.exec(started)?.[0];",
-          'if(!sessionId)throw new Error("missing session");',
+          "const sessionId=started.sessionId;",
+          'if(!/^cmd_[a-f0-9]{32}$/.test(sessionId))throw new Error("missing session");',
           'const missed=await bash({sessionId,action:"read",cursor:0,query:"must-not-echo"});',
           'const found=await bash({sessionId,action:"read",cursor:0,query:"TARGET",waitMs:5000});',
-          'return missed+"\\n"+found;',
+          "return {missed,found};",
         ].join(""),
       }, undefined, context);
-      assert.match(result, /\(no literal match\)/);
-      assert.match(result, /still running; search again at cursor/);
       assert.doesNotMatch(result, /must-not-echo/);
-      assert.match(result, /literal match at byte 7/);
-      assert.match(result, /TARGET-tail/);
+      const { missed, found } = JSON.parse(result);
+      assert.deepEqual(
+        { output: missed.output, state: missed.state, exitCode: missed.exitCode },
+        { output: "", state: "running", exitCode: null },
+      );
+      assert.equal(found.output, "TARGET-tail");
+      assert.equal(found.cursor, 18);
     } finally {
       await codingAgent.close();
     }
@@ -1002,34 +1321,35 @@ test("successful code cells retain yielded commands until owner cancellation", a
       const first = await codeTool.execute({
         code: `return await bash(${JSON.stringify({ command, yieldTimeMs: 0, timeoutMs: 2_000 })})`,
       }, owner.signal, context);
-      const sessionId = first.match(/session (cmd_[a-f0-9]{32})/)?.[1];
-      const cursor = Number(first.match(/next cursor (\d+)/)?.[1]);
-      assert.match(first, /· running/);
-      assert.equal(typeof sessionId, "string");
+      const started = JSON.parse(first);
+      const { sessionId, cursor } = started;
+      assert.equal(started.state, "running");
+      assert.match(sessionId, /^cmd_[a-f0-9]{32}$/);
+      assert.equal(Number.isSafeInteger(cursor), true);
 
       const second = await codeTool.execute({
         code: [
           'const sessions=await bash({"action":"list"});',
-          'const sessionId=/cmd_[a-f0-9]{32}/.exec(sessions)?.[0];',
+          'const sessionId=/cmd_[a-f0-9]{32}/.exec(sessions.output)?.[0];',
           'if(!sessionId)throw new Error("missing retained session");',
           `const page=await bash({sessionId,action:"read",cursor:${cursor},waitMs:1000});`,
-          'return sessions+"\\n"+page;',
+          'return sessions.output+"\\n"+page.output+"\\nstate="+page.state;',
         ].join(""),
       }, undefined, context);
       assert.match(second, /command sessions: 1 retained · oldest first/);
       assert.match(second, new RegExp(`${sessionId} · running · stdin open`));
       assert.match(second, /cross-cell-late/);
-      assert.match(second, /· running/);
+      assert.match(second, /state=running$/);
       assert.equal(await readFile(resolve(workspace, "cross-cell-runs.txt"), "utf8"), "x");
 
       owner.abort(new Error("test_owner_cancelled"));
       const bash = nested.get("bash");
       let stopped = await bash.execute({ sessionId, action: "read" });
-      for (let reads = 0; reads < 20 && stopped.includes("· running"); reads++) {
+      for (let reads = 0; reads < 20 && stopped.state === "running"; reads++) {
         await new Promise((accept) => setTimeout(accept, 20));
         stopped = await bash.execute({ sessionId, action: "read" });
       }
-      assert.match(stopped, /· killed · killed/);
+      assert.equal(stopped.state, "killed");
     } finally {
       await codingAgent.close();
     }
@@ -2244,4 +2564,30 @@ test("task economics refuses favorable numbers from missing or mixed evidence", 
   assert.equal(mixed.status, "incomplete_evidence");
   assert.equal(mixed.costPerCompletedTaskUsd, null);
   assert.deepEqual(mixed.issues, ["price_basis_mixed"]);
+});
+
+test("a coding turn keeps working past the 64-call run default", async () => {
+  await withWorkspace(async (workspace) => {
+    const codingAgent = createCodingAgent({ workspace, model: "anthropic/faux-1" });
+    const session = await startCodingSession(codingAgent, { cave: "off" });
+    const faux = fauxAnthropic();
+    const model = { ...faux.getModel(), api: "anthropic-messages", provider: "anthropic" };
+    const steps = 70;
+    faux.setResponses([
+      ...Array.from({ length: steps }, (_, n) =>
+        fauxAssistantMessage(fauxToolCall("bash", { command: `echo ${n}` }, { id: `bash-${n}` }))),
+      fauxAssistantMessage("done"),
+    ]);
+    let calls = 0;
+    const turn = await runCodingTurn(session, "count", {
+      model,
+      streamFn(selected, context, options) {
+        calls++;
+        return faux.provider.streamSimple(selected, context, options);
+      },
+    });
+    assert.equal(calls, steps + 1);
+    assert.equal(turn.toolCalls.length, steps);
+    assert.equal(turn.text, "done");
+  });
 });

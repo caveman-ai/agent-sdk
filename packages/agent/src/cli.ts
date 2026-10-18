@@ -6,6 +6,7 @@ import { extname, isAbsolute, relative, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
+import { commandHasHelp, parseServeOptions, printHelp } from "./cli-options.js";
 import { catalogSearchCeiling, CATALOG_SHA256 } from "./catalog.js";
 import { ConnectRuntime } from "./connect.js";
 import {
@@ -76,13 +77,13 @@ import { lowerAgentContext } from "./execution-kernel.js";
 import { createConversation, type AgentDefinition } from "./index.js";
 import {
   caveGatewayReady,
-  buildEngineEnv,
   buildRuntimeControlEnv,
   resolveGatewayURL,
   runAgentInternal,
   verifySandboxConformance,
   type ConversationState,
 } from "./runtime.js";
+import { buildEngineEnv } from "./engine-process.js";
 import type { ContextKind, EvalDefinition } from "./primitives.js";
 import { optionalPeerCheck } from "./optional-peers.js";
 import { normalizeTrajectory, type NormalizedTrajectory } from "./trajectory-ir.js";
@@ -105,6 +106,11 @@ async function main(): Promise<void> {
   }
   if (command === "--version" || command === "-v") {
     process.stdout.write(`${FRAMEWORK_VERSION}\n`);
+    return;
+  }
+  const optionArgs = args.slice(0, args.indexOf("--") < 0 ? undefined : args.indexOf("--"));
+  if (commandHasHelp(command) && optionArgs.some((arg) => arg === "--help" || arg === "-h")) {
+    printHelp(command);
     return;
   }
   if (command === "dev") {
@@ -136,26 +142,6 @@ async function main(): Promise<void> {
     return;
   }
   throw new Error(`unknown command ${JSON.stringify(command)}; run caveman-agent --help`);
-}
-
-function printHelp(): void {
-  process.stdout.write([
-    "Caveman Agent — efficiency-native TypeScript agent framework",
-    "",
-    "Usage:",
-    "caveman-agent dev [entry] [prompt]",
-    "caveman-agent serve [dir] [--port N] [--host H] [--locked]",
-    "caveman-agent build [config] [--verbose] [--accept-prefix-shrink]",
-    "  --accept-prefix-shrink resets the frozen-prefix baseline; if the build",
-    "  then stops before locking (e.g. needs_eval), no new baseline is written",
-    "  until a build completes.",
-    "caveman-agent check [config]",
-    "caveman-agent doctor [--json]",
-    "caveman-agent register",
-    "caveman-agent connect [provider|providers|connections|status|doctor|...]",
-    "caveman-agent --version",
-    "",
-  ].join("\n"));
 }
 
 type DoctorStatus = "pass" | "warn" | "fail";
@@ -704,19 +690,14 @@ async function register(_args: string[]): Promise<void> {
  *   PORT / HOST         defaults 8080 / 0.0.0.0
  */
 async function serve(args: string[]): Promise<void> {
-  const flags = new Set(args.filter((argument) => argument.startsWith("--")));
-  const positional = args.filter((argument) => !argument.startsWith("--"));
-  const flagValue = (name: string): string | undefined => {
-    const index = args.indexOf(name);
-    return index === -1 ? undefined : args[index + 1];
-  };
+  const { directory, port, host, locked } = parseServeOptions(args, process.env);
   const token = process.env.CAVE_SERVE_TOKEN;
   if (token === undefined || token === "") {
     throw new Error(
       "caveman-agent serve: set CAVE_SERVE_TOKEN; an unauthenticated agent endpoint spends money for anyone who finds it",
     );
   }
-  const root = resolve(process.cwd(), positional[0] ?? ".");
+  const root = resolve(process.cwd(), directory);
   const definition = await hasAgentDirConvention(root)
     ? await loadAgentDir(root)
     : await loadAgent(resolve(root, "src/agent.ts"));
@@ -731,17 +712,12 @@ async function serve(args: string[]): Promise<void> {
     store = new HttpDurableStore({ url: journalUrl, token: journalToken });
   }
 
-  const port = Number(flagValue("--port") ?? process.env.PORT ?? 8080);
-  const host = flagValue("--host") ?? process.env.HOST ?? "0.0.0.0";
-  if (!Number.isSafeInteger(port) || port < 0 || port > 65_535) {
-    throw new Error("caveman-agent serve: --port must be a valid port number");
-  }
   const server = createAgentServer({
     definition,
     token,
     rootDir: root,
     ...(store === undefined ? {} : { store }),
-    ...(flags.has("--locked") ? { build: await readLock(root) } : {}),
+    ...(locked ? { build: await readLock(root) } : {}),
   });
   const bound = await server.listen(port, host);
   process.stdout.write(

@@ -2,6 +2,18 @@ import { Worker } from "node:worker_threads";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import type { AgentDefinition } from "./definition.js";
 import { tool, type ToolDefinition, type ToolExecutionContext } from "./primitives.js";
+import {
+  argumentErrors,
+  codeToolDescription,
+  discoverTools,
+  invalidArgumentsMessage,
+  NestedToolRegistry,
+  type ProgrammaticToolNamespace,
+} from "./programmatic-catalog.js";
+import { schemaFanout } from "./mcp-guards.js";
+import { PROGRAMMATIC_WORKER_SOURCE } from "./programmatic-worker.js";
+import { withoutCodingToolGuidance } from "./coding-guidance.js";
+import { toolScriptCompanions, type ToolScriptCompanions } from "./tool-internal.js";
 import type {
   AssistantMessage,
   AssistantMessageEvent,
@@ -14,8 +26,18 @@ export const PROGRAMMATIC_TOOL_NAME = "caveman_code";
 
 const PROGRAM_MAX_SOURCE_BYTES = 64 * 1024;
 const PROGRAM_MAX_OUTPUT_BYTES = 24 * 1024;
+/** Cell output kept for failure reports and spill; below the 8 MiB store entry limit. */
+const PROGRAM_CAPTURE_MAX_BYTES = 4 * 1024 * 1024;
+/** Discovery runs on the host thread, so each cell gets a bounded number of lookups. */
+const PROGRAM_MAX_DISCOVERY_CALLS = 32;
 const PROGRAM_MAX_TOOL_CALLS = 8;
 const PROGRAM_MAX_REPEAT_CALLS = 3;
+/**
+ * MCP schemas come from the server. Checking work grows with argument size
+ * times the schema's union fanout, so the limit is this divided by the fanout.
+ */
+const MCP_MAX_ARGUMENT_BYTES = 256 * 1024;
+const TOOL_IMPLEMENTATION_SOURCE = Symbol.for("@caveman-ai/agent:tool-implementation-source");
 const PROGRAM_TIMEOUT_MS = 120_000;
 const PROGRAM_SYNC_TIMEOUT_MS = 2_000;
 const SPECULATION_MAX_INFLIGHT = 4;
@@ -31,173 +53,6 @@ const PROGRAMMATIC_CORE_INSTRUCTIONS = [
   "Concurrent coding agents need separate worktrees; a shared mutable workspace can stale any early read.",
 ].join("\n");
 
-const PROGRAMMATIC_RECOVERY_INSTRUCTIONS = [
-  "Older turns and tool results may contain <cave-compressed> markers. Use cave_retrieve with their",
-  "recovery_handle before guessing. cave_retrieve remains a framework tool when recovery is active.",
-].join("\n");
-
-function hasCompleteRecoveryGuidance(value: unknown): boolean {
-  return typeof value === "string" &&
-    value.includes("<cave-compressed>") &&
-    value.includes("cave_retrieve") &&
-    value.includes("recovery_handle") &&
-    /before guessing/i.test(value);
-}
-
-const PROGRAMMATIC_WORKER_SOURCE = String.raw`
-"use strict";
-const { parentPort } = require("node:worker_threads");
-const vm = require("node:vm");
-
-let nextCallId = 1;
-const pending = new Map();
-
-function format(value) {
-  if (typeof value === "string") return value;
-  const encoded = JSON.stringify(value);
-  return encoded === undefined ? String(value) : encoded;
-}
-
-function hostCall(name, args) {
-  return new Promise((resolve) => {
-    const id = nextCallId++;
-    pending.set(id, { resolve });
-    try {
-      parentPort.postMessage({ type: "tool.call", id, name, args });
-    } catch (error) {
-      pending.delete(id);
-      resolve(JSON.stringify({
-        ok: false,
-        error: error instanceof Error ? error.message : String(error),
-      }));
-    }
-  });
-}
-
-parentPort.on("message", async (message) => {
-  if (message.type === "tool.result") {
-    const request = pending.get(message.id);
-    if (request === undefined) return;
-    pending.delete(message.id);
-    request.resolve(JSON.stringify(message.ok
-      ? { ok: true, value: message.value }
-      : { ok: false, error: message.error }));
-    return;
-  }
-  if (message.type !== "run") return;
-
-  const output = [];
-  // Only null-prototype bridges cross realms. User-visible wrappers are then
-  // created inside the context, so constructor chains cannot reach Worker
-  // globals or bypass tool dispatch.
-  const callBridge = (name, argsJSON) => hostCall(name, JSON.parse(argsJSON));
-  const printBridge = (value) => output.push(String(value));
-  Object.setPrototypeOf(callBridge, null);
-  Object.setPrototypeOf(printBridge, null);
-  Object.freeze(callBridge);
-  Object.freeze(printBridge);
-  const sandbox = Object.assign(Object.create(null), {
-    __cave_call: callBridge,
-    __cave_print: printBridge,
-  });
-  const context = vm.createContext(sandbox, {
-    name: "caveman-programmatic-tools",
-    codeGeneration: { strings: false, wasm: false },
-  });
-
-  try {
-    const bootstrapSource =
-      '(() => {' +
-      '  const bridge = globalThis.__cave_call;' +
-      '  const emit = globalThis.__cave_print;' +
-      '  Reflect.deleteProperty(globalThis, "__cave_call");' +
-      '  Reflect.deleteProperty(globalThis, "__cave_print");' +
-      '  const calls = [];' +
-      '  const format = (value) => {' +
-      '    if (typeof value === "string") return value;' +
-      '    const encoded = JSON.stringify(value);' +
-      '    return encoded === undefined ? String(value) : encoded;' +
-      '  };' +
-      '  const print = (...values) => emit(values.map(format).join(" "));' +
-      '  const exposed = Object.create(null);' +
-      '  for (const name of ' + JSON.stringify(message.tools) + ') {' +
-      '    const fn = (args) => {' +
-      '      const promise = (async () => {' +
-      '        const envelope = JSON.parse(await bridge(name, JSON.stringify(args)));' +
-      '        if (envelope === null || typeof envelope !== "object" || typeof envelope.ok !== "boolean") {' +
-      '          throw new Error("cave_program_bridge_protocol_invalid");' +
-      '        }' +
-      '        if (!envelope.ok) {' +
-      '          throw new Error(typeof envelope.error === "string" ? envelope.error : "cave_program_tool_failed");' +
-      '        }' +
-      '        return envelope.value;' +
-      '      })();' +
-      '      const record = { promise, observed: false };' +
-      '      calls.push(record);' +
-      '      void promise.catch(() => undefined);' +
-      '      const thenable = Object.create(null);' +
-      '      Object.defineProperty(thenable, "then", { value: (yes, no) => {' +
-      '        if (typeof no === "function") record.observed = true;' +
-      '        return promise.then(yes, no);' +
-      '      } });' +
-      '      Object.defineProperty(thenable, "catch", { value: (no) => {' +
-      '        if (typeof no === "function") record.observed = true;' +
-      '        return promise.catch(no);' +
-      '      } });' +
-      '      Object.defineProperty(thenable, "finally", { value: (done) => promise.finally(done) });' +
-      '      Object.defineProperty(thenable, Symbol.toStringTag, { value: "Promise" });' +
-      '      return Object.freeze(thenable);' +
-      '    };' +
-      '    Object.defineProperty(exposed, name, { value: fn, enumerable: true });' +
-      '    Object.defineProperty(globalThis, name, { value: fn, enumerable: true });' +
-      '  }' +
-      '  Object.defineProperty(globalThis, "tools", { value: Object.freeze(exposed) });' +
-      '  Object.defineProperty(globalThis, "print", { value: print });' +
-      '  const consoleValue = Object.create(null);' +
-      '  Object.defineProperty(consoleValue, "log", { value: print, enumerable: true });' +
-      '  Object.defineProperty(globalThis, "console", { value: Object.freeze(consoleValue) });' +
-      '  const drain = async () => {' +
-      '    let cursor = 0;' +
-      '    let firstUnobservedFailure;' +
-      '    while (cursor < calls.length) {' +
-      '      const batch = calls.slice(cursor);' +
-      '      cursor = calls.length;' +
-      '      const outcomes = await Promise.allSettled(batch.map((record) => record.promise));' +
-      '      for (let index = 0; index < outcomes.length; index++) {' +
-      '        const outcome = outcomes[index];' +
-      '        if (outcome.status === "rejected" && !batch[index].observed && firstUnobservedFailure === undefined) {' +
-      '          firstUnobservedFailure = outcome.reason;' +
-      '        }' +
-      '      }' +
-      '    }' +
-      '    if (firstUnobservedFailure !== undefined) throw firstUnobservedFailure;' +
-      '  };' +
-      '  return Object.freeze({ drain });' +
-      '})()';
-    const lifecycle = new vm.Script(bootstrapSource, { filename: "caveman-code-bootstrap.js" })
-      .runInContext(context, { timeout: message.syncTimeoutMs });
-    const script = new vm.Script(
-      '(async () => { "use strict";\n' + message.code + '\n})()',
-      { filename: "caveman-code-cell.js", displayErrors: false },
-    );
-    const returned = await script.runInContext(context, {
-      timeout: message.syncTimeoutMs,
-      displayErrors: false,
-    });
-    await lifecycle.drain();
-    if (output.length === 0 && returned !== undefined) output.push(format(returned));
-    parentPort.postMessage({ type: "done", output: output.join("\n") || "ok" });
-  } catch (error) {
-    parentPort.postMessage({
-      type: "error",
-      error: error !== null && typeof error === "object" && typeof error.message === "string"
-        ? error.message
-        : String(error),
-    });
-  }
-});
-`;
-
 export interface ProgrammaticToolStats {
   readonly launched: number;
   readonly claimed: number;
@@ -205,11 +60,25 @@ export interface ProgrammaticToolStats {
   readonly abandoned: number;
 }
 
+export type { ProgrammaticToolNamespace };
+
+/** Runs before each cell; must bound its own wait and honor `signal`. */
+export type ProgrammaticCellGate = (code: string, signal: AbortSignal | undefined) => Promise<void>;
+
 export interface ProgrammaticToolRuntime {
   readonly definition: AgentDefinition;
   wrapModels(models: Models): Models;
   wrapStreamFn(streamFn: StreamFn): StreamFn;
   stats(): ProgrammaticToolStats;
+  /**
+   * Make more trusted tools callable from the next cell as `tools.<name>`,
+   * found through `searchTools`/`describeTool`/`describeNamespace`. The code
+   * tool's provider-visible description never changes, so the cache prefix
+   * stays byte-stable while tool servers connect.
+   */
+  registerNestedTools(tools: readonly ToolDefinition[], namespace?: ProgrammaticToolNamespace): void;
+  /** Await `gate(code)` before each cell, e.g. so servers a cell names can finish connecting. */
+  setCellGate(gate: ProgrammaticCellGate | undefined): void;
   close(): void;
 }
 
@@ -233,17 +102,34 @@ type WorkerToolCall = {
   readonly args: unknown;
 };
 
+type WorkerDiscover = {
+  readonly type: "discover";
+  readonly id: number;
+  readonly name: string;
+  readonly args: unknown;
+};
+
+type WorkerOutput = {
+  readonly type: "output";
+  readonly text: string;
+};
+
 type WorkerDone = {
   readonly type: "done";
-  readonly output: string;
+  readonly droppedBytes: number;
 };
 
 type WorkerError = {
   readonly type: "error";
-  readonly error: string;
+  readonly kind?: "stalled";
+  readonly error?: string;
+  readonly stack?: string;
+  readonly droppedBytes: number;
 };
 
-type WorkerMessage = WorkerToolCall | WorkerDone | WorkerError;
+type WorkerMessage = WorkerToolCall | WorkerDiscover | WorkerOutput | WorkerDone | WorkerError;
+
+type ProgramCall = { readonly name: string; status: "running" | "ok" | "error" };
 
 export interface ProgrammaticToolInstructionOptions {
   /** Provider-visible composite tool name. Defaults to `caveman_code`. */
@@ -260,12 +146,9 @@ export function programmaticToolInstructions(
 }
 
 function programmaticToolInstructionsFor(toolName: string, additional: string | undefined): string {
-  const standard = hasCompleteRecoveryGuidance(additional)
-    ? PROGRAMMATIC_CORE_INSTRUCTIONS
-    : `${PROGRAMMATIC_CORE_INSTRUCTIONS}\n\n${PROGRAMMATIC_RECOVERY_INSTRUCTIONS}`;
   const base = toolName === PROGRAMMATIC_TOOL_NAME
-    ? standard
-    : standard.replaceAll(PROGRAMMATIC_TOOL_NAME, toolName);
+    ? PROGRAMMATIC_CORE_INSTRUCTIONS
+    : PROGRAMMATIC_CORE_INSTRUCTIONS.replaceAll(PROGRAMMATIC_TOOL_NAME, toolName);
   return additional === undefined || additional.trim() === ""
     ? base
     : `${base}\n\n${additional}`;
@@ -277,12 +160,23 @@ export function createProgrammaticToolRuntime(
     readonly instructions?: string;
     readonly speculate?: boolean;
     readonly toolName?: string;
+    /**
+     * Hybrid mode: these tools stay declared to the provider beside the code
+     * tool, and instructions stay as given. Cells can still call every tool.
+     */
+    readonly direct?: readonly string[];
   } = {},
 ): ProgrammaticToolRuntime {
   if (directDefinition.sandbox !== "host") {
     throw new Error("cave_programmatic_tools_require_host_sandbox");
   }
-  const definitions = [...directDefinition.tools];
+  const direct = options.direct === undefined ? undefined : new Set(options.direct);
+  for (const name of direct ?? []) {
+    if (!directDefinition.tools.some((item) => item.name === name)) throw new Error(`cave_programmatic_direct_tool_unknown:${name}`);
+  }
+  // Cells call a tool's script companion when it has one: same name and
+  // input, structured result. Direct mode keeps the compact text form.
+  const definitions = directDefinition.tools.map((item) => toolScriptCompanions(item)?.script ?? item);
   if (definitions.length === 0) throw new Error("cave_programmatic_tools_required");
   if (definitions.some((definition) =>
     definition.runtime !== undefined && definition.runtime.kind !== "subagent"
@@ -292,14 +186,24 @@ export function createProgrammaticToolRuntime(
   const toolName = options.toolName ?? PROGRAMMATIC_TOOL_NAME;
   const counters: MutableStats = { launched: 0, claimed: 0, missed: 0, abandoned: 0 };
   const enabled = options.speculate ?? true;
-  const codeTool = createCodeTool(definitions, enabled, counters, toolName);
+  const codeTool = createCodeTool(definitions, enabled, counters, toolName, direct);
+  const { registry, cellGate } = PROGRAMMATIC_METADATA.get(codeTool)!;
   const definition = Object.freeze({
     ...directDefinition,
-    instructions: options.instructions ?? programmaticToolInstructions(
-      typeof directDefinition.instructions === "string" ? directDefinition.instructions : undefined,
-      { toolName },
-    ),
-    tools: Object.freeze([codeTool]),
+    // Declarations carry each tool's description, so the coding prompt's
+    // direct-mode Tools block would only repeat them in the prefix.
+    instructions: options.instructions ?? (direct !== undefined
+      ? directDefinition.instructions
+      : programmaticToolInstructions(
+        typeof directDefinition.instructions === "string"
+          ? withoutCodingToolGuidance(directDefinition.instructions)
+          : undefined,
+        { toolName },
+      )),
+    tools: Object.freeze([
+      ...directDefinition.tools.filter((item) => direct?.has(item.name) === true),
+      codeTool,
+    ]),
   });
 
   return Object.freeze({
@@ -314,6 +218,13 @@ export function createProgrammaticToolRuntime(
     },
     stats() {
       return Object.freeze({ ...counters });
+    },
+    registerNestedTools(tools: readonly ToolDefinition[], namespace?: ProgrammaticToolNamespace) {
+      registry.register(tools, namespace);
+    },
+    setCellGate(gate: ProgrammaticCellGate | undefined) {
+      if (gate !== undefined && typeof gate !== "function") throw new Error("cave_program_cell_gate_invalid");
+      cellGate.current = gate;
     },
     close() {},
   });
@@ -330,14 +241,24 @@ function createCodeTool(
   speculationEnabled: boolean,
   counters: MutableStats,
   toolName: string,
+  declared?: ReadonlySet<string>,
 ): ToolDefinition<{ code: string }, string> {
   const speculativeTools = speculationEnabled
     ? definitions.filter((definition) => definition.speculative === true)
       .map((definition) => definition.name)
     : [];
+  const registry = new NestedToolRegistry(toolName, definitions);
+  const cellGate: { current?: ProgrammaticCellGate | undefined } = {};
+  // Oversized cell output spills into the agent's retained-output store. Its
+  // reader stays callable from cells even when the direct surface omits it.
+  const spill = definitions.map(toolScriptCompanions)
+    .find((companions) => companions?.retain !== undefined && companions.reader !== undefined);
+  if (spill?.reader !== undefined && registry.get(spill.reader.name) === undefined) {
+    registry.register([spill.reader]);
+  }
   const definition = tool({
     name: toolName,
-    description: codeToolDescription(definitions),
+    description: codeToolDescription(definitions, declared),
     input: {
       type: "object",
       properties: { code: { type: "string" } },
@@ -353,64 +274,41 @@ function createCodeTool(
     speculativeTools,
     async execute(input, signal, context) {
       if (typeof input.code !== "string" || input.code.trim() === "") {
-        throw new Error("cave_program_source_required");
+        throw new Error("cave_program_source_required: code must be a non-empty JavaScript string.");
       }
-      if (Buffer.byteLength(input.code, "utf8") > PROGRAM_MAX_SOURCE_BYTES) {
-        throw new Error("cave_program_source_limit");
+      const sourceBytes = Buffer.byteLength(input.code, "utf8");
+      if (sourceBytes > PROGRAM_MAX_SOURCE_BYTES) {
+        throw new Error(
+          `cave_program_source_limit: this cell is ${sourceBytes} bytes; the limit is ` +
+          `${PROGRAM_MAX_SOURCE_BYTES}. Split the work across several smaller cells.`,
+        );
       }
-      return capProgramOutput(await runProgram(input.code, definitions, signal, context));
+      await cellGate.current?.(input.code, signal);
+      return capProgramOutput(
+        await runProgram(input.code, registry, definitions, new Set(speculativeTools), signal, context, spill),
+        spill,
+      );
     },
   });
   PROGRAMMATIC_METADATA.set(definition, Object.freeze({
     enabled: speculationEnabled && speculativeTools.length > 0,
     toolName,
     definitions: new Map(definitions.map((item) => [item.name, item])),
+    registry,
+    cellGate,
     speculativeNames: new Set(speculativeTools),
     counters,
   }));
   return definition;
 }
 
-function codeToolDescription(definitions: readonly ToolDefinition[]): string {
-  const declarations = definitions.map((definition) =>
-    `// ${definition.description.replace(/\r?\n/g, "\n// ")}\ndeclare function ${definition.name}(args: ${schemaType(definition.input)}): Promise<string>;`
-  );
-  return [
-    "Bounded async JS cell. Tools are direct functions and under tools.",
-    ...declarations,
-  ].join("\n");
-}
-
-function schemaType(value: unknown, depth = 0): string {
-  if (depth > 5 || !isRecord(value)) return "unknown";
-  if (Array.isArray(value.anyOf)) {
-    return value.anyOf.map((item) => schemaType(item, depth + 1)).join(" | ");
-  }
-  if (Array.isArray(value.enum)) return value.enum.map((item) => JSON.stringify(item)).join(" | ");
-  if ("const" in value) return JSON.stringify(value.const);
-  if (value.type === "string") return "string";
-  if (value.type === "integer" || value.type === "number") return "number";
-  if (value.type === "boolean") return "boolean";
-  if (value.type === "null") return "null";
-  if (value.type === "array") return `Array<${schemaType(value.items, depth + 1)}>`;
-  if (value.type !== "object" || !isRecord(value.properties)) return "unknown";
-  const required = new Set(Array.isArray(value.required)
-    ? value.required.filter((item): item is string => typeof item === "string")
-    : []);
-  const fields = Object.entries(value.properties).map(([name, schema]) =>
-    `${schemaPropertyName(name)}${required.has(name) ? "" : "?"}: ${schemaType(schema, depth + 1)}`
-  );
-  return `{ ${fields.join("; ")} }`;
-}
-
-function schemaPropertyName(name: string): string {
-  return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name) ? name : JSON.stringify(name);
-}
-
 type ProgrammaticMetadata = {
   readonly enabled: boolean;
   readonly toolName: string;
   readonly definitions: ReadonlyMap<string, ToolDefinition>;
+  /** Every tool cells may call, including tools registered after construction. */
+  readonly registry: NestedToolRegistry;
+  readonly cellGate: { current?: ProgrammaticCellGate | undefined };
   readonly speculativeNames: ReadonlySet<string>;
   readonly counters: MutableStats;
 };
@@ -873,11 +771,13 @@ async function boundedProgramSettlement(work: readonly Promise<unknown>[]): Prom
 
 async function runProgram(
   code: string,
-  definitions: readonly ToolDefinition[],
+  registry: NestedToolRegistry,
+  staticDefinitions: readonly ToolDefinition[],
+  speculativeNames: ReadonlySet<string>,
   signal: AbortSignal | undefined,
   context: ToolExecutionContext | undefined,
+  spill: ToolScriptCompanions | undefined,
 ): Promise<string> {
-  const definitionsByName = new Map(definitions.map((definition) => [definition.name, definition]));
   const programController = new AbortController();
   const programSignal = signal === undefined
     ? programController.signal
@@ -897,16 +797,35 @@ async function runProgram(
   let finishRequested = false;
   let settled = false;
   let callCount = 0;
+  let discoveryCount = 0;
   let effectfulCallSeen = false;
+  let droppedBytes = 0;
   const repeats = new Map<string, number>();
   const activeCalls = new Set<Promise<void>>();
+  const calls: ProgramCall[] = [];
+  const output: string[] = [];
+  // Failure reports keep what the cell printed and every call that already
+  // ran. They are formatted after settlement so call statuses are final.
+  const failure = (head: string) => () => {
+    const printed = output.join("\n") + (droppedBytes > 0 ? `\n[${droppedBytes} more output bytes dropped]` : "");
+    return new Error(capProgramOutput([
+      head,
+      ...(printed === "" ? [] : [`Output before the failure:\n${printed}`]),
+      calls.length === 0
+        ? "No tool calls ran."
+        : `These calls ran and are not undone: ${calls.map((call) => `${call.name} (${call.status})`).join(", ")}.`,
+    ].join("\n"), spill));
+  };
 
   return new Promise<string>((resolve, reject) => {
-    const timer = setTimeout(() => finish(new Error("cave_program_timeout")), PROGRAM_TIMEOUT_MS);
+    const timer = setTimeout(() => finish(failure(
+      `cave_program_timeout: this cell ran past its ${PROGRAM_TIMEOUT_MS} ms limit and was stopped. ` +
+      "Split the work into smaller cells.",
+    )), PROGRAM_TIMEOUT_MS);
     const abort = () => finish(signal?.reason instanceof Error
       ? signal.reason
       : new Error("cave_program_aborted"));
-    const finish = (error?: Error, output?: string): void => {
+    const finish = (error?: Error | (() => Error), result?: string): void => {
       if (finishRequested) return;
       finishRequested = true;
       clearTimeout(timer);
@@ -916,7 +835,7 @@ async function runProgram(
       // session, whose lifetime must outlive this cell. Only cell failure
       // triggers local cancellation; owner cancellation remains attached.
       if (error !== undefined) {
-        programController.abort(error);
+        programController.abort(error instanceof Error ? error : new Error("cave_program_cell_failed"));
         void worker.terminate();
       }
       void (async () => {
@@ -924,13 +843,16 @@ async function runProgram(
           programController.abort(new Error("cave_program_nested_calls_unquiesced"));
           settled = true;
           void worker.terminate();
-          reject(new Error("cave_program_nested_calls_unquiesced"));
+          reject(failure(
+            "cave_program_nested_calls_unquiesced: a nested call kept running after the cell stopped; " +
+            "its effects may still land. Check state before retrying.",
+          )());
           return;
         }
         settled = true;
         void worker.terminate();
-        if (error !== undefined) reject(error);
-        else resolve(output ?? "ok");
+        if (error !== undefined) reject(error instanceof Error ? error : error());
+        else resolve(result ?? "ok");
       })();
     };
     const reply = (id: number, result: { ok: true; value: unknown } | { ok: false; error: string }): void => {
@@ -940,27 +862,56 @@ async function runProgram(
     const executeCall = async (message: WorkerToolCall): Promise<void> => {
       try {
         callCount++;
-        if (callCount > PROGRAM_MAX_TOOL_CALLS) throw new Error("cave_program_tool_call_budget_exceeded");
-        const definition = definitionsByName.get(message.name);
-        if (definition === undefined) throw new Error(`cave_program_unknown_tool:${message.name}`);
-        if (!isRecord(message.args) || !validToolArguments(definition, message.args)) {
-          throw new Error(`cave_program_tool_arguments_invalid:${message.name}`);
+        if (callCount > PROGRAM_MAX_TOOL_CALLS) {
+          throw new Error(
+            `cave_program_tool_call_budget_exceeded: this cell already made ${PROGRAM_MAX_TOOL_CALLS} tool calls, ` +
+            "the per-cell limit. Print or return what you have, then continue in a new cell.",
+          );
         }
-        const canClaimSpeculation = definition.effect === "read" &&
-          definition.speculative === true && !effectfulCallSeen;
+        const definition = registry.get(message.name);
+        if (definition === undefined) throw new Error(`cave_program_unknown_tool:${message.name}`);
+        const mcpLimit = String(Reflect.get(definition, TOOL_IMPLEMENTATION_SOURCE)).startsWith("mcp:")
+          ? Math.floor(MCP_MAX_ARGUMENT_BYTES / schemaFanout(definition.input)) : Infinity;
+        // Before any schema check: the size is what bounds their cost.
+        if (mcpLimit !== Infinity && Buffer.byteLength(JSON.stringify(message.args) ?? "") > mcpLimit) {
+          throw new Error(
+            `cave_program_tool_arguments_too_large:${definition.name}: this MCP tool takes at most ` +
+            `${Math.floor(mcpLimit / 1024)} KiB of JSON arguments. Send less per call, or pass a file path the server can read.`,
+          );
+        }
+        const errors = isRecord(message.args)
+          ? argumentErrors(definition.input, message.args)
+          : [`args: expected object, got ${message.args === null ? "null" : typeof message.args}`];
+        if (errors.length > 0) throw new Error(invalidArgumentsMessage(definition, errors));
+        const args = message.args as Record<string, unknown>;
+        // Only names this code tool declared speculative may claim; the kernel
+        // rejects any other claim, including late tools and speculate:false.
+        const canClaimSpeculation = speculativeNames.has(definition.name) && !effectfulCallSeen;
         if (definition.effect !== "read") effectfulCallSeen = true;
-        const repeatKey = speculationKey(message.name, message.args);
+        const repeatKey = speculationKey(message.name, args);
         const repeated = (repeats.get(repeatKey) ?? 0) + 1;
         repeats.set(repeatKey, repeated);
         if (repeated > PROGRAM_MAX_REPEAT_CALLS && definition.allowRepeat !== true) {
-          throw new Error("cave_program_repeated_tool_call");
+          throw new Error(
+            `cave_program_repeated_tool_call: ${message.name} already ran ${PROGRAM_MAX_REPEAT_CALLS} times ` +
+            "with these exact arguments in this cell. Reuse the earlier result instead of calling again.",
+          );
         }
         if (context === undefined) throw new Error("cave_program_nested_dispatch_unavailable");
-        const pending = context.dispatch(message.name, message.args, {
-          signal: programSignal,
-          ...(canClaimSpeculation ? { claimSpeculation: true } : {}),
-        });
-        reply(message.id, { ok: true, value: serializableValue(await pending, definition.name) });
+        const call: ProgramCall = { name: definition.name, status: "running" };
+        calls.push(call);
+        let value: unknown;
+        try {
+          value = await context.dispatch(message.name, args, {
+            signal: programSignal,
+            ...(canClaimSpeculation ? { claimSpeculation: true } : {}),
+          });
+          call.status = "ok";
+        } catch (error) {
+          call.status = "error";
+          throw error;
+        }
+        reply(message.id, { ok: true, value: serializableValue(value, definition.name) });
       } catch (error) {
         reply(message.id, {
           ok: false,
@@ -985,17 +936,43 @@ async function runProgram(
           () => activeCalls.delete(pending),
           () => activeCalls.delete(pending),
         );
+      } else if (value.type === "discover") {
+        try {
+          if (++discoveryCount > PROGRAM_MAX_DISCOVERY_CALLS) {
+            throw new Error(
+              `cave_program_discovery_budget_exceeded: this cell already made ${PROGRAM_MAX_DISCOVERY_CALLS} ` +
+              "discovery calls. Use what you found, or continue in a new cell.",
+            );
+          }
+          reply(value.id, { ok: true, value: discoverTools(registry.list(), value.name, value.args) });
+        } catch (error) {
+          reply(value.id, { ok: false, error: error instanceof Error ? error.message : String(error) });
+        }
+      } else if (value.type === "output") {
+        output.push(value.text);
       } else if (value.type === "done") {
-        finish(undefined, value.output);
+        droppedBytes = value.droppedBytes;
+        const printed = output.join("\n");
+        finish(undefined, droppedBytes > 0 ? `${printed}\n[${droppedBytes} more output bytes dropped]` : printed || "ok");
       } else if (value.type === "error") {
-        finish(new Error(`cave_program_execution_failed:${value.error}`));
+        droppedBytes = value.droppedBytes;
+        finish(failure(value.kind === "stalled"
+          ? "cave_program_stalled: this cell awaits a promise that can never settle: no tool call is " +
+            "pending, and cells have no timers. Await tool calls directly instead of a hand-built promise."
+          : `cave_program_execution_failed:${value.error ?? "unknown error"}` +
+            (/^Script execution timed out/.test(value.error ?? "")
+              ? ` Synchronous code before the first await may run ${PROGRAM_SYNC_TIMEOUT_MS} ms; avoid busy loops.`
+              : "") +
+            (value.stack ? `\n${value.stack}` : "")));
       } else {
         finish(new Error("cave_program_worker_protocol_invalid"));
       }
     });
-    worker.once("error", (error) => finish(new Error("cave_program_worker_failed", { cause: error })));
+    worker.once("error", (error: Error & { code?: unknown }) => finish(error.code === "ERR_WORKER_OUT_OF_MEMORY"
+      ? failure("cave_program_memory_limit: this cell ran out of its 64 MiB heap. Keep less data in memory at once.")
+      : new Error("cave_program_worker_failed", { cause: error })));
     worker.once("exit", (codeValue) => {
-      if (!settled) finish(new Error(`cave_program_worker_exit:${codeValue}`));
+      if (!settled) finish(failure(`cave_program_worker_exit:${codeValue}`));
     });
     if (signal?.aborted) {
       abort();
@@ -1005,8 +982,13 @@ async function runProgram(
     worker.postMessage({
       type: "run",
       code,
-      tools: definitions.map((definition) => definition.name),
+      tools: registry.list().map(({ definition }) => ({
+        name: definition.name,
+        description: definition.description,
+      })),
+      globals: staticDefinitions.map((definition) => definition.name),
       syncTimeoutMs: PROGRAM_SYNC_TIMEOUT_MS,
+      maxOutputBytes: PROGRAM_CAPTURE_MAX_BYTES,
     });
   });
 }
@@ -1031,12 +1013,23 @@ function codeWorkerEnvironment(source: NodeJS.ProcessEnv): Record<string, string
   return output;
 }
 
-function capProgramOutput(value: string): string {
-  const bytes = Buffer.byteLength(value, "utf8");
-  if (bytes <= PROGRAM_MAX_OUTPUT_BYTES) return value;
-  const head = Buffer.from(value, "utf8").subarray(0, PROGRAM_MAX_OUTPUT_BYTES / 2).toString("utf8");
-  const tail = Buffer.from(value, "utf8").subarray(-PROGRAM_MAX_OUTPUT_BYTES / 2).toString("utf8");
-  return `${head}\n... caveman_code output truncated (${bytes} bytes) ...\n${tail}`;
+/**
+ * Keep head and tail of oversized cell output. The full text spills into the
+ * agent's retained-output store when one exists, so a later cell can page the
+ * omitted middle instead of rerunning tools.
+ */
+function capProgramOutput(value: string, spill: ToolScriptCompanions | undefined): string {
+  const encoded = Buffer.from(value, "utf8");
+  if (encoded.byteLength <= PROGRAM_MAX_OUTPUT_BYTES) return value;
+  const half = PROGRAM_MAX_OUTPUT_BYTES / 2 - 256;
+  const omitted = encoded.byteLength - 2 * half;
+  const handle = spill?.retain?.("code cell output", value, true);
+  const recovery = handle === undefined || spill?.reader === undefined
+    ? "print less, or filter inside the cell"
+    : `read them with tools.${spill.reader.name}(${JSON.stringify({ handle, offset: half })})`;
+  return `${encoded.subarray(0, half).toString("utf8")}\n` +
+    `[... ${omitted} of ${encoded.byteLength} output bytes omitted; ${recovery} ...]\n` +
+    encoded.subarray(-half).toString("utf8");
 }
 
 function parseInvocations(
@@ -1189,58 +1182,7 @@ function stableJSON(value: unknown): string {
 }
 
 function validToolArguments(definition: ToolDefinition, args: Record<string, unknown>): boolean {
-  return matchesJSONSchema(definition.input, args);
-}
-
-function matchesJSONSchema(schema: unknown, value: unknown): boolean {
-  if (!isRecord(schema)) return false;
-  if (Array.isArray(schema.anyOf) && !schema.anyOf.some((item) => matchesJSONSchema(item, value))) {
-    return false;
-  }
-  if (Array.isArray(schema.allOf) && !schema.allOf.every((item) => matchesJSONSchema(item, value))) {
-    return false;
-  }
-  if ("const" in schema && !Object.is(schema.const, value)) return false;
-  if (Array.isArray(schema.enum) && !schema.enum.some((item) => Object.is(item, value))) return false;
-  if (schema.type === undefined) return true;
-  if (schema.type === "null") return value === null;
-  if (schema.type === "string") {
-    if (typeof value !== "string") return false;
-    if (typeof schema.minLength === "number" && value.length < schema.minLength) return false;
-    if (typeof schema.maxLength === "number" && value.length > schema.maxLength) return false;
-    if (typeof schema.pattern === "string" && !new RegExp(schema.pattern).test(value)) return false;
-    return true;
-  }
-  if (schema.type === "boolean") return typeof value === "boolean";
-  if (schema.type === "number" || schema.type === "integer") {
-    if (typeof value !== "number" || !Number.isFinite(value)) return false;
-    if (schema.type === "integer" && !Number.isSafeInteger(value)) return false;
-    if (typeof schema.minimum === "number" && value < schema.minimum) return false;
-    if (typeof schema.maximum === "number" && value > schema.maximum) return false;
-    return true;
-  }
-  if (schema.type === "array") {
-    if (!Array.isArray(value)) return false;
-    if (typeof schema.minItems === "number" && value.length < schema.minItems) return false;
-    if (typeof schema.maxItems === "number" && value.length > schema.maxItems) return false;
-    return schema.items === undefined || value.every((item) => matchesJSONSchema(schema.items, item));
-  }
-  if (schema.type !== "object" || !isRecord(value) || Array.isArray(value)) return false;
-  const properties = isRecord(schema.properties) ? schema.properties : {};
-  const required = Array.isArray(schema.required)
-    ? schema.required.filter((item): item is string => typeof item === "string")
-    : [];
-  if (required.some((name) => !(name in value))) return false;
-  for (const [name, field] of Object.entries(value)) {
-    if (name === "__proto__" || name === "prototype" || name === "constructor") return false;
-    const fieldSchema = properties[name];
-    if (fieldSchema === undefined) {
-      if (schema.additionalProperties === false) return false;
-      continue;
-    }
-    if (!matchesJSONSchema(fieldSchema, field)) return false;
-  }
-  return true;
+  return argumentErrors(definition.input, args).length === 0;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -15,6 +15,7 @@ import {
   type AgentDefinitionTransform,
 } from "./definition.js";
 import { context, schema, tool, type ContextDefinition } from "./primitives.js";
+import { parseMcpServers, type McpServerEntry } from "./mcp-config.js";
 import { parseDocument } from "yaml";
 
 export const AGENT_PLUGINS_SCHEMA =
@@ -95,8 +96,10 @@ export interface AgentPlugin {
   readonly manifest: AgentPluginManifest;
   readonly skills: readonly AgentSkill[];
   readonly commands: readonly AgentPluginCommand[];
-  /** MCP declaration exists, but this SDK currently implements declarative content only. */
+  /** MCP declaration exists. Plugin loading never launches it; hosts decide. */
   readonly hasMcp: boolean;
+  /** Valid servers from the plugin's `mcp.json`/`.mcp.json` or manifest `mcpServers`, parsed only. */
+  readonly mcpServers: readonly McpServerEntry[];
   readonly hasHooks: boolean;
   readonly hasAgents: boolean;
 }
@@ -524,7 +527,28 @@ export async function loadAgentPlugin(
     mcpPath = await regularContainedFile(canonicalRoot, candidate);
     break;
   }
-  const hasMcp = mcpPath !== undefined;
+  // Agent Plugins v1 has no manifest `mcpServers` field; it is reported as unknown there.
+  const inlineMcp = resolvedManifest.format === "agent-plugins-v1"
+    ? undefined
+    : (decoded as Record<string, unknown>).mcpServers;
+  let mcp: { servers: readonly McpServerEntry[]; errors: readonly string[] } = { servers: [], errors: [] };
+  if (mcpPath === undefined && typeof inlineMcp === "string") {
+    try {
+      mcpPath = await regularContainedFile(canonicalRoot, resolve(canonicalRoot, inlineMcp));
+    } catch (error) {
+      mcp = { servers: [], errors: [`${manifestPath}: mcpServers ${errorText(error)}`] };
+    }
+  }
+  const hasMcp = mcpPath !== undefined || inlineMcp !== undefined;
+  if (mcpPath !== undefined) {
+    try {
+      mcp = parseMcpServers(JSON.parse(await readFile(mcpPath, "utf8")), mcpPath);
+    } catch (error) {
+      mcp = { servers: [], errors: [`${mcpPath}: ${errorText(error)}`] };
+    }
+  } else if (inlineMcp !== undefined && typeof inlineMcp !== "string") {
+    mcp = parseMcpServers({ mcpServers: inlineMcp }, manifestPath);
+  }
   const hooksPath = join(canonicalRoot, "hooks");
   const agentsPath = join(canonicalRoot, "agents");
   const hasHooks = await optionalKind(hooksPath, "directory") === "valid";
@@ -541,9 +565,13 @@ export async function loadAgentPlugin(
     ...loadedCommands.diagnostics,
     ...(hasMcp ? [{
       code: "agent_environment_unsupported_plugin_mcp" as const,
-      path: mcpPath!,
-      message: "plugin MCP component recognized but not loaded by declarative-only client",
-    }] : []),
+      path: mcpPath ?? manifestPath,
+      message: `plugin MCP servers parsed (${mcp.servers.length}) but never launched by plugin loading`,
+    }, ...mcp.errors.map((message) => ({
+      code: "agent_environment_unsupported_plugin_mcp" as const,
+      path: mcpPath ?? manifestPath,
+      message,
+    }))] : []),
     ...(hasHooks ? [{
       code: "agent_environment_unsupported_plugin_hooks" as const,
       path: hooksPath,
@@ -563,6 +591,7 @@ export async function loadAgentPlugin(
       skills: loaded.skills,
       commands: loadedCommands.commands,
       hasMcp,
+      mcpServers: mcp.servers,
       hasHooks,
       hasAgents,
     }),
@@ -702,12 +731,42 @@ export async function loadAgentEnvironment(
   });
 }
 
+/** Characters of the whole skill index; descriptions shrink to fit, skills are never dropped. */
+const MAX_AGENT_SKILLS_INDEX_CHARS = 8_192;
+/** Characters of one skill description in the index; load_skill returns the full skill. */
+const MAX_AGENT_SKILL_INDEX_DESCRIPTION_CHARS = 320;
+
+/**
+ * Stable-prefix skill index. The cap depends only on the sorted skill list, so
+ * the rendered bytes stay identical for one environment.
+ */
 export function renderAgentSkillsIndex(skills: readonly AgentSkill[]): string {
-  return [
+  const intro = [
     "Skills available to this agent. Load one only when its description matches the task.",
     'Call load_skill({"name":"<skill>"}) for instructions. Use its resource argument for referenced files.',
-    ...skills.map((skill) => `- ${skill.id}: ${skill.description}`),
+  ];
+  const heads = skills.map((skill) => `- ${skill.id}`);
+  const fixed = [...intro, ...heads].join("\n").length;
+  // Each description also costs a ": " separator.
+  const perSkill = skills.length === 0 ? 0 : Math.min(
+    MAX_AGENT_SKILL_INDEX_DESCRIPTION_CHARS,
+    Math.floor((MAX_AGENT_SKILLS_INDEX_CHARS - fixed) / skills.length) - 2,
+  );
+  return [
+    ...intro,
+    ...skills.map((skill, index) => {
+      const description = truncateIndexText(skill.description, perSkill);
+      return description === "" ? heads[index]! : `${heads[index]!}: ${description}`;
+    }),
   ].join("\n");
+}
+
+function truncateIndexText(text: string, max: number): string {
+  if (text.length <= max) return text;
+  if (max <= 1) return "";
+  // Never end on a lone high surrogate; the index lives in the stable prefix.
+  const kept = text.slice(0, max - 1).replace(/[\uD800-\uDBFF]$/u, "");
+  return `${kept.trimEnd()}…`;
 }
 
 export function renderAgentPluginCommandsIndex(

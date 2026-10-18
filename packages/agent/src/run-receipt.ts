@@ -41,10 +41,10 @@ const RECEIPT_REQUIRED_KEYS = Object.freeze([
 const CALL_KEYS = Object.freeze([
   "provider", "model", "inputTokens", "outputTokens", "cacheReadTokens",
   "cacheWriteTokens", "reasoningTokens", "estimatedUsd", "unpriced",
-  "usageBasis", "clampedOutputTokens",
+  "usageBasis", "clampedOutputTokens", "purpose",
 ]);
 const CALL_REQUIRED_KEYS = Object.freeze(CALL_KEYS.filter(
-  (key) => key !== "clampedOutputTokens",
+  (key) => key !== "clampedOutputTokens" && key !== "purpose",
 ));
 const TOOL_KEYS = Object.freeze(["name", "calls", "errors"]);
 const TOOL_ALLOWED_KEYS = Object.freeze([...TOOL_KEYS, "denied"]);
@@ -383,6 +383,7 @@ function normalizeCall(value: unknown): ReceiptCall {
   if ((source["reasoningTokens"] as number) > (source["outputTokens"] as number)) {
     fail("call_reasoning_tokens");
   }
+  if (source["purpose"] !== undefined && source["purpose"] !== "cache_warm") fail("call_purpose");
   if (source["unpriced"] === true && source["estimatedUsd"] !== 0) {
     fail("call_estimated_usd");
   }
@@ -404,6 +405,7 @@ function normalizeCall(value: unknown): ReceiptCall {
     unpriced: source["unpriced"] as boolean,
     usageBasis: source["usageBasis"] as ReceiptCall["usageBasis"],
     ...(clampedOutputTokens === undefined ? {} : { clampedOutputTokens }),
+    ...(source["purpose"] === undefined ? {} : { purpose: "cache_warm" }),
   }) as ReceiptCall;
 }
 

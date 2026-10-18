@@ -6,7 +6,7 @@ Every identifier the runtime, adapters, and tooling can emit under the reserved
 `cave_` namespace: failure codes, stop reasons, framework-owned tool names, and
 refusal reasons. The namespace is reserved; user tools may not declare names in it.
 
-Total: **783** identifiers.
+Total: **814** identifiers.
 
 ## Sandbox and containment
 
@@ -270,6 +270,8 @@ Total: **783** identifiers.
 | `cave_run_cost_budget_exceeded` | `packages/agent/src/runtime.ts` |
 | `cave_run_deadline_exceeded` | `packages/agent/src/runtime.ts` |
 | `cave_run_deadline_invalid` | `packages/agent/src/runtime.ts` |
+| `cave_run_reasoning_invalid` | `packages/agent/src/runtime.ts` |
+| `cave_run_reasoning_locked` | `packages/agent/src/runtime.ts` |
 | `cave_run_receipt_invalid` | `packages/agent/src/run-receipt.ts` |
 | `cave_run_stopped` | `packages/agent/src/runtime.ts` |
 
@@ -290,6 +292,7 @@ Total: **783** identifiers.
 | `cave_tool_policy_failed` | `packages/agent/src/tool-policy.ts` |
 | `cave_tool_policy_reason_invalid` | `packages/agent/src/tool-policy.ts` |
 | `cave_tool_policy_timeout` | `packages/agent/src/tool-policy.ts` |
+| `cave_tool_policy_timeout_invalid` | `packages/agent/src/tool-policy.ts` |
 | `cave_tool_result_inline_limit` | `packages/agent/src/runtime.ts` |
 | `cave_tool_result_limit` | `packages/agent/src/tool-internal.ts` |
 | `cave_tool_result_missing` | `packages/agent/src/runtime.ts` |
@@ -302,6 +305,7 @@ Total: **783** identifiers.
 | `cave_tool_schema_implementation_sha256` | `packages/agent/src/build.ts` |
 | `cave_tool_schema_invalid` | `packages/agent/src/runtime.ts` |
 | `cave_tool_schema_semantics_unverified` | `packages/agent/src/runtime.ts` |
+| `cave_tool_script_companion_invalid` | `packages/agent/src/tool-internal.ts` |
 | `cave_tool_search_query_required` | `packages/agent/src/runtime.ts` |
 | `cave_tool_search_result_limit` | `packages/agent/src/runtime.ts` |
 | `cave_tool_timeout` | `packages/agent/src/runtime.ts` |
@@ -344,10 +348,12 @@ Total: **783** identifiers.
 | `cave_model_boundary_middleware_id_invalid` | `packages/agent/src/model-boundary.ts` |
 | `cave_model_boundary_middleware_invalid` | `packages/agent/src/model-boundary.ts` |
 | `cave_model_boundary_terminal_reused` | `packages/agent/src/model-boundary.ts` |
+| `cave_model_input_limit` | `packages/agent/src/runtime.ts` |
 | `cave_model_input_unsupported` | `packages/agent/src/runtime.ts` |
 | `cave_model_route_cross_provider` | `packages/agent/src/runtime.ts` |
 | `cave_model_route_decision_invalid` | `packages/agent/src/runtime.ts` |
 | `cave_model_route_incompatible` | `packages/agent/src/runtime.ts` |
+| `cave_model_route_reasoning_locked` | `packages/agent/src/runtime.ts` |
 | `cave_model_route_unknown` | `packages/agent/src/runtime.ts` |
 | `cave_model_usage_incomplete` | `packages/agent/src/model-usage.ts` |
 | `cave_model_usage_invalid` | `packages/agent/src/model-usage.ts` |
@@ -373,6 +379,7 @@ Total: **783** identifiers.
 | `cave_compaction_option_invalid` | `packages/agent/src/compaction.ts` |
 | `cave_compaction_repetitions_invalid` | `packages/agent/src/compaction-harness.ts` |
 | `cave_compaction_source_missing` | `packages/agent/src/compaction.ts` |
+| `cave_compaction_source_system` | `packages/agent/src/compaction.ts` |
 
 ## Prompt cache
 
@@ -383,6 +390,10 @@ Total: **783** identifiers.
 | `cave_cache_retention_invalid` | `packages/agent/src/runtime.ts` |
 | `cave_cache_usage_invalid` | `packages/agent/src/cache-planner/performance.ts` |
 | `cave_cache_volatile_stable_slot` | `packages/agent/src/runtime.ts` |
+| `cave_cache_warm_abandoned` | `packages/agent/src/cache-warmer.ts` |
+| `cave_cache_warm_not_replayable` | `packages/agent/src/cache-warmer.ts` |
+| `cave_cache_warm_stopped` | `packages/agent/src/cache-warmer.ts` |
+| `cave_cache_warming_invalid` | `packages/agent/src/runtime.ts` |
 
 ## Adapter kit and conformance
 
@@ -546,7 +557,7 @@ Total: **783** identifiers.
 
 | Identifier | Declared in |
 | --- | --- |
-| `cave_agent_controller_in_use` | `packages/agent/src/run-controller.ts` |
+| `cave_agent_controller_in_use` | `packages/agent/src/runtime.ts` |
 | `cave_agent_definition_invalid` | `packages/agent/src/definition-graph.ts` |
 | `cave_agent_environment_context_collision` | `packages/agent/src/agent-environment.ts` |
 | `cave_agent_environment_tool_collision` | `packages/agent/src/agent-environment.ts` |
@@ -564,6 +575,7 @@ Total: **783** identifiers.
 | `cave_agent_plugin_name_invalid` | `packages/agent/src/agent-environment.ts` |
 | `cave_agent_plugin_schema_unsupported` | `packages/agent/src/agent-environment.ts` |
 | `cave_agent_queue_index_invalid` | `packages/agent/src/run-controller.ts` |
+| `cave_agent_queue_message_in_flight` | `packages/agent/src/run-controller.ts` |
 | `cave_agent_queue_message_required` | `packages/agent/src/run-controller.ts` |
 | `cave_agent_regular_file_required` | `packages/agent/src/agent-environment.ts` |
 | `cave_agent_run_failed` | `packages/agent/src/runtime.ts` |
@@ -588,24 +600,39 @@ Total: **783** identifiers.
 | Identifier | Declared in |
 | --- | --- |
 | `cave_program_aborted` | `packages/agent/src/programmatic-tools.ts` |
-| `cave_program_bridge_protocol_invalid` | `packages/agent/src/programmatic-tools.ts` |
+| `cave_program_arguments_not_json` | `packages/agent/src/programmatic-worker.ts` |
+| `cave_program_bootstrap_failed` | `packages/agent/src/programmatic-worker.ts` |
+| `cave_program_bridge_protocol_invalid` | `packages/agent/src/programmatic-worker.ts` |
+| `cave_program_cell_failed` | `packages/agent/src/programmatic-tools.ts` |
 | `cave_program_cell_finishing` | `packages/agent/src/programmatic-tools.ts` |
+| `cave_program_cell_gate_invalid` | `packages/agent/src/programmatic-tools.ts` |
+| `cave_program_cell_threw_non_error` | `packages/agent/src/programmatic-worker.ts` |
+| `cave_program_discovery_budget_exceeded` | `packages/agent/src/programmatic-tools.ts` |
+| `cave_program_discovery_unknown` | `packages/agent/src/programmatic-catalog.ts` |
 | `cave_program_error_mapper_failed` | `packages/agent/src/programmatic-tools.ts` |
 | `cave_program_error_mapper_invalid` | `packages/agent/src/programmatic-tools.ts` |
+| `cave_program_error_unreadable` | `packages/agent/src/programmatic-worker.ts` |
 | `cave_program_execution_failed` | `packages/agent/src/programmatic-tools.ts` |
+| `cave_program_memory_limit` | `packages/agent/src/programmatic-tools.ts` |
 | `cave_program_metadata_source_invalid` | `packages/agent/src/programmatic-tools.ts` |
+| `cave_program_namespace_invalid` | `packages/agent/src/programmatic-catalog.ts` |
 | `cave_program_nested_calls_unquiesced` | `packages/agent/src/runtime.ts` |
 | `cave_program_nested_dispatch_unavailable` | `packages/agent/src/programmatic-tools.ts` |
 | `cave_program_non_json_value` | `packages/agent/src/programmatic-tools.ts` |
+| `cave_program_registered_tool_duplicate` | `packages/agent/src/programmatic-catalog.ts` |
+| `cave_program_registered_tool_unsupported` | `packages/agent/src/programmatic-catalog.ts` |
+| `cave_program_registered_tool_untrusted` | `packages/agent/src/programmatic-catalog.ts` |
 | `cave_program_repeated_tool_call` | `packages/agent/src/programmatic-tools.ts` |
 | `cave_program_source_limit` | `packages/agent/src/programmatic-tools.ts` |
 | `cave_program_source_required` | `packages/agent/src/programmatic-tools.ts` |
 | `cave_program_speculation_abandoned` | `packages/agent/src/programmatic-tools.ts` |
 | `cave_program_speculation_unavailable` | `packages/agent/src/programmatic-tools.ts` |
+| `cave_program_stalled` | `packages/agent/src/programmatic-tools.ts` |
 | `cave_program_timeout` | `packages/agent/src/programmatic-tools.ts` |
-| `cave_program_tool_arguments_invalid` | `packages/agent/src/programmatic-tools.ts` |
+| `cave_program_tool_arguments_invalid` | `packages/agent/src/programmatic-catalog.ts` |
+| `cave_program_tool_arguments_too_large` | `packages/agent/src/programmatic-tools.ts` |
 | `cave_program_tool_call_budget_exceeded` | `packages/agent/src/programmatic-tools.ts` |
-| `cave_program_tool_failed` | `packages/agent/src/programmatic-tools.ts` |
+| `cave_program_tool_failed` | `packages/agent/src/programmatic-worker.ts` |
 | `cave_program_tool_result_unserializable` | `packages/agent/src/programmatic-tools.ts` |
 | `cave_program_unknown_tool` | `packages/agent/src/programmatic-tools.ts` |
 | `cave_program_worker_exit` | `packages/agent/src/programmatic-tools.ts` |
@@ -764,8 +791,8 @@ Total: **783** identifiers.
 | `cave_conversation_invalid` | `packages/agent/src/runtime.ts` |
 | `cave_duplicate_tool_name` | `packages/agent/src/definition-graph.ts` |
 | `cave_elided` | `packages/agent/src/compaction.ts` |
-| `cave_engine_aborted` | `packages/agent/src/runtime.ts` |
-| `cave_engine_timeout` | `packages/agent/src/runtime.ts` |
+| `cave_engine_aborted` | `packages/agent/src/engine-process.ts` |
+| `cave_engine_timeout` | `packages/agent/src/engine-process.ts` |
 | `cave_execution_backend_aborted` | `packages/agent/src/execution-backend.ts` |
 | `cave_execution_backend_command_sessions_disabled` | `packages/agent/src/shell-tools.ts` |
 | `cave_execution_backend_command_sessions_local_only` | `packages/agent/src/shell-tools.ts` |
@@ -844,16 +871,18 @@ Total: **783** identifiers.
 | `cave_plan_route_unmatched` | `packages/agent/src/runtime.ts` |
 | `cave_prefix_shrink_regression` | `packages/agent/src/cache-planner/static-checks.ts` |
 | `cave_privacy_conformance_failed` | `packages/agent/src/cli.ts` |
+| `cave_programmatic_direct_tool_unknown` | `packages/agent/src/programmatic-tools.ts` |
 | `cave_programmatic_tool_runtime_unsupported` | `packages/agent/src/programmatic-tools.ts` |
 | `cave_programmatic_tools_require_host_sandbox` | `packages/agent/src/programmatic-tools.ts` |
 | `cave_programmatic_tools_required` | `packages/agent/src/programmatic-tools.ts` |
 | `cave_provider_cost_mismatch` | `packages/agent/src/execution-kernel.ts` |
 | `cave_provider_credentials` | `packages/agent/src/runtime.ts` |
+| `cave_provider_error` | `packages/agent/src/breakers.ts` |
 | `cave_provider_identity_missing` | `packages/agent/src/execution-kernel.ts` |
 | `cave_provider_model_identity_mismatch` | `packages/agent/src/claude-runtime.ts` |
 | `cave_provider_price_window_changed` | `packages/agent/src/adapters.ts` |
 | `cave_provider_terminal_` | `packages/agent/src/runtime.ts` |
-| `cave_provider_terminal_aborted` | `packages/agent/src/runtime.ts` |
+| `cave_provider_terminal_aborted` | `packages/agent/src/provider-retry.ts` |
 | `cave_provider_usage_incomplete` | `packages/agent/src/claude-runtime.ts` |
 | `cave_provider_usage_unpriced` | `packages/agent/src/execution-kernel.ts` |
 | `cave_react_api_required` | `packages/react/src/index.js` |
@@ -921,11 +950,13 @@ Total: **783** identifiers.
 | `cave_stale_lock` | `packages/agent/src/cli.ts` |
 | `cave_static_context_unserializable` | `packages/agent/src/runtime.ts` |
 | `cave_stream_cancelled` | `packages/agent/src/runtime.ts` |
+| `cave_stream_ended_without_terminal` | `packages/agent/src/breakers.ts` |
 | `cave_testing_script_exhausted` | `packages/agent/src/testing.ts` |
 | `cave_transform_registry_unavailable` | `packages/agent/src/cli.ts` |
 | `cave_transform_safety_mismatch` | `packages/agent/src/runtime.ts` |
 | `cave_transform_trace_basis_mixed` | `packages/agent/src/code.ts` |
 | `cave_transform_trace_limit` | `packages/agent/src/runtime.ts` |
+| `cave_turn_retry_invalid` | `packages/agent/src/provider-retry.ts` |
 | `cave_unknown_tool` | `packages/agent/src/claude-runtime.ts` |
 | `cave_unknown_transform` | `packages/agent/src/runtime.ts` |
 | `cave_untrusted_tool_definition` | `packages/agent/src/definition-graph.ts` |

@@ -15,7 +15,12 @@ import {
   normalizeRunBudget,
 } from "../dist/budget.js";
 import { callCeilingFor, restorableRequestBytes } from "../dist/runtime.js";
-import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
+import {
+  createAssistantMessageEventStream,
+  getCurrentSystemPrompt,
+  getCurrentTools,
+} from "@earendil-works/pi-ai";
+import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { fauxModel } from "../dist/testing.js";
 
 const PRICED_MODEL = "claude-haiku-4-5";
@@ -902,22 +907,21 @@ test("M6: the reserve bounds the payload that actually leaves, restorations incl
     budget: { maxUsd: 0.5, onExhausted: "stop" },
     providerPayloadContract: "pi-on-payload-v1",
     streamFn: (selected, context, streamOptions) => {
+      // Pi 1.0 carries the prompt and tools in transcript system messages.
+      const systemPrompt = getCurrentSystemPrompt(context.messages);
+      const tools = getCurrentTools(context.messages);
       // The compressed request, as the reserve saw it.
       const outgoing = {
-        systemPrompt: context.systemPrompt,
+        systemPrompt,
         messages: [
-          ...context.messages,
+          ...context.messages.filter((message) => message.role !== "system"),
           { role: "toolResult", toolCallId: "t1", toolName: "poll", content: [{ type: "text", text: COMPRESSED }] },
         ],
       };
       streamOptions?.onPayload?.(outgoing, selected);
       // Drift: onPayload puts the originals back, and THIS is what leaves.
       const conversationOriginals = new Map([[COMPRESSED, ORIGINAL]]);
-      const restorable = restorableRequestBytes(
-        conversationOriginals,
-        context.systemPrompt ?? "",
-        context.systemPrompt ?? "",
-      );
+      const restorable = restorableRequestBytes(conversationOriginals, systemPrompt, systemPrompt);
       assert.equal(restorable > 0, true, "the scenario has no restorable substitution");
       const restored = {
         systemPrompt: outgoing.systemPrompt,
@@ -930,17 +934,17 @@ test("M6: the reserve bounds the payload that actually leaves, restorations incl
       seen.push({
         ceiling: callCeilingFor(
           selected,
-          context.systemPrompt ?? "",
+          systemPrompt,
           outgoing.messages,
-          context.tools,
+          tools,
           selected.maxTokens,
           restorable,
         ).inputTokenCeiling,
         naiveCeiling: callCeilingFor(
           selected,
-          context.systemPrompt ?? "",
+          systemPrompt,
           outgoing.messages,
-          context.tools,
+          tools,
           selected.maxTokens,
         ).inputTokenCeiling,
         payloadBytes: Buffer.byteLength(JSON.stringify(restored), "utf8"),
@@ -1607,3 +1611,25 @@ async function runWithOneCompaction(id, options = {}) {
   });
   return { result, ...observed };
 }
+
+test("Anthropic refusal fallback is never requested, so receipts name the served model", async () => {
+  // Pi 1.0 asks Anthropic for a server-side refusal fallback whenever the model
+  // lists allowed targets. The reply would then come from a model other than
+  // the one reserved, validated, and receipted, so the runtime fails closed by
+  // never requesting it.
+  const fable = builtinModels().getModel("anthropic", "claude-fable-5");
+  assert.equal(fable.compat.allowedFallbackModels.length > 0, true);
+  const requested = [];
+  const result = await run(pollingAgent("refusal-fallback"), "go", {
+    ensureRuntime: false,
+    model: fable,
+    streamFn: (selected) => {
+      requested.push(selected.compat.allowedFallbackModels);
+      return pushMessage(selected, [{ type: "text", text: "done" }], "stop", usage({ input: 100, output: 10 }));
+    },
+  });
+  assert.deepEqual(requested, [[]]);
+  assert.equal(result.model, "claude-fable-5");
+  // The caller's model object is not mutated.
+  assert.equal(fable.compat.allowedFallbackModels.length > 0, true);
+});

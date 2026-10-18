@@ -50,7 +50,7 @@ Follow these even if a local change seems harmless:
   - `packages/agent/src/agent-environment.ts`
   - core runtime never discovers workspace files automatically
   - wrappers may add roots, but must not fork validation/precedence/invocation behavior.
-- Never rebuild what exact-pinned Pi already provides (tool loop, `beforeToolCall`/`afterToolCall`/`shouldStopAfterTurn`/`transformContext`, steering and follow-up queues, event stream). Check `node_modules/@earendil-works/pi-agent-core/dist/types.d.ts` before adding a runtime capability. Consuming a Pi hook to enforce an invariant Pi lacks (budget, breakers, deadlines, durability) is the product; re-exposing Pi's surface under a Caveman name is duplication and is refused.
+- Never rebuild what exact-pinned Pi already provides (tool loop, `beforeToolCall`/`afterToolCall`/`finishTurn`/`prepareRequest`/`transformContext`, steering and follow-up queues, event stream). Check `node_modules/@earendil-works/pi-agent-core/dist/types.d.ts` before adding a runtime capability. Consuming a Pi hook to enforce an invariant Pi lacks (budget, breakers, deadlines, durability) is the product; re-exposing Pi's surface under a Caveman name is duplication and is refused.
 - Agent Plugins v1 / OpenPlugin support is declarative-only; do not add execution for MCP/hooks/custom agents. Executable integrations stay host-owned and require separate environment-allowlist and lifecycle contracts.
 - `@pebble-agent/protocol` is frozen and byte-sensitive. Be careful with event shapes, framing, ordering, enums, and fixtures.
 
@@ -135,3 +135,7 @@ node scripts/typecheck-packages.mjs
 - Root `npm test` includes license, catalog, protocol, evals, adapter-kit,
   adapter-conformance, coding-agent, package-type, agent, adapters,
   conformance-candidate reproduction, create-agent, and example coverage.
+
+<!-- caveman-blocks:start -->
+@.blocks/INDEX.md
+<!-- caveman-blocks:end -->

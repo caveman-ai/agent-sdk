@@ -24,7 +24,7 @@
   },
   "peerDependencies": {
     "@caveman-ai/agent": "0.2.0",
-    "@earendil-works/pi-agent-core": "0.83.0"
+    "@earendil-works/pi-agent-core": "1.2.0"
   },
   "engines": { "node": ">=22.19.0" },
   "publishConfig": { "access": "public" }

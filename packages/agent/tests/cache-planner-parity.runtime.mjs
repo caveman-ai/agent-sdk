@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
-import { CATALOG_SHA256 } from "../dist/catalog.js";
+import { catalogCacheProfile } from "../dist/catalog.js";
 import { CachePlanEngine, optimizeNativeRequest } from "../dist/cache-planner/index.js";
 
 // Parity suite for the TS cache-planner port (Agent SDK v2 phase 2).
@@ -26,16 +27,27 @@ async function fixtureFile(name) {
 const plannerFixtures = await fixtureFile("planner.json");
 const wireFixtures = await fixtureFile("wire.json");
 
-test("fixture catalog identity equals the TS catalog identity", () => {
-  for (const [name, file] of [["planner.json", plannerFixtures], ["wire.json", wireFixtures]]) {
-    assert.equal(
-      file.catalog_sha256,
-      CATALOG_SHA256,
-      `${name} was exported against a different provider catalog than src/catalog.ts — ` +
-        `fixture cache economics no longer match the planner's. ${REGENERATE}, then ` +
-        "node scripts/generate-agent-catalog.mjs",
-    );
-  }
+// The fixtures were exported against catalog 44f273c9…, and the Go exporter is
+// gone from Caveman-Cloud, so they stay pinned to it. The planner reads only
+// cache profiles from the catalog: the profiles of the models the wire fixtures
+// name must equal the ones in that catalog (digest taken from it). Rows added
+// to the catalog since change nothing here; a changed profile fails.
+const EXPORT_CATALOG_SHA256 = "44f273c90cd7ab4707888fdf7ac5aea21d668e2204ef8a66683644e9151e1ce8";
+const EXPORT_PROFILES_SHA256 = "54b382a9235e19492c9aa8c4c278a771eb992fe1cea187e6a4e25bdd587e3f22";
+
+test("fixture cache economics equal the TS catalog's", () => {
+  for (const file of [plannerFixtures, wireFixtures]) assert.equal(file.catalog_sha256, EXPORT_CATALOG_SHA256);
+  const keys = [...new Set(wireFixtures.cases.map(({ request: r }) => JSON.stringify([r.provider, r.model ?? "", r.region ?? ""])))].sort();
+  const rows = keys.map((key) => {
+    const [provider, model, region] = JSON.parse(key);
+    return [provider, model, region, catalogCacheProfile(provider, model, region) ?? null];
+  });
+  assert.equal(
+    createHash("sha256").update(JSON.stringify(rows)).digest("hex"),
+    EXPORT_PROFILES_SHA256,
+    "a fixture model's cache profile in src/catalog.ts differs from the one the fixtures were exported against — " +
+      `fixture cache economics no longer match the planner's. ${REGENERATE}, then node scripts/generate-agent-catalog.mjs`,
+  );
 });
 
 function profileFromFixture(profile) {

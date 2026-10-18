@@ -29,7 +29,7 @@ must never land here. Only Apache-2.0 protocol remains in this repository.
   must not fork validation, containment, precedence, or invocation.
 - Never rebuild what exact-pinned Pi already provides. Pi owns the tool loop
   and its lifecycle hooks (`beforeToolCall`, `afterToolCall`,
-  `shouldStopAfterTurn`, post-turn message injection, `transformContext`), the
+  `finishTurn`, `prepareRequest`, post-turn message injection, `transformContext`), the
   steering and follow-up queues, and the event stream. Before adding any runtime
   capability, read
   `node_modules/@earendil-works/pi-agent-core/dist/types.d.ts` and state which
@@ -39,9 +39,12 @@ must never land here. Only Apache-2.0 protocol remains in this repository.
   refused: it doubles the maintenance and pins us to a second contract that
   drifts from the one we exact-pin.
 - Agent Plugins v1 and OpenPlugin support is declarative-only: skills and
-  markdown slash commands. Recognize MCP, hooks, and custom agents, but never
-  execute them. Executable integrations stay host-owned and require separate
-  environment-allowlist and lifecycle contracts.
+  markdown slash commands. Plugin loading parses MCP and recognizes hooks and
+  custom agents, but never executes them. MCP servers launch only when a host
+  passes explicit entries to `McpHost` (`packages/agent/src/mcp.ts`): stdio with
+  `inheritEnv: false` and the coding env allowlist plus the entry's own `env`,
+  tools nested in the code tool (declared only when a host names one in
+  hybrid mode's `CodingMcpOptions.direct`), never retried or speculated.
 
 ## Checks
 
@@ -70,3 +73,23 @@ upstreams that have moved. It needs network access.
 
 On restricted hosts, rerun macOS `sandbox-exec` and loopback-dependent tests with
 required permissions before classifying failures as product defects.
+
+<!-- caveman-blocks:start -->
+BLOCKS. Scripts in this repo are reusable blocks in .blocks/. Rules:
+1. Check the block index below first. If a block fits, run it. If one almost fits, add a param to it.
+2. A script you would run twice, or over ~10 lines, becomes a block, not a heredoc or a /tmp file.
+3. Inputs are params. No hardcoded paths, ids, ports or dates.
+4. Print one small JSON object: the answer, not the data. Filter, count and truncate in code.
+5. Exit 0 on success, non-zero with {"error": ...} on failure.
+6. Safe to re-run: idempotent, no prompts, cleans up after itself.
+7. Header first: name, summary, params, effects, example. caveman-blocks lint checks it.
+8. Compose: call existing blocks with caveman-blocks run instead of copying their code.
+
+first-error   --path <path> [--context 5] [--patterns …] First error line in a log file: its line number,…
+grep-defs     --path <path> [--kinds …]         Function, class, type and constant definitions in a file or…
+json-peek     --path <path> [--depth 2]         Shape of a JSON or JSONL file: keys, row count, one sample.…
+jsonl-stats   --path <path> --group-by <str> [--sum ""] [--top 10] Row count plus counts and sums grouped by…
+replace-in-file --path <path> --old <str> --new <str> [--count 1] [--dry-run] Replace exact text in a file,…
+test-summary  --cmd <str> [--timeout 300]       Run a test command; return pass/fail counts, the first…
+wait-for      --path <path> [--pattern ""] [--timeout 60] [--interval 2] Wait until a file exists,…
+<!-- caveman-blocks:end -->

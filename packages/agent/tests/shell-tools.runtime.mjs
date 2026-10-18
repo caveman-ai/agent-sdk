@@ -79,6 +79,8 @@ test("file tools read line ranges, refuse clobbering, and replace exactly once",
     assert.equal(page, "2\tbeta");
 
     await tools.write_file.execute({ path: "made.txt", content: "first\n" });
+    await tools.write_file.execute({ path: "new/dir/made.txt", content: "nested\n" });
+    assert.equal(await readFile(resolve(workspace, "new/dir/made.txt"), "utf8"), "nested\n");
     await assert.rejects(
       () => tools.write_file.execute({ path: "made.txt", content: "lost\n" }),
       /EEXIST/,
@@ -107,6 +109,35 @@ test("bash runs one bounded command in the workspace", async () => {
   await withWorkspace(async (workspace) => {
     const tools = byName(shellTools({ workspace, tools: ["bash"] }));
     assert.equal(await tools.bash.execute({ command: "echo hi" }), "exit 0\nhi\n");
+  });
+});
+
+test("bash refuses a session action that also carries a command, and runs nothing", async () => {
+  await withWorkspace(async (workspace) => {
+    const sessions = { list: () => [], read: async () => {}, close: async () => {} };
+    const tools = byName(shellTools({ workspace, tools: ["bash"], commandSessions: sessions }));
+    for (const action of ["read", "list", "kill"]) {
+      await assert.rejects(
+        () => tools.bash.execute({ action, sessionId: "s1", command: "touch marker" }),
+        /a command or an action, not both/,
+      );
+    }
+    await assert.rejects(() => readFile(resolve(workspace, "marker")), { code: "ENOENT" });
+  });
+});
+
+test("bash gets the host's processEnv on top of the allowlist, never the ambient environment", async () => {
+  await withWorkspace(async (workspace) => {
+    process.env.CAVE_SHELL_TOOLS_AMBIENT = "leaked";
+    try {
+      const tools = byName(shellTools({ workspace, tools: ["bash"], processEnv: { CAVE_SHELL_TOOLS_HOST: "given" } }));
+      assert.equal(
+        await tools.bash.execute({ command: 'echo "${CAVE_SHELL_TOOLS_HOST:-none} ${CAVE_SHELL_TOOLS_AMBIENT:-none}"' }),
+        "exit 0\ngiven none\n",
+      );
+    } finally {
+      delete process.env.CAVE_SHELL_TOOLS_AMBIENT;
+    }
   });
 });
 
@@ -225,5 +256,28 @@ test("any agent can compose shell tools beside its own domain tools", async () =
       result.receipt.tools.map((item) => [item.name, item.calls, item.errors]).sort(),
       [["bash", 1, 0], ["lookup_ticket", 1, 0]],
     );
+  });
+});
+
+test("fileRoot widens where file tools reach while relative paths stay in the workspace", async () => {
+  await withWorkspace(async (outer) => {
+    const workspace = resolve(outer, "repo");
+    await mkdir(workspace);
+    const contained = byName(shellTools({ workspace }));
+    await assert.rejects(() => contained.write_file.execute({ path: "../out.txt", content: "x" }), /path escapes the workspace/);
+    const wide = byName(shellTools({ workspace, fileRoot: outer }));
+    await wide.write_file.execute({ path: "in.txt", content: "in\n" });
+    assert.equal(await readFile(resolve(workspace, "in.txt"), "utf8"), "in\n");
+    await wide.write_file.execute({ path: resolve(outer, "etc/out.txt"), content: "out\n" });
+    assert.match(await wide.read_file.execute({ path: "../etc/out.txt" }), /^1\tout/);
+  });
+});
+
+test("a command that is not found returns its exit 127 and output, not a shell failure", async () => {
+  await withWorkspace(async (workspace) => {
+    const tools = byName(shellTools({ workspace }));
+    const result = await tools.bash.execute({ command: "definitely-not-a-command-xyz" });
+    assert.match(result, /^exit 127\n/);
+    assert.match(result, /not found/);
   });
 });

@@ -46,10 +46,25 @@ import {
   type MemoryRuntimeConfig,
 } from "./memory.js";
 import { createFileMemoryAdapter } from "./memory-store.js";
+import type { AgentInput } from "./input.js";
 import {
+  PROGRAMMATIC_TOOL_NAME,
   createProgrammaticToolRuntime,
   type ProgrammaticToolRuntime,
 } from "./programmatic-tools.js";
+import {
+  attachCodingMcp,
+  renderCodingInstructionSections,
+  resolveCodingLevers,
+  resolveCodingModelID,
+  withDirectMcpTools,
+  type CodingInstructionSection,
+  type CodingLevers,
+  type CodingMcpOptions,
+  type ResolvedCodingLevers,
+} from "./coding-surface.js";
+import { renderMcpServersSection, type McpHost } from "./mcp.js";
+import { withProgrammaticTransport } from "./coding-transport.js";
 import {
   createCommandSessionRuntime,
   type CommandSessionSpillOptions,
@@ -89,12 +104,20 @@ import {
   type TransformTrace,
 } from "./runtime.js";
 import { encodeRunEvent, PebbleEventEncoder } from "./pebble-stream.js";
+import {
+  FULL_TOOL_INSTRUCTIONS,
+  PEBBLE_V1_TOOL_INSTRUCTIONS,
+  hybridCodeToolInstructions,
+} from "./coding-guidance.js";
 
 export { AgentRunController };
+export type { CodingInstructionSection, CodingLevers, CodingMcpOptions, ResolvedCodingLevers };
 // The tools themselves live in `./shell-tools.js`, composable by any agent;
 // these two stay published here because the coding surface documented them.
 export { CODING_TOOL_OUTPUT_CAPS };
 export { capOutput } from "./shell-tools.js";
+/** The hybrid code tool's prompt line, for hosts that build their own hybrid surface. */
+export { hybridCodeToolInstructions } from "./coding-guidance.js";
 export {
   createCommandSessionRuntime,
   type CommandSessionReadOptions,
@@ -138,7 +161,7 @@ const TOOL_RESULT_TRANSFORM = "caveman.engine.terminal.v1";
 /** Conversation history is prose plus quoted snippets. */
 const HISTORY_TRANSFORM = "caveman.engine.text.v1";
 
-/** Cost-control defaults for coding runs. No retry policy: retries require a declared budget. */
+/** Cost-control defaults for coding runs. No pre-stream retry policy: that needs a declared budget. */
 export const CODING_RUN_BREAKERS: RunBreakers = Object.freeze({
   repeatedToolCalls: 3,
   repeatedToolCallWindowTurns: 8,
@@ -146,9 +169,21 @@ export const CODING_RUN_BREAKERS: RunBreakers = Object.freeze({
   maxToolCallsPerTurn: 8,
 });
 
+/**
+ * A coding task can take hundreds of calls; the run-wide default of 64 ended
+ * long tasks mid-work. The loop and no-progress breakers stop runaway runs.
+ */
+const CODING_CALL_CEILINGS = Object.freeze({ maxModelCalls: 1_000, maxToolCalls: 4_000 });
+
+/** Pi's long-run settings: window compaction (summary = 80% of the reserve) and turn retry. */
+const CODING_RECOVERY = Object.freeze({
+  compaction: { reserveTokens: 16_384, keepRecentTokens: 20_000, summaryMaxTokens: 13_107, maxCompactions: 64 },
+  turnRetry: {},
+});
+
 /** Model calls per turn = 1 + ceil(retry_cascade_reserve / 256) = 64. */
 const RETRY_CASCADE_RESERVE = 16_128;
-const OUTPUT_MAX_TOKENS = 8_000;
+const OUTPUT_MAX_TOKENS = 32_000;
 
 export const OBSERVE_ONLY_BANNER = [
   "cave: OBSERVE-ONLY — the Caveman engine/gateway is not available here.",
@@ -156,25 +191,7 @@ export const OBSERVE_ONLY_BANNER = [
   "  Turn optimized mode on: npm i -g @caveman-ai/cli && caveman start",
 ].join("\n");
 
-const FULL_TOOL_INSTRUCTIONS = [
-  "- read_file prefixes each line with its number and tab. Strip prefixes before copying; preserve newlines.",
-  "- grep searches the workspace with ripgrep, falling back to grep.",
-  "- bash runs one shell command in the workspace and returns its combined output.",
-  "- write_file creates a file, or overwrites one only when overwrite is true.",
-  "- edit_file replaces an exact string in a file. Match enough surrounding text",
-  "  to make the target unique, or pass replace_all.",
-  "- read_tool_output pages or literal-searches captured output by opaque handle.",
-].join("\n");
-
-const PEBBLE_V1_TOOL_INSTRUCTIONS = [
-  "- read_file prefixes each line with its number and tab. Strip prefixes before copying; preserve newlines.",
-  "- bash runs one shell command in the workspace and returns its combined output.",
-  "- write_file creates a file, or overwrites one only when overwrite is true.",
-  "- edit_file replaces an exact string in a file. Match enough surrounding text",
-  "  to make the target unique, or pass replace_all.",
-].join("\n");
-
-function codingInstructions(toolSet: CodingToolSet): string {
+function codingInstructions(toolSet: CodingToolSet, hybridToolName?: string): string {
   const toolInstructions = toolSet === "pebble-v1"
     ? PEBBLE_V1_TOOL_INSTRUCTIONS
     : FULL_TOOL_INSTRUCTIONS;
@@ -194,18 +211,16 @@ function codingInstructions(toolSet: CodingToolSet): string {
     "Tools:",
     toolInstructions,
     "",
+    ...(hybridToolName === undefined ? [] : [hybridCodeToolInstructions(hybridToolName), ""]),
     cappedOutputInstructions,
     "",
-    "Older turns and older tool results may arrive wrapped in <cave-compressed>",
-    "markers. Those are reversible: call cave_retrieve with the recovery_handle in",
-    "the marker to get the exact original bytes back. Retrieve before guessing.",
-    "",
-    "Say what you changed and why. Do not claim a command passed unless you ran it.",
+    "Be terse: no narration between tool calls; end with what changed in a line or two.",
+    "Do not claim a command passed unless you ran it.",
   ].join("\n");
 }
 
 export type CodingToolSet = "full" | "pebble-v1";
-export type CodingToolMode = "direct" | "programmatic";
+export type CodingToolMode = "direct" | "programmatic" | "hybrid";
 
 export interface CodingAgentOptions {
   /** Workspace root. Tools refuse to read or write outside it. */
@@ -216,20 +231,36 @@ export interface CodingAgentOptions {
   id?: string;
   /** Extra instruction text appended to the built-in coding instructions. */
   instructions?: string;
+  /**
+   * Host-read instructions in order, after the SDK's own text and `instructions`:
+   * repository AGENTS.md or CLAUDE.md, private project notes, a memory brief.
+   */
+  instructionSections?: readonly CodingInstructionSection[];
   /** Per-tool raw output caps in bytes, before any transform. */
   outputCaps?: Partial<typeof CODING_TOOL_OUTPUT_CAPS>;
   /** Provider-visible coding tools. Generic SDK default remains the full six-tool surface. */
   toolSet?: CodingToolSet;
-  /** `programmatic` collapses ordinary tools into one bounded code-cell tool. */
+  /**
+   * `hybrid` (default): the coding tools stay declared, plus one code tool for
+   * everything else (MCP, connectors, browser, fan-out, tool search). Tools
+   * added by `definitionTransforms` are reachable only through the code tool.
+   * `programmatic` collapses every tool into the code tool; `direct` has none.
+   */
   toolMode?: CodingToolMode;
-  /** Safe read speculation in programmatic mode. Defaults on; ignored by direct mode. */
+  /** Safe read speculation in code cells. Defaults on; ignored by direct mode. */
   speculativeToolCalls?: boolean;
+  /** MCP servers to launch now; tools appear inside the code tool. Not available in direct mode. */
+  mcp?: CodingMcpOptions;
+  /** Caveman engine levers; defaults per {@link CodingLevers}. */
+  levers?: CodingLevers;
+  /** Directory file tools may touch; defaults to `workspace`. `/` leaves them uncontained, like bash. */
+  fileRoot?: string;
   /** Optional bounded disk retention for command output evicted from memory. */
   commandSessionSpill?: CommandSessionSpillOptions;
   /** Interactive bash sessions. Defaults on locally and off for non-local backends. */
   commandSessions?: boolean;
-  /** Workspace and process execution. Defaults to the local host backend. */
-  executionBackend?: ExecutionBackend;
+  /** Workspace and process execution. Defaults to the local host backend. */ executionBackend?: ExecutionBackend;
+  /** Variables the host adds to bash's environment on top of the coding allowlist. */ processEnv?: Readonly<Record<string, string>>;
   /** Trusted product adapters applied before direct/programmatic tool finalization. */
   definitionTransforms?: readonly AgentDefinitionTransform[];
   /** Provider-visible composite tool name. Product wrappers may brand it; default `caveman_code`. */
@@ -245,8 +276,11 @@ export interface CodingAgent {
   readonly workspace: string;
   readonly modelID: string;
   readonly toolMode: CodingToolMode;
-  /** Present only in programmatic mode. Session APIs wire its transport automatically. */
+  /** Present in hybrid and programmatic mode. Session APIs and `codingRunOptions` wire its transport. */
   readonly programmaticTools?: ProgrammaticToolRuntime;
+  /** Present when the host passed MCP servers: status, sign-in. `close()` shuts it down. */
+  readonly mcp?: McpHost;
+  readonly levers: ResolvedCodingLevers;
   /** Largest raw tool outputs seen this process, kept for the recovery proof. */
   readonly samples: ToolOutputSample[];
   /** Kill live command sessions owned by this agent. Idempotent. */
@@ -268,16 +302,25 @@ const MAX_SAMPLES = 4;
  * `dynamic_route_ambiguous` and the segment passes through untouched). Budgets
  * are sized for a long interactive session rather than a fixture run; they are
  * ceilings that fail the turn honestly rather than silently truncating context.
+ * `bound` (the default lever) routes tool results only; `all` adds history.
  */
-export function defaultCodingPlan(modelID: string, namespace: string): CavePlan {
+export function defaultCodingPlan(
+  modelID: string,
+  namespace: string,
+  compression: ResolvedCodingLevers["compression"] = "bound",
+): CavePlan {
   return {
     schema_version: 1,
-    plan_id: "caveman-code.default.recoverable-live-zone",
+    plan_id: compression === "all"
+      ? "caveman-code.default.recoverable-live-zone"
+      : "caveman-code.default.runaway-output-bound",
     model: modelID,
     reasoning: "none",
     segment_routes: [
       { segment_kind: "tool_result", transform_id: TOOL_RESULT_TRANSFORM, fallback: "original" },
-      { segment_kind: "history", transform_id: HISTORY_TRANSFORM, fallback: "original" },
+      ...(compression === "all"
+        ? [{ segment_kind: "history" as const, transform_id: HISTORY_TRANSFORM, fallback: "original" as const }]
+        : []),
     ],
     budgets: {
       instructions: 64_000,
@@ -285,7 +328,7 @@ export function defaultCodingPlan(modelID: string, namespace: string): CavePlan 
       memory: 8_000,
       history: 4_000_000,
       results_artifacts: 4_000_000,
-      reasoning: 64_000,
+      reasoning: 4_000_000, // run-wide, not per call: a long sol run reasons far past 64k
       output: 512_000,
       retry_cascade_reserve: RETRY_CASCADE_RESERVE,
     },
@@ -301,10 +344,24 @@ export function createCodingAgent(options: CodingAgentOptions = {}): CodingAgent
   const modelID = resolveCodingModelID(options.model);
   const toolSet = options.toolSet ?? "full";
   if (toolSet !== "full" && toolSet !== "pebble-v1") throw new Error(`coding_tool_set_invalid:${toolSet}`);
-  const toolMode = options.toolMode ?? "direct";
-  if (toolMode !== "direct" && toolMode !== "programmatic") {
+  const toolMode = options.toolMode ?? "hybrid";
+  if (toolMode !== "direct" && toolMode !== "programmatic" && toolMode !== "hybrid") {
     throw new Error(`coding_tool_mode_invalid:${toolMode}`);
   }
+  if (options.mcp !== undefined && toolMode === "direct") throw new Error("coding_mcp_requires_code_tool");
+  const levers = resolveCodingLevers(options.levers);
+  const codeToolName = options.programmaticToolName ?? PROGRAMMATIC_TOOL_NAME;
+  const coreTools = toolSet === "pebble-v1"
+    ? ["read_file", "bash", "write_file", "edit_file"] as const
+    : ["read_file", "grep", "bash", "write_file", "edit_file", "read_tool_output"] as const;
+  // SDK text, then the host's in order, then the workspace: checkouts of one repo share the prefix.
+  const instructions = [
+    codingInstructions(toolSet, toolMode === "hybrid" ? codeToolName : undefined),
+    options.instructions,
+    options.mcp === undefined ? undefined : renderMcpServersSection(options.mcp.servers, codeToolName),
+    options.instructionSections === undefined ? undefined : renderCodingInstructionSections(options.instructionSections),
+    `Workspace: ${workspace}`,
+  ].filter((text): text is string => text !== undefined).join("\n\n");
   const caps = { ...CODING_TOOL_OUTPUT_CAPS, ...options.outputCaps };
   const samples: ToolOutputSample[] = [];
   const record = (label: string, text: string) => {
@@ -335,9 +392,7 @@ export function createCodingAgent(options: CodingAgentOptions = {}): CodingAgent
     : undefined;
   const baseDefinition = agent({
     id,
-    instructions: options.instructions === undefined
-      ? codingInstructions(toolSet)
-      : `${codingInstructions(toolSet)}\n\n${options.instructions}`,
+    instructions,
     model: modelID,
     reasoning: "off",
     sandbox: "host",
@@ -352,10 +407,9 @@ export function createCodingAgent(options: CodingAgentOptions = {}): CodingAgent
     tools: shellTools({
       workspace,
       executionBackend,
-      tools: toolSet === "pebble-v1"
-        ? ["read_file", "bash", "write_file", "edit_file"]
-        : ["read_file", "grep", "bash", "write_file", "edit_file", "read_tool_output"],
+      tools: coreTools,
       outputCaps: caps,
+      fileRoot: options.fileRoot, processEnv: options.processEnv,
       ...(commandSessions === undefined ? {} : { commandSessions }),
       onOutput: record,
     }),
@@ -364,57 +418,67 @@ export function createCodingAgent(options: CodingAgentOptions = {}): CodingAgent
     baseDefinition,
     options.definitionTransforms ?? [],
   );
-  const programmaticTools = toolMode === "programmatic"
-    ? createProgrammaticToolRuntime(directDefinition, {
+  const programmaticTools = toolMode === "direct"
+    ? undefined
+    : createProgrammaticToolRuntime(directDefinition, {
       speculate: options.speculativeToolCalls ?? true,
-      ...(options.programmaticToolName === undefined
-        ? {}
-        : { toolName: options.programmaticToolName }),
-    })
-    : undefined;
+      toolName: codeToolName,
+      // Transforms may wrap a coding tool under its own name; new tools go in the cell.
+      ...(toolMode === "hybrid"
+        ? { direct: coreTools.filter((name) => directDefinition.tools.some((item) => item.name === name)) }
+        : {}),
+    });
+  const mcp = options.mcp === undefined ? undefined : attachCodingMcp(programmaticTools!, options.mcp, workspace);
   let closing: Promise<void> | undefined;
   const close = () => (closing ??= (async () => {
     try {
+      await mcp?.close();
       await programmaticTools?.close();
     } finally {
       await commandSessions?.close();
     }
   })());
   return Object.freeze({
-    definition: programmaticTools?.definition ?? directDefinition,
-    plan: defaultCodingPlan(modelID, id),
+    definition: withDirectMcpTools(programmaticTools?.definition ?? directDefinition, mcp, options.mcp?.direct, toolMode),
+    plan: defaultCodingPlan(modelID, id, levers.compression),
     workspace,
     modelID,
     toolMode,
     ...(programmaticTools === undefined ? {} : { programmaticTools }),
+    ...(mcp === undefined ? {} : { mcp }),
+    levers,
     samples,
     close,
   });
 }
 
-function resolveCodingModelID(explicit: string | undefined): string {
-  const requested = explicit ?? process.env.CAVE_MODEL;
-  if (requested !== undefined && requested !== "") {
-    const slash = requested.indexOf("/");
-    if (slash <= 0 || slash === requested.length - 1) {
-      throw new Error("caveman-code: model must use provider/model format");
-    }
-    return requested;
-  }
-  const configured: string[] = [];
-  if (process.env.ANTHROPIC_API_KEY) configured.push("anthropic/claude-sonnet-4-6");
-  if (process.env.OPENAI_API_KEY) configured.push("openai/gpt-5.5");
-  if (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY) {
-    configured.push("google/gemini-2.5-pro");
-  }
-  if (configured.length !== 1) {
-    throw new Error(
-      configured.length === 0
-        ? "caveman-code: no supported provider credential found; set ANTHROPIC_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY"
-        : "caveman-code: multiple provider credentials found; set CAVE_MODEL to pick one",
-    );
-  }
-  return configured[0]!;
+/**
+ * Coding run defaults for a host that calls `stream()` or `run()` itself
+ * instead of the session API: 1,000 model / 4,000 tool call ceilings, turn
+ * retry and window compaction, the coding breakers, long cache retention, and
+ * the code tool's transport. Host values win. The 32K output cap and the 600 s
+ * bash timeout already live in `codingAgent.definition`.
+ */
+export function codingRunOptions(codingAgent: CodingAgent, options: RunOptions = {}): RunOptions {
+  return withProgrammaticTransport(codingAgent, {
+    cacheRetention: "long",
+    ...CODING_CALL_CEILINGS,
+    ...CODING_RECOVERY,
+    breakers: CODING_RUN_BREAKERS,
+    ...options,
+  });
+}
+
+/**
+ * `stream()` for a coding agent with {@link codingRunOptions}. With `cave: "local"`
+ * the agent's plan and levers apply in process, durable runs included; by
+ * default (`bound`) only a tool output that overran its cap reaches the engine.
+ */
+export function streamCodingRun(codingAgent: CodingAgent, input: AgentInput, options: RunOptions = {}): AsyncGenerator<CavemanRunEvent> {
+  rejectInternalRunOptions(options);
+  const prepared = codingRunOptions(codingAgent, options);
+  return streamAgentInternalOptions(codingAgent.definition, input, options.cave === "local"
+    ? { ...prepared, candidatePlan: codingAgent.plan, engineLevers: codingAgent.levers } : prepared);
 }
 
 /**
@@ -466,161 +530,13 @@ export function codingModelsAtProviderBaseURL(
   });
 }
 
-export type CodingTaskPriceBasis = "provider_invoice" | "public_catalog" | "unpriced";
-
-/** One paid attempt in a matched coding-harness evaluation. */
-export interface CodingTaskAttemptEvidence {
-  taskId: string;
-  attemptId: string;
-  provider: string;
-  model: string;
-  /** Completion must come from the task's external verifier, never agent self-report. */
-  completed: boolean;
-  completionBasis: "external_verifier" | "missing";
-  /** Spend for this attempt. Failed attempts remain in the numerator. */
-  costUsd: number | null;
-  priceBasis: CodingTaskPriceBasis;
-  /** Provider-counted total tokens for this attempt. */
-  tokens: number | null;
-  usageBasis: "provider_reported" | "unavailable";
-}
-
-export interface CodingTaskEconomics {
-  status: "complete" | "incomplete_evidence" | "no_completed_tasks";
-  attempted: number;
-  completed: number;
-  completionRate: number | null;
-  totalCostUsd: number | null;
-  costPerCompletedTaskUsd: number | null;
-  priceBasis: Exclude<CodingTaskPriceBasis, "unpriced"> | null;
-  totalTokens: number | null;
-  tokensPerCompletedTask: number | null;
-  usageBasis: "provider_reported" | null;
-  provider: string | null;
-  model: string | null;
-  issues: readonly string[];
-}
-
-export interface CodingTaskEconomicsOptions {
-  /** Planned attempts for this arm. Missing or extra attempts fail metrics closed. */
-  expectedAttempts?: number;
-}
-
-/**
- * Honest harness metric: all attempt spend divided by externally verified
- * completions. Unknown or mixed evidence produces null, never a favorable zero.
- */
-export function summarizeCodingTaskAttempts(
-  attempts: readonly CodingTaskAttemptEvidence[],
-  options: CodingTaskEconomicsOptions = {},
-): CodingTaskEconomics {
-  if (options.expectedAttempts !== undefined &&
-      (!Number.isSafeInteger(options.expectedAttempts) || options.expectedAttempts < 1)) {
-    throw new Error("coding_task_expected_attempts_invalid");
-  }
-  const issues = new Set<string>();
-  if (attempts.length === 0) issues.add("no_attempts");
-  if (options.expectedAttempts !== undefined && attempts.length !== options.expectedAttempts) {
-    issues.add("attempt_cardinality_mismatch");
-  }
-  const identities = new Set<string>();
-  const attemptIDs = new Set<string>();
-  const pricedBases = new Set<Exclude<CodingTaskPriceBasis, "unpriced">>();
-  let completionEvidenceComplete = true;
-  let costEvidenceComplete = true;
-  let usageEvidenceComplete = true;
-  let completed = 0;
-  let totalCostUsd = 0;
-  let totalTokens = 0;
-
-  if (attempts.length === 0) {
-    completionEvidenceComplete = false;
-    costEvidenceComplete = false;
-    usageEvidenceComplete = false;
-  }
-
-  for (const attempt of attempts) {
-    if (attempt.taskId.trim() === "" || attempt.attemptId.trim() === "") {
-      issues.add("attempt_identity_missing");
-    }
-    const attemptKey = `${attempt.taskId}\0${attempt.attemptId}`;
-    if (attemptIDs.has(attemptKey)) issues.add("attempt_identity_duplicate");
-    attemptIDs.add(attemptKey);
-    if (attempt.provider.trim() === "" || attempt.model.trim() === "") {
-      issues.add("runtime_identity_missing");
-    } else {
-      identities.add(`${attempt.provider}\0${attempt.model}`);
-    }
-    if (attempt.completionBasis !== "external_verifier") {
-      completionEvidenceComplete = false;
-      issues.add("completion_evidence_missing");
-    } else if (attempt.completed) {
-      completed += 1;
-    }
-    if (attempt.costUsd === null || !Number.isFinite(attempt.costUsd) || attempt.costUsd < 0 ||
-        attempt.priceBasis === "unpriced") {
-      costEvidenceComplete = false;
-      issues.add("cost_evidence_missing");
-    } else {
-      totalCostUsd += attempt.costUsd;
-      pricedBases.add(attempt.priceBasis);
-    }
-    if (attempt.tokens === null || !Number.isSafeInteger(attempt.tokens) || attempt.tokens < 0 ||
-        attempt.usageBasis !== "provider_reported") {
-      usageEvidenceComplete = false;
-      issues.add("usage_evidence_missing");
-    } else {
-      totalTokens += attempt.tokens;
-    }
-  }
-  if (identities.size > 1) issues.add("runtime_identity_drift");
-  if (!Number.isFinite(totalCostUsd)) {
-    costEvidenceComplete = false;
-    issues.add("cost_evidence_missing");
-  }
-  if (!Number.isSafeInteger(totalTokens)) {
-    usageEvidenceComplete = false;
-    issues.add("usage_evidence_missing");
-  }
-  if (pricedBases.size > 1) {
-    costEvidenceComplete = false;
-    issues.add("price_basis_mixed");
-  }
-  const denominatorKnown = completionEvidenceComplete && identities.size === 1 && attempts.length > 0 &&
-    !issues.has("attempt_cardinality_mismatch") &&
-    !issues.has("attempt_identity_missing") && !issues.has("attempt_identity_duplicate") &&
-    !issues.has("runtime_identity_missing") && !issues.has("runtime_identity_drift");
-  const metricAvailable = denominatorKnown && completed > 0;
-  const roundedCost = costEvidenceComplete ? roundTaskMetric(totalCostUsd) : null;
-  const roundedTokens = usageEvidenceComplete ? totalTokens : null;
-  const status = issues.size > 0
-    ? "incomplete_evidence"
-    : completed === 0 ? "no_completed_tasks" : "complete";
-  const identity = identities.size === 1 ? [...identities][0]!.split("\0") : [];
-  return Object.freeze({
-    status,
-    attempted: attempts.length,
-    completed,
-    completionRate: denominatorKnown ? completed / attempts.length : null,
-    totalCostUsd: roundedCost,
-    costPerCompletedTaskUsd: metricAvailable && roundedCost !== null
-      ? roundTaskMetric(totalCostUsd / completed)
-      : null,
-    priceBasis: costEvidenceComplete && pricedBases.size === 1 ? [...pricedBases][0]! : null,
-    totalTokens: roundedTokens,
-    tokensPerCompletedTask: metricAvailable && roundedTokens !== null
-      ? roundTaskMetric(totalTokens / completed)
-      : null,
-    usageBasis: usageEvidenceComplete ? "provider_reported" : null,
-    provider: identity[0] ?? null,
-    model: identity[1] ?? null,
-    issues: Object.freeze([...issues].sort()),
-  });
-}
-
-function roundTaskMetric(value: number): number {
-  return Number(value.toFixed(12));
-}
+export {
+  summarizeCodingTaskAttempts,
+  type CodingTaskAttemptEvidence,
+  type CodingTaskEconomics,
+  type CodingTaskEconomicsOptions,
+  type CodingTaskPriceBasis,
+} from "./coding-economics.js";
 
 // ---------------------------------------------------------------------------
 // Session
@@ -630,7 +546,7 @@ export type SessionMode = "optimized" | "observe-only";
 
 export interface CodingSessionOptions {
   conversation?: ConversationState;
-  cave?: "auto" | "off";
+  cave?: "auto" | "off" | "local"; // local: the coding plan with the local engine, no gateway
   gatewayURL?: string;
   engineBin?: string;
   workflow?: string;
@@ -795,7 +711,7 @@ export async function startCodingSession(
     turns: [],
     proofShown: false,
   };
-  if (!route.useGateway) degrade(session);
+  if (!route.useGateway && options.cave !== "local") degrade(session);
   return session;
 }
 
@@ -831,21 +747,6 @@ export function classifyTurnFailure(error: unknown): "degrade_to_observe_only" |
     : "fatal";
 }
 
-function withProgrammaticTransport(
-  codingAgent: CodingAgent,
-  options: RunOptions,
-): RunOptions {
-  const runtime = codingAgent.programmaticTools;
-  if (runtime === undefined) return options;
-  if (options.streamFn !== undefined) {
-    return { ...options, streamFn: runtime.wrapStreamFn(options.streamFn) };
-  }
-  return {
-    ...options,
-    models: runtime.wrapModels(options.models ?? builtinModels()),
-  };
-}
-
 export async function runCodingTurn(
   session: CodingSession,
   input: string,
@@ -865,6 +766,8 @@ export async function runCodingTurn(
     ...(session.options.cave === undefined ? {} : { cave: session.options.cave }),
     ...(session.options.engineBin === undefined ? {} : { engineBin: session.options.engineBin }),
     cacheRetention: session.options.cacheRetention ?? "long",
+    ...CODING_CALL_CEILINGS,
+    ...CODING_RECOVERY,
     ...(session.options.maxCostUsd === undefined ? {} : { maxCostUsd: session.options.maxCostUsd }),
     ...(session.options.budget === undefined ? {} : { budget: session.options.budget }),
     ...(session.options.modelRouter === undefined ? {} : { modelRouter: session.options.modelRouter }),
@@ -887,6 +790,7 @@ export async function runCodingTurn(
       result = await runAgentInternal(session.agent.definition, input, {
         ...prepared,
         candidatePlan: session.agent.plan,
+        engineLevers: session.agent.levers,
       });
     } catch (error) {
       if (classifyTurnFailure(error) === "fatal") throw error;
@@ -902,7 +806,7 @@ export async function runCodingTurn(
   // Runtime-owned routing is authoritative for session health. A caller stream
   // override is honestly observe-only for that bill, but says nothing about the
   // pinned gateway route used by later turns.
-  if (runtimeOwnedRoute && result.mode === "observe-only") degrade(session);
+  if (runtimeOwnedRoute && result.mode === "observe-only" && session.options.cave !== "local") degrade(session); // local: no gateway, not a lost engine
   return recordCodingTurn(session, input, result, startedOptimized);
 }
 
@@ -994,6 +898,8 @@ export async function* streamCodingTurn(
         ...(session.options.cave === undefined ? {} : { cave: session.options.cave }),
         ...(session.options.engineBin === undefined ? {} : { engineBin: session.options.engineBin }),
         cacheRetention: session.options.cacheRetention ?? "long",
+        ...CODING_CALL_CEILINGS,
+        ...CODING_RECOVERY,
         ...(session.options.maxCostUsd === undefined ? {} : { maxCostUsd: session.options.maxCostUsd }),
         ...(session.options.budget === undefined ? {} : { budget: session.options.budget }),
         ...(session.options.modelRouter === undefined ? {} : { modelRouter: session.options.modelRouter }),
@@ -1011,7 +917,7 @@ export async function* streamCodingTurn(
       const runtime = streamAgentInternalOptions(session.agent.definition, input, {
         ...prepared,
         ...(session.mode === "optimized" && attempt === 0 && !durable && runtimeOwnedRoute
-          ? { candidatePlan: session.agent.plan }
+          ? { candidatePlan: session.agent.plan, engineLevers: session.agent.levers }
           : {}),
       });
       const iterator = runtime[Symbol.asyncIterator]();
@@ -1082,7 +988,7 @@ export async function* streamCodingTurn(
           return { failed: true, receipt: event.receipt };
         }
         if (event.type === "run_end") {
-          if (runtimeOwnedRoute && event.result.mode === "observe-only") degrade(session);
+          if (runtimeOwnedRoute && event.result.mode === "observe-only" && session.options.cave !== "local") degrade(session);
           for (const translated of encodeRunEvent(encoder, event)) yield translated;
           return recordCodingTurn(session, input, event.result, startedOptimized);
         }

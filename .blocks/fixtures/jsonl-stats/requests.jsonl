@@ -1,0 +1,12 @@
+{"id": 1, "model": "sonnet", "status": 200, "usage": {"tokens": 1200, "cost": 0.0036}}
+{"id": 2, "model": "opus", "status": 200, "usage": {"tokens": 800, "cost": 0.012}}
+{"id": 3, "model": "sonnet", "status": 500, "usage": {"tokens": 0, "cost": 0}}
+{"id": 4, "model": "haiku", "status": 200, "usage": {"tokens": 3000, "cost": 0.0024}}
+{"id": 5, "model": "sonnet", "status": 200, "usage": {"tokens": 450, "cost": 0.00135}}
+{"id": 6, "status": 429}
+{"id": 7, "model": "opus", "status": 200, "usage": {"tokens": 2100, "cost": 0.0315}}
+{"id": 8, "model": "sonnet", "status": 200, "usage": {"tokens": 900, "cost": 0.0027}}
+{"id": 9, "model": "mini", "status": 200, "usage": {"tokens": 5000, "cost": 0.00075}}
+{"id": 10, "model": "nano", "status": 200, "usage": {"tokens": 7000, "cost": 0.0007}}
+{"id": 11, "model": "haiku", "status": 200, "usage": {"tokens": 1500, "cost": 0.0012}}
+{"id": 12, "model": "local", "status": 200, "usage": {"tokens": 600}}

@@ -17,9 +17,9 @@
 // Not modeled: 1h cache-write rates, batch discounts, cache storage, and
 // long-context multipliers. These numbers are standard-tier public list-price
 // subtotals, never an invoice.
-export const CATALOG_SHA256 = "44f273c90cd7ab4707888fdf7ac5aea21d668e2204ef8a66683644e9151e1ce8";
-export const CATALOG_SEMANTIC_SHA256 = "f9f74e012f52474ed3f0d4fdc40feef766cb035dd61eec1d97282946385942bb";
-export const PRICE_PROVENANCE_SHA256 = "3712b1307ed08b02a1bb2c6ec4df1c3af14a6a3b619cba8b34f513f4bcc00035";
+export const CATALOG_SHA256 = "dbeaea6ec9cf97ee1faf437951f4339aee9b3073c5741553d93f50361ff932d8";
+export const CATALOG_SEMANTIC_SHA256 = "7497b8837a5dc790b7ea487bc781d2fcb1e1c1d0ddaec8a63e5d1075fba9156f";
+export const PRICE_PROVENANCE_SHA256 = "297e2b7e7b6f0480d5691804256e5d98b56f467a63b41ab695463681378f9516";
 
 export interface CatalogPriceRates {
   inputPerMillion: number;
@@ -67,6 +67,15 @@ export interface CatalogUsage {
 }
 
 const PRICES: Readonly<Record<string, CatalogPrice>> = Object.freeze({
+  "anthropic/claude-fable-5-1": Object.freeze({
+    inputPerMillion: 10,
+    outputPerMillion: 50,
+    cacheMode: "explicit",
+    cacheReadPerMillion: 0.25,
+    cacheWritePerMillion: 12.5,
+    reasoningPerMillion: 50,
+    verifiedAt: "2026-10-06T00:00:00.000Z",
+  }),
   "anthropic/claude-haiku-4-5": Object.freeze({
     inputPerMillion: 1,
     outputPerMillion: 5,
@@ -84,6 +93,15 @@ const PRICES: Readonly<Record<string, CatalogPrice>> = Object.freeze({
     cacheWritePerMillion: 1.25,
     reasoningPerMillion: 5,
     verifiedAt: "2026-08-13T00:00:00.000Z",
+  }),
+  "anthropic/claude-haiku-5-5": Object.freeze({
+    inputPerMillion: 0.1,
+    outputPerMillion: 0.5,
+    cacheMode: "explicit",
+    cacheReadPerMillion: 0.01,
+    cacheWritePerMillion: 0.125,
+    reasoningPerMillion: 0.5,
+    verifiedAt: "2026-10-15T00:00:00.000Z",
   }),
   "anthropic/claude-opus-4-1": Object.freeze({
     inputPerMillion: 15,
@@ -111,6 +129,15 @@ const PRICES: Readonly<Record<string, CatalogPrice>> = Object.freeze({
     cacheWritePerMillion: 6.25,
     reasoningPerMillion: 25,
     verifiedAt: "2026-08-13T00:00:00.000Z",
+  }),
+  "anthropic/claude-opus-5-5": Object.freeze({
+    inputPerMillion: 4,
+    outputPerMillion: 20,
+    cacheMode: "explicit",
+    cacheReadPerMillion: 0.2,
+    cacheWritePerMillion: 5,
+    reasoningPerMillion: 20,
+    verifiedAt: "2026-10-06T00:00:00.000Z",
   }),
   "anthropic/claude-sonnet-4-5": Object.freeze({
     inputPerMillion: 3,
@@ -147,6 +174,15 @@ const PRICES: Readonly<Record<string, CatalogPrice>> = Object.freeze({
     cacheWritePerMillion: 2.5,
     reasoningPerMillion: 10,
     verifiedAt: "2026-08-13T00:00:00.000Z",
+  }),
+  "anthropic/claude-sonnet-5-5": Object.freeze({
+    inputPerMillion: 2,
+    outputPerMillion: 10,
+    cacheMode: "explicit",
+    cacheReadPerMillion: 0.2,
+    cacheWritePerMillion: 2.5,
+    reasoningPerMillion: 10,
+    verifiedAt: "2026-10-06T00:00:00.000Z",
   }),
   "deepseek/deepseek-v4-flash": Object.freeze({
     inputPerMillion: 0.14,
@@ -257,6 +293,37 @@ const PRICES: Readonly<Record<string, CatalogPrice>> = Object.freeze({
     cacheWritePerMillion: null,
     reasoningPerMillion: 10,
     verifiedAt: "2026-07-10T00:00:00.000Z",
+  }),
+  "gemini/gemini-3.5-flash-lite": Object.freeze({
+    inputPerMillion: 0.3,
+    outputPerMillion: 2.5,
+    cacheMode: "unknown",
+    cacheReadPerMillion: 0.03,
+    cacheWritePerMillion: null,
+    reasoningPerMillion: 2.5,
+    verifiedAt: "2026-10-06T00:00:00.000Z",
+  }),
+  "gemini/gemini-3.8-flash": Object.freeze({
+    inputPerMillion: 0.75,
+    outputPerMillion: 3.75,
+    cacheMode: "implicit",
+    cacheReadPerMillion: 0.075,
+    cacheWritePerMillion: null,
+    reasoningPerMillion: 3.75,
+    verifiedAt: "2026-10-06T00:00:00.000Z",
+    recurringUTCPricing: Object.freeze({
+      effectiveFrom: "2027-01-01T00:00:00Z",
+      defaultPrice: Object.freeze({
+        inputPerMillion: 1.5,
+        outputPerMillion: 7.5,
+        cacheMode: "implicit",
+        cacheReadPerMillion: 0.15,
+        cacheWritePerMillion: null,
+        reasoningPerMillion: 7.5,
+      }),
+      windows: Object.freeze([
+      ]),
+    }),
   }),
   "groq/llama-3.1-8b-instant": Object.freeze({
     inputPerMillion: 0.05,
@@ -420,6 +487,51 @@ const PRICES: Readonly<Record<string, CatalogPrice>> = Object.freeze({
     reasoningPerMillion: 30,
     verifiedAt: "2026-08-13T00:00:00.000Z",
   }),
+  "openai/gpt-5.6-terra": Object.freeze({
+    inputPerMillion: 2,
+    outputPerMillion: 12,
+    cacheMode: "unknown",
+    cacheReadPerMillion: 0.2,
+    cacheWritePerMillion: 2.5,
+    reasoningPerMillion: 12,
+    verifiedAt: "2026-08-29T00:00:00.000Z",
+  }),
+  "openai/gpt-6-astra": Object.freeze({
+    inputPerMillion: 10,
+    outputPerMillion: 50,
+    cacheMode: "explicit",
+    cacheReadPerMillion: 1,
+    cacheWritePerMillion: 12.5,
+    reasoningPerMillion: 50,
+    verifiedAt: "2026-10-06T00:00:00.000Z",
+  }),
+  "openai/gpt-6-luna": Object.freeze({
+    inputPerMillion: 0.1,
+    outputPerMillion: 0.5,
+    cacheMode: "explicit",
+    cacheReadPerMillion: 0.01,
+    cacheWritePerMillion: 0.125,
+    reasoningPerMillion: 0.5,
+    verifiedAt: "2026-10-06T00:00:00.000Z",
+  }),
+  "openai/gpt-6-sol": Object.freeze({
+    inputPerMillion: 2,
+    outputPerMillion: 10,
+    cacheMode: "explicit",
+    cacheReadPerMillion: 0.2,
+    cacheWritePerMillion: 2.5,
+    reasoningPerMillion: 10,
+    verifiedAt: "2026-10-06T00:00:00.000Z",
+  }),
+  "openai/gpt-6.1-sol": Object.freeze({
+    inputPerMillion: 2,
+    outputPerMillion: 10,
+    cacheMode: "explicit",
+    cacheReadPerMillion: 0.1,
+    cacheWritePerMillion: 2.5,
+    reasoningPerMillion: 10,
+    verifiedAt: "2026-10-06T00:00:00.000Z",
+  }),
   "openai/text-embedding-3-large": Object.freeze({
     inputPerMillion: 0.13,
     outputPerMillion: 0,
@@ -504,6 +616,12 @@ const PRICES: Readonly<Record<string, CatalogPrice>> = Object.freeze({
 });
 
 const MODELS: Readonly<Record<string, CatalogModelFacts>> = Object.freeze({
+  "anthropic/claude-fable-5-1": Object.freeze({
+    lifecycle: "reviewed",
+    messagesAPI: "supported",
+    adaptiveThinking: "supported",
+    manualThinking: "unsupported",
+  }),
   "anthropic/claude-haiku-4-5": Object.freeze({
     lifecycle: "reviewed",
     messagesAPI: "supported",
@@ -515,6 +633,12 @@ const MODELS: Readonly<Record<string, CatalogModelFacts>> = Object.freeze({
     messagesAPI: "supported",
     adaptiveThinking: "unsupported",
     manualThinking: "supported",
+  }),
+  "anthropic/claude-haiku-5-5": Object.freeze({
+    lifecycle: "reviewed",
+    messagesAPI: "supported",
+    adaptiveThinking: "supported",
+    manualThinking: "unsupported",
   }),
   "anthropic/claude-opus-4-1": Object.freeze({
     lifecycle: "reviewed",
@@ -529,6 +653,12 @@ const MODELS: Readonly<Record<string, CatalogModelFacts>> = Object.freeze({
     manualThinking: "unsupported",
   }),
   "anthropic/claude-opus-5": Object.freeze({
+    lifecycle: "reviewed",
+    messagesAPI: "supported",
+    adaptiveThinking: "supported",
+    manualThinking: "unsupported",
+  }),
+  "anthropic/claude-opus-5-5": Object.freeze({
     lifecycle: "reviewed",
     messagesAPI: "supported",
     adaptiveThinking: "supported",
@@ -558,6 +688,12 @@ const MODELS: Readonly<Record<string, CatalogModelFacts>> = Object.freeze({
     adaptiveThinking: "supported",
     manualThinking: "unsupported",
   }),
+  "anthropic/claude-sonnet-5-5": Object.freeze({
+    lifecycle: "reviewed",
+    messagesAPI: "supported",
+    adaptiveThinking: "supported",
+    manualThinking: "unsupported",
+  }),
   "deepseek/deepseek-v4-flash": Object.freeze({
     lifecycle: "routable",
     messagesAPI: "unknown",
@@ -577,6 +713,18 @@ const MODELS: Readonly<Record<string, CatalogModelFacts>> = Object.freeze({
     manualThinking: "unknown",
   }),
   "gemini/gemini-2.5-pro": Object.freeze({
+    lifecycle: "reviewed",
+    messagesAPI: "unknown",
+    adaptiveThinking: "unknown",
+    manualThinking: "unknown",
+  }),
+  "gemini/gemini-3.5-flash-lite": Object.freeze({
+    lifecycle: "reviewed",
+    messagesAPI: "unknown",
+    adaptiveThinking: "unknown",
+    manualThinking: "unknown",
+  }),
+  "gemini/gemini-3.8-flash": Object.freeze({
     lifecycle: "reviewed",
     messagesAPI: "unknown",
     adaptiveThinking: "unknown",
@@ -690,6 +838,36 @@ const MODELS: Readonly<Record<string, CatalogModelFacts>> = Object.freeze({
     adaptiveThinking: "unknown",
     manualThinking: "unknown",
   }),
+  "openai/gpt-5.6-terra": Object.freeze({
+    lifecycle: "reviewed",
+    messagesAPI: "unknown",
+    adaptiveThinking: "unknown",
+    manualThinking: "unknown",
+  }),
+  "openai/gpt-6-astra": Object.freeze({
+    lifecycle: "reviewed",
+    messagesAPI: "unknown",
+    adaptiveThinking: "unknown",
+    manualThinking: "unknown",
+  }),
+  "openai/gpt-6-luna": Object.freeze({
+    lifecycle: "reviewed",
+    messagesAPI: "unknown",
+    adaptiveThinking: "unknown",
+    manualThinking: "unknown",
+  }),
+  "openai/gpt-6-sol": Object.freeze({
+    lifecycle: "reviewed",
+    messagesAPI: "unknown",
+    adaptiveThinking: "unknown",
+    manualThinking: "unknown",
+  }),
+  "openai/gpt-6.1-sol": Object.freeze({
+    lifecycle: "reviewed",
+    messagesAPI: "unknown",
+    adaptiveThinking: "unknown",
+    manualThinking: "unknown",
+  }),
   "openai/text-embedding-3-large": Object.freeze({
     lifecycle: "reviewed",
     messagesAPI: "unknown",
@@ -769,6 +947,21 @@ export interface CatalogCacheProfile {
 }
 
 const CACHE_PROFILES: Readonly<Record<string, CatalogCacheProfile>> = Object.freeze({
+  "anthropic/claude-fable-5-1@global": Object.freeze({
+    id: "cave-cache-anthropic-v1",
+    mode: "explicit",
+    attribution: "causal",
+    minPrefixTokens: 512,
+    maxBreakpoints: 4,
+    ttlSeconds: 300,
+    rolling: true,
+    routingKey: false,
+    maxRpmPerKey: 0,
+    endpoints: Object.freeze(["v1/messages"]),
+    inputPerMillion: 10,
+    cacheReadPerMillion: 0.25,
+    cacheWritePerMillion: 12.5,
+  }),
   "anthropic/claude-haiku-4-5-20251001@global": Object.freeze({
     id: "cave-cache-anthropic-v1",
     mode: "explicit",
@@ -799,6 +992,21 @@ const CACHE_PROFILES: Readonly<Record<string, CatalogCacheProfile>> = Object.fre
     cacheReadPerMillion: 0.1,
     cacheWritePerMillion: 1.25,
   }),
+  "anthropic/claude-haiku-5-5@global": Object.freeze({
+    id: "cave-cache-anthropic-v1",
+    mode: "explicit",
+    attribution: "causal",
+    minPrefixTokens: 512,
+    maxBreakpoints: 4,
+    ttlSeconds: 300,
+    rolling: true,
+    routingKey: false,
+    maxRpmPerKey: 0,
+    endpoints: Object.freeze(["v1/messages"]),
+    inputPerMillion: 0.1,
+    cacheReadPerMillion: 0.01,
+    cacheWritePerMillion: 0.125,
+  }),
   "anthropic/claude-opus-4-1@global": Object.freeze({
     id: "cave-cache-anthropic-v1",
     mode: "explicit",
@@ -828,6 +1036,21 @@ const CACHE_PROFILES: Readonly<Record<string, CatalogCacheProfile>> = Object.fre
     inputPerMillion: 5,
     cacheReadPerMillion: 0.5,
     cacheWritePerMillion: 6.25,
+  }),
+  "anthropic/claude-opus-5-5@global": Object.freeze({
+    id: "cave-cache-anthropic-v1",
+    mode: "explicit",
+    attribution: "causal",
+    minPrefixTokens: 512,
+    maxBreakpoints: 4,
+    ttlSeconds: 300,
+    rolling: true,
+    routingKey: false,
+    maxRpmPerKey: 0,
+    endpoints: Object.freeze(["v1/messages"]),
+    inputPerMillion: 4,
+    cacheReadPerMillion: 0.2,
+    cacheWritePerMillion: 5,
   }),
   "anthropic/claude-opus-5@global": Object.freeze({
     id: "cave-cache-anthropic-v1",
@@ -888,6 +1111,21 @@ const CACHE_PROFILES: Readonly<Record<string, CatalogCacheProfile>> = Object.fre
     inputPerMillion: 3,
     cacheReadPerMillion: 0.3,
     cacheWritePerMillion: 3.75,
+  }),
+  "anthropic/claude-sonnet-5-5@global": Object.freeze({
+    id: "cave-cache-anthropic-v1",
+    mode: "explicit",
+    attribution: "causal",
+    minPrefixTokens: 512,
+    maxBreakpoints: 4,
+    ttlSeconds: 300,
+    rolling: true,
+    routingKey: false,
+    maxRpmPerKey: 0,
+    endpoints: Object.freeze(["v1/messages"]),
+    inputPerMillion: 2,
+    cacheReadPerMillion: 0.2,
+    cacheWritePerMillion: 2.5,
   }),
   "anthropic/claude-sonnet-5@global": Object.freeze({
     id: "cave-cache-anthropic-v1",
@@ -1009,6 +1247,21 @@ const CACHE_PROFILES: Readonly<Record<string, CatalogCacheProfile>> = Object.fre
     cacheReadPerMillion: 0.125,
     cacheWritePerMillion: null,
   }),
+  "gemini/gemini-3.8-flash@global": Object.freeze({
+    id: "cave-cache-gemini-implicit-v1",
+    mode: "implicit",
+    attribution: "organic",
+    minPrefixTokens: 4096,
+    maxBreakpoints: 1,
+    ttlSeconds: 0,
+    rolling: true,
+    routingKey: false,
+    maxRpmPerKey: 0,
+    endpoints: Object.freeze(["generateContent"]),
+    inputPerMillion: 0.75,
+    cacheReadPerMillion: 0.075,
+    cacheWritePerMillion: null,
+  }),
   "openai/gpt-5.4-mini-2026-03-17@global": Object.freeze({
     id: "cave-cache-openai-affinity-v1",
     mode: "affinity",
@@ -1098,6 +1351,66 @@ const CACHE_PROFILES: Readonly<Record<string, CatalogCacheProfile>> = Object.fre
     inputPerMillion: 5,
     cacheReadPerMillion: 0.5,
     cacheWritePerMillion: 6.25,
+  }),
+  "openai/gpt-6-astra@global": Object.freeze({
+    id: "cave-cache-openai-explicit-v1",
+    mode: "explicit",
+    attribution: "causal",
+    minPrefixTokens: 1024,
+    maxBreakpoints: 4,
+    ttlSeconds: 1800,
+    rolling: true,
+    routingKey: true,
+    maxRpmPerKey: 15,
+    endpoints: Object.freeze(["v1/chat/completions", "v1/responses"]),
+    inputPerMillion: 10,
+    cacheReadPerMillion: 1,
+    cacheWritePerMillion: 12.5,
+  }),
+  "openai/gpt-6-luna@global": Object.freeze({
+    id: "cave-cache-openai-explicit-v1",
+    mode: "explicit",
+    attribution: "causal",
+    minPrefixTokens: 1024,
+    maxBreakpoints: 4,
+    ttlSeconds: 1800,
+    rolling: true,
+    routingKey: true,
+    maxRpmPerKey: 15,
+    endpoints: Object.freeze(["v1/chat/completions", "v1/responses"]),
+    inputPerMillion: 0.1,
+    cacheReadPerMillion: 0.01,
+    cacheWritePerMillion: 0.125,
+  }),
+  "openai/gpt-6-sol@global": Object.freeze({
+    id: "cave-cache-openai-explicit-v1",
+    mode: "explicit",
+    attribution: "causal",
+    minPrefixTokens: 1024,
+    maxBreakpoints: 4,
+    ttlSeconds: 1800,
+    rolling: true,
+    routingKey: true,
+    maxRpmPerKey: 15,
+    endpoints: Object.freeze(["v1/chat/completions", "v1/responses"]),
+    inputPerMillion: 2,
+    cacheReadPerMillion: 0.2,
+    cacheWritePerMillion: 2.5,
+  }),
+  "openai/gpt-6.1-sol@global": Object.freeze({
+    id: "cave-cache-openai-explicit-v1",
+    mode: "explicit",
+    attribution: "causal",
+    minPrefixTokens: 1024,
+    maxBreakpoints: 4,
+    ttlSeconds: 1800,
+    rolling: true,
+    routingKey: true,
+    maxRpmPerKey: 15,
+    endpoints: Object.freeze(["v1/chat/completions", "v1/responses"]),
+    inputPerMillion: 2,
+    cacheReadPerMillion: 0.1,
+    cacheWritePerMillion: 2.5,
   }),
 });
 
@@ -1279,6 +1592,15 @@ export function catalogPriceVerifiedAt(
   model: string,
 ): string | undefined {
   return PRICES[`${catalogProvider(provider)}/${model}`]?.verifiedAt;
+}
+
+/** Cache billing semantics in force at a request time; undefined when unpriced then. */
+export function catalogCacheMode(
+  provider: string,
+  model: string,
+  accountingAt?: Date,
+): CatalogPriceRates["cacheMode"] | undefined {
+  return catalogPriceResolution(PRICES[`${catalogProvider(provider)}/${model}`], accountingAt)?.price.cacheMode;
 }
 
 export function catalogCost(

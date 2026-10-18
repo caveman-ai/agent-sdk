@@ -18,13 +18,16 @@ import { Agent, type AgentEvent, type AgentMessage, type AgentTool, type StreamF
 import { autoCredentialModel, hostByDefault } from "./defaults.js";
 import {
   Type,
+  getCurrentSystemPrompt,
+  getCurrentTools,
+  getInitialSystemMessage,
   type Api,
   type AssistantMessage,
   type CacheRetention,
-  type Context,
   type ImageContent,
   type Model,
   type Models,
+  type ModelThinkingLevel,
   type ProviderHeaders,
   type TextContent,
   type TSchema,
@@ -56,6 +59,7 @@ import {
   type BudgetExhaustionHandler,
   type BudgetReservation,
   type CallCeiling,
+  type ReceiptCall,
   type ReceiptCompaction,
   type ReceiptResume,
   type RunBudget,
@@ -81,35 +85,57 @@ import {
 } from "./durable.js";
 import {
   BreakerState,
+  callSignature,
   normalizeRunBreakers,
+  stoppedTurnStream,
   type RunBreakers,
 } from "./breakers.js";
 import { CATALOG_SHA256, catalogSearchCeiling } from "./catalog.js";
+import { imageInputLimitViolation } from "./image-limits.js";
+import {
+  CACHE_WARM_OUTPUT_TOKENS,
+  CACHE_WARM_QUIESCE_MS,
+  CacheWarmer,
+  cacheWarmDecision,
+  sendCacheWarm,
+  type CacheWarmRequest,
+  type CacheWarmingMode,
+} from "./cache-warmer.js";
 import { executeConnectTool } from "./connect.js";
 import { findPackageJSONCompat } from "./node-compat.js";
 import {
+  CONTEXT_SEED_MAX_CHARS,
   SUMMARY_SCHEMA_VERSION,
+  compactionForModel,
   contextSummarySources,
+  contextWindowFull,
   elidedDigest,
   evictMessage,
   latestContextSummary,
   messagesTokens,
   newContextMessages,
+  normalizeCompaction,
   parseContextSummary,
   planCompaction,
   renderSummary,
   summarizationInstruction,
   validateContextSummaryTransition,
+  type CompactionOptions,
   type ContextSummary,
+  type NormalizedCompaction,
 } from "./compaction.js";
+import { TurnRetry, retryModelCall, type PendingCallRecord, type TurnRetryOptions } from "./provider-retry.js";
 import {
   graphHasUnverifiedToolSchemaSemantics,
   validateAgentGraph,
 } from "./definition-graph.js";
 import {
+  enforceSemanticBudgets,
   lowerAgentContext,
   prepareLockedHarnessExecution,
+  volatileStablePrefix,
   validatePlanSelection,
+  providerCallRecord,
   validateProviderUsage,
   type ValidatedProviderUsage,
 } from "./execution-kernel.js";
@@ -135,10 +161,15 @@ import {
   type ToolExecutionContext,
 } from "./primitives.js";
 import {
+  capUtf8,
   executeRawTool,
+  FULL_TOOL_OUTPUT_MAX_BYTES,
   settleToolOutput,
   settledToolOutputFromTransport,
+  TOOL_FULL_OUTPUT,
+  type FullToolOutput,
   type SettledToolOutput,
+  type VerbatimToolResult,
 } from "./tool-internal.js";
 import {
   ProgrammaticSpeculationScope,
@@ -165,7 +196,8 @@ import {
 import { startEgressProxy, type EgressProxy } from "./sandbox/egress-proxy.js";
 import { sandboxEgressEnv } from "./sandbox/egress-client.js";
 import { resolveEgressPolicy, type SandboxEgressPolicy } from "./sandbox/policy.js";
-import { killProcessTree, portableInvocation } from "./portable-process.js";
+import { killProcessTree } from "./portable-process.js";
+import { runEngine } from "./engine-process.js";
 import { expandSourceGraph } from "./source-graph.js";
 import {
   normalizeAgentInput,
@@ -193,6 +225,8 @@ export type CavemanRunEvent =
   | { type: "run_start"; runId: string; agentId: string }
   | { type: "context_ready"; runId: string; contextIR: ContextIR; bill: Record<string, number> }
   | { type: "model_route"; runId: string; decision: ModelCallRouteDecision }
+  // A settled prompt-cache refresh: spend outside any turn, receipted as `call`.
+  | { type: "cache_warm"; runId: string; call: ReceiptCall }
   | { type: "pi"; runId: string; event: AgentEvent }
   | { type: "nested_tool_start"; runId: string; id: string; name: string; args: unknown }
   | { type: "nested_tool_end"; runId: string; id: string; name: string; isError: boolean; result: unknown }
@@ -207,6 +241,7 @@ export { AgentRunController } from "./run-controller.js";
 export type { AgentRunQueueState } from "./run-controller.js";
 import { AgentRunController } from "./run-controller.js";
 import { decideToolCall, type ToolCallPolicy } from "./tool-policy.js";
+import { TOOL_RECENCY_LOADER, openToolRecency, type ToolRecencyOptions } from "./tool-recency.js";
 
 /**
  * The error thrown by the promise-returning run entry points (`runAgent`,
@@ -265,8 +300,10 @@ export interface RunResult<TOutput = unknown> {
    * or `cave: "off"`, or the model's provider is not one the gateway proxies
    * (only anthropic, openai, and google are). A mixed graph reports
    * `observe-only`; the label under-claims rather than averaging, because the
-   * gateway measured nothing about the calls that bypassed it. Local results are
-   * estimates in both modes; no provider savings claim is made.
+   * gateway measured nothing about the calls that bypassed it. `cave: "local"`
+   * applies its transforms in process and still reports `observe-only`; they
+   * show in `transformTrace`. Local results are estimates in both modes; no
+   * provider savings claim is made.
    */
   mode: "optimized" | "observe-only";
   provider: string;
@@ -415,12 +452,29 @@ export interface ModelCallRouteInput {
   /** Zero-based root provider-call index, including paid compactions. */
   readonly callIndex: number;
   readonly role: "working" | "compaction";
+  /**
+   * Pi's request reason, always set by the runtime (optional for hand-built inputs): `user`
+   * after user input, `continuation` after tool results, `direct` for a compaction.
+   */
+  readonly reason?: "user" | "continuation" | "direct";
   readonly provider: string;
   readonly currentModel: string;
   /** Conservative serialized-context ceiling used by wallet admission. */
   readonly ctxTokens: number;
   readonly hasImages: boolean;
   readonly toolErrorStreak: number;
+  /**
+   * Consecutive identical leaf tool calls (same tool, same normalized
+   * arguments) so far in this run. Optional for compatibility with older
+   * runtimes.
+   */
+  readonly repeatedToolCallStreak?: number;
+  /**
+   * An efficiency plan fixed this run's reasoning level before it started; a
+   * decision that changes `reasoning` is rejected. Optional for compatibility
+   * with older runtimes.
+   */
+  readonly reasoningLocked?: boolean;
   readonly previousUsage?: {
     readonly model: string;
     /** Uncached provider input. Optional for compatibility with older routers. */
@@ -435,6 +489,30 @@ export interface ModelCallRouteDecision {
   readonly model: string;
   readonly reason: string;
   readonly signals: readonly string[];
+  /**
+   * Reasoning effort for this working call only. `off` removes the caller's
+   * level; absent keeps it. Compaction calls ignore it.
+   */
+  readonly reasoning?: ModelThinkingLevel;
+}
+
+const MODEL_THINKING_LEVELS: readonly ModelThinkingLevel[] = [
+  "off", "minimal", "low", "medium", "high", "xhigh", "max",
+];
+
+/** Apply a route decision's reasoning to one call's stream options. */
+function withRoutedReasoning<T extends { readonly reasoning?: unknown } | undefined>(
+  streamOptions: T,
+  decision: ModelCallRouteDecision | undefined,
+): T {
+  const level = decision?.reasoning;
+  if (level === undefined) return streamOptions;
+  if (level === "off") {
+    if (streamOptions === undefined) return streamOptions;
+    const { reasoning: _removed, ...rest } = streamOptions;
+    return rest as T;
+  }
+  return { ...(streamOptions ?? {}), reasoning: level } as T;
 }
 
 export type ModelCallRouter = (
@@ -518,7 +596,8 @@ function validateModelRouteDecision(decision: ModelCallRouteDecision): void {
       typeof decision.model !== "string" || decision.model.trim() === "" ||
       typeof decision.reason !== "string" || decision.reason.trim() === "" ||
       !Array.isArray(decision.signals) ||
-      decision.signals.some((signal) => typeof signal !== "string" || signal.trim() === "")) {
+      decision.signals.some((signal) => typeof signal !== "string" || signal.trim() === "") ||
+      (decision.reasoning !== undefined && !MODEL_THINKING_LEVELS.includes(decision.reasoning))) {
     throw new Error("cave_model_route_decision_invalid");
   }
 }
@@ -529,6 +608,33 @@ function messageHasImage(value: unknown): boolean {
     isRecord(block) && block.type === "image" &&
     typeof block.data === "string" && typeof block.mimeType === "string"
   );
+}
+
+/**
+ * Pi 1.0 carries the prompt and tool declarations as the leading transcript
+ * message. Conversation state, journals, and checkpoints never hold one: it is
+ * rebuilt from the definition every run, so a restore cannot revive a stale one.
+ */
+function withoutSystemMessages(messages: readonly AgentMessage[]): AgentMessage[] {
+  return messages.filter((message) => message.role !== "system");
+}
+
+function withoutRefusalFallback(model: Model<Api>): Model<Api> {
+  const compat = model.compat as { allowedFallbackModels?: readonly unknown[] } | undefined;
+  return compat?.allowedFallbackModels?.length
+    ? { ...model, compat: { ...compat, allowedFallbackModels: [] } } as Model<Api>
+    : model;
+}
+
+/** Same reserve basis as before Pi 1.0: prompt, conversation, tool declarations. */
+function transcriptCeiling(
+  selected: Model<Api>,
+  messages: readonly AgentMessage[],
+  outputTokenCap: number,
+  restorableBytes = 0,
+): CallCeiling {
+  return callCeilingFor(selected, getCurrentSystemPrompt(messages),
+    withoutSystemMessages(messages), getCurrentTools(messages), outputTokenCap, restorableBytes);
 }
 
 // Durable turn checkpoints admit 8 MiB of canonical message data. Keep 1 MiB
@@ -657,6 +763,8 @@ export interface RunOptions {
   sessionId?: string;
   /** Provider-native prompt-cache retention. Generic runs inherit Pi's short default. */
   cacheRetention?: CacheRetention;
+  /** Pi's `cacheWarming`. `streaming` keeps a valuable prompt cache warm while tools run. Off by default. */
+  cacheWarming?: CacheWarmingMode;
   gatewayURL?: string;
   ensureRuntime?: boolean;
   /**
@@ -666,8 +774,10 @@ export interface RunOptions {
    * `RunResult.mode: "observe-only"`. `off` never contacts or starts the
    * gateway. A run carrying a Cave Build lock or candidate plan never degrades
    * silently — it fails with `cave_gateway_required_for_locked_plan` instead.
+   * `local` never contacts the gateway but still applies a plan in process with
+   * the local `caveman-engine`: transforms and recovery, no gateway telemetry.
    */
-  cave?: "auto" | "off";
+  cave?: "auto" | "off" | "local";
   /**
    * Best-effort local spend cap for this run, in USD at public catalog list
    * prices. It is not financial enforcement: no provider invoice, no
@@ -713,12 +823,27 @@ export interface RunOptions {
    */
   budget?: RunBudget;
   /**
+   * Window compaction without a budget: summarize before the context window
+   * fills (`reserveTokens`), each summary a provider call in the receipt. A
+   * budget with `onExhausted: "compact"` uses its own settings instead.
+   */
+  compaction?: CompactionOptions;
+  /** Pi's turn retry after a transient provider error turn. Off by default. */
+  turnRetry?: TurnRetryOptions;
+  /**
    * Optional pre-call model selector. It runs before every root working model
    * request, before budget reservation and before provider I/O. Returned models
    * must exist in the configured Pi catalog and stay within the initial
    * provider; unknown or cross-provider decisions fail closed.
    */
   modelRouter?: ModelCallRouter;
+  /**
+   * This run's reasoning level instead of the definition's: Pi's thinking level
+   * for the root's working calls (a route decision's level still wins for its
+   * call); subagents keep their own. Under a gateway-priced plan a different
+   * level fails closed with `cave_run_reasoning_locked`.
+   */
+  reasoning?: ModelThinkingLevel;
   /**
    * Escape hatch for the credential-regime gate. A USD budget on
    * Pi's own transport, off the gateway, is refused when the local credential
@@ -846,6 +971,8 @@ export interface RunOptions {
    * evidence shares its journal. Breaker windows restart on resume.
    */
   durable?: DurableRunOptions;
+  /** Experimental, off by default: declare the folder's `hot` most recently used tools; the rest load on demand. */
+  toolRecency?: ToolRecencyOptions;
   /**
    * Host-owned authorization for every declared tool call, decided outside
    * model output (the Claude Agent SDK `canUseTool` shape). Runs after the
@@ -917,6 +1044,8 @@ export {
 interface InternalRunOptions extends RunOptions {
   lockedBuild?: AnyCaveBuildLock;
   candidatePlan?: CavePlan;
+  /** Coding levers for the plan: `bound` sends only cap-overrun tool outputs to the engine; `keep` off drops the ask. */
+  engineLevers?: { readonly compression: "bound" | "all"; readonly keep: boolean };
   /**
    * Resolved once per root run and handed to descendants so a nested agent
    * neither re-probes the gateway nor disagrees with its parent about whether
@@ -1126,6 +1255,12 @@ type InternalExecutionContext = {
   /** One root-owned coordinator shared by direct, nested, child, and sandbox paths. */
   readonly durableTools?: DurableToolCoordinator;
 };
+
+/**
+ * A capped tool result, keyed by tool call: its whole output until the engine
+ * has decided it once, then the decision (the replacement, or null to keep it).
+ */
+type DeferredToolOutput = { readonly capped: string; output?: FullToolOutput; decision?: string | null };
 
 type AppliedPlan = {
   bodies: Map<string, Uint8Array>;
@@ -1340,7 +1475,7 @@ export function createHarnessToolExecutor(input: {
     new Set<string>(),
     input.engineBin,
     input.providerDefinition,
-    input.deferLockedToolResult,
+    input.deferLockedToolResult === true ? new Map() : undefined,
   );
   return (params, signal) => executor.execute("cave_harness_tool", params, signal);
 }
@@ -1610,6 +1745,8 @@ async function* streamAgentInternal(
   const budgetMeter = executionContext.budgetMeter ?? (normalizedRunBudget === undefined
     ? undefined
     : new BudgetMeter(normalizedRunBudget));
+  const windowCompaction: NormalizedCompaction | undefined = options.compaction === undefined
+    ? undefined : normalizeCompaction(options.compaction);
   if (options.deadlineMs !== undefined &&
       (!Number.isSafeInteger(options.deadlineMs) || options.deadlineMs <= 0)) {
     throw new Error("cave_run_deadline_invalid");
@@ -1619,6 +1756,7 @@ async function* streamAgentInternal(
         options.maxSubagentDepth > ABSOLUTE_SUBAGENT_DEPTH_LIMIT)) {
     throw new Error("cave_subagent_depth_limit_invalid");
   }
+  if (options.reasoning !== undefined && !MODEL_THINKING_LEVELS.includes(options.reasoning)) throw new Error("cave_run_reasoning_invalid");
   const deadlineAt = executionContext.deadlineAt ?? (options.deadlineMs === undefined
     ? undefined
     : performance.now() + options.deadlineMs);
@@ -1631,6 +1769,9 @@ async function* streamAgentInternal(
     ? undefined
     : new BreakerState(normalizeRunBreakers(options.breakers, budgetMeter !== undefined));
   const efficiencyPlan = options.lockedBuild?.selected_plan ?? options.candidatePlan;
+  // A candidate plan the local engine applies was priced by no one: its transforms run, but it binds no model,
+  // reasoning, usage, budget or cache epoch (a locked build or a gateway plan does).
+  const bindingPlan = options.cave === "local" && options.lockedBuild === undefined ? undefined : efficiencyPlan;
   const buildIdentity = options.lockedBuild === undefined
     ? undefined
     : {
@@ -1661,7 +1802,8 @@ async function* streamAgentInternal(
     if (options.maxCostUsd !== undefined) {
       throw new Error("cave_durable_max_cost_usd_unsupported: use RunOptions.budget with durable runs");
     }
-    if (options.candidatePlan !== undefined) {
+    // Only the local engine's plan replays from the journal (streamCodingRun); a gateway plan stays undurable.
+    if (options.candidatePlan !== undefined && options.cave !== "local") {
       throw new Error("cave_durable_candidate_plan_unsupported");
     }
     if (options.conversation !== undefined && options.sessionId !== undefined &&
@@ -1702,12 +1844,21 @@ async function* streamAgentInternal(
       const budgetSha256 = normalizedRunBudget === undefined
         ? "none"
         : sha256(stableStringify(JSON.parse(JSON.stringify(normalizedRunBudget))));
-      const durableDefinitionSHA256 = options.lockedBuild === undefined
+      // A run's plan (locked or candidate, with its levers) and reasoning level are part of what it replays.
+      const durableDefinitionSHA256 = options.lockedBuild === undefined && options.candidatePlan === undefined &&
+          options.reasoning === undefined
         ? executionContext.rootDefinitionSha256
         : sha256(stableStringify({
           definition_sha256: executionContext.rootDefinitionSha256,
-          build_sha256: options.lockedBuild.build_sha256,
-          plan_sha256: options.lockedBuild.plan_sha256,
+          ...(options.lockedBuild === undefined ? {} : {
+            build_sha256: options.lockedBuild.build_sha256,
+            plan_sha256: options.lockedBuild.plan_sha256,
+          }),
+          ...(options.candidatePlan === undefined ? {} : {
+            plan_sha256: sha256(stableStringify(options.candidatePlan)),
+            levers: options.engineLevers ?? null,
+          }),
+          ...(options.reasoning === undefined ? {} : { reasoning: options.reasoning }),
         }));
       const durableLines = await durableStore.load(runId);
       const analyzed = analyzeJournal(durableLines, {
@@ -1846,14 +1997,20 @@ async function* streamAgentInternal(
       atCall: meter.calls,
     });
   };
+  if (options.cacheWarming !== undefined && options.cacheWarming !== "off" && options.cacheWarming !== "streaming") {
+    throw new Error("cave_cache_warming_invalid");
+  }
+  const cacheWarmer = options.cacheWarming === "streaming" ? new CacheWarmer() : undefined;
+  // Run scope: a warm settled while the run stops still drains before its terminal event.
+  const queued: CavemanRunEvent[] = [];
   let activeAbort: (() => void) | undefined;
   let activeExecution: Promise<void> | undefined;
   let sandboxSourceSnapshot: SandboxSourceSnapshot | undefined;
   const pendingSpendReservations: SpendReservation[][] = [];
   const pendingCallRecords: PendingCallRecord[] = [];
   let spendFailure: Error | undefined;
-  // Set when the ladder declines to start another call. Pi answers the refusal
-  // with one synthesized zero-usage error turn; that turn is our own stop, not
+  // Set when the ladder declines to start another call. The refusal is one
+  // empty zero-usage `stop` turn that finishTurn ends; it is our own stop, not
   // provider evidence, so it is skipped by the usage accounting below and
   // dropped from the committed conversation.
   let stopReason: RunStopReason | undefined;
@@ -1982,7 +2139,7 @@ async function* streamAgentInternal(
         "cave_tool_sandbox_entry_required: sandboxed tools need RunOptions.entryPath; use sandbox fixture only for trusted tests",
       );
     }
-    const originalConversationMessages = conversation?.messages.slice() ?? [];
+    const originalConversationMessages = withoutSystemMessages(conversation?.messages ?? []);
     const initialConversationSegments = conversationTextSegments(originalConversationMessages);
     const initialConversationMedia = conversationMediaSegments(originalConversationMessages);
     const lowered = await lowerAgentContext(definition, {
@@ -2004,13 +2161,16 @@ async function* streamAgentInternal(
         : { inputOpaque: preparedInput.inputOpaque }),
     });
     const bill = contextBill(lowered.ir);
-    if (efficiencyPlan) enforceSemanticBudgets(
+    if (bindingPlan) enforceSemanticBudgets(
       bill,
       definition.output?.maxTokens ?? 0,
-      efficiencyPlan,
+      bindingPlan,
     );
     yield { type: "context_ready", runId, contextIR: lowered.ir, bill };
-    const appliedPlan = await applyEfficiencyPlan(lowered, efficiencyPlan, options.engineBin, options.signal);
+    // Bound: an earlier run's tool results are history; only this run's cap overruns reach the engine.
+    const appliedPlan = await applyEfficiencyPlan(lowered, efficiencyPlan && options.engineLevers?.compression === "bound"
+      ? { ...efficiencyPlan, segment_routes: efficiencyPlan.segment_routes.filter((route) => route.segment_kind !== "tool_result") }
+      : efficiencyPlan, options.engineBin, options.signal);
     const frameworkDistRoot = dirname(fileURLToPath(import.meta.url));
     const requestedSandboxEntry = options.entryPath === undefined
       ? undefined
@@ -2026,6 +2186,7 @@ async function* streamAgentInternal(
     const sandboxSourceFiles = sandboxSourceSnapshot?.sourceFiles ?? [];
     const sandboxStagingRoot = sandboxSourceSnapshot?.stagingRoot;
     const conversationOriginals = new Map<string, string>();
+    const deferredToolOutputs = new Map<string, DeferredToolOutput>();
     const initialProviderMessages = replaceConversationSegments(
       originalConversationMessages,
       initialConversationSegments,
@@ -2094,6 +2255,7 @@ async function* streamAgentInternal(
     const {
       invocationTrace: _inheritedInvocationTrace,
       modelRouter: _rootModelRouter,
+      reasoning: _rootReasoning,
       ...optionsWithoutInvocationTrace
     } = options;
     const nestedOptions: InternalRunOptions = {
@@ -2136,12 +2298,9 @@ async function* streamAgentInternal(
         );
       }
     }
-    if (efficiencyPlan !== undefined) {
-      validatePlanSelection(efficiencyPlan, {
-        provider: model.provider,
-        model: model.id,
-        reasoning: definition.reasoning,
-      });
+    if (bindingPlan !== undefined) {
+      validatePlanSelection(bindingPlan, { provider: model.provider, model: model.id, reasoning: definition.reasoning });
+      if (options.reasoning !== undefined && options.reasoning !== definition.reasoning) throw new Error("cave_run_reasoning_locked");
     }
     const recoveryHandles = appliedPlan.recoveryHandles;
     const nestedUsage: NestedUsage = {
@@ -2188,7 +2347,8 @@ async function* streamAgentInternal(
         ...(durableTools === undefined ? {} : { durableTools }),
         durablePath: executionContext.durablePath ?? Object.freeze([]),
       });
-    const piTools: AgentTool<TSchema>[] = [
+    const toolRecency = executionContext.depth > 0 ? undefined : await openToolRecency(options, bindingPlan !== undefined);
+    const allPiTools: AgentTool<TSchema>[] = [
       ...definition.tools.map((item) => {
         const providerTool = providerToolDefinition(item, lowered, appliedPlan);
         const programmaticMetadata = programmaticToolMetadata(item);
@@ -2241,7 +2401,7 @@ async function* streamAgentInternal(
           recoveryHandles,
           options.engineBin,
           providerTool,
-          hasToolResultRoute,
+          hasToolResultRoute ? deferredToolOutputs : undefined,
           item.nestedTools === undefined
             ? undefined
             : (request) => {
@@ -2281,7 +2441,13 @@ async function* streamAgentInternal(
         journalPath,
       )),
     ];
-    const originalInstructions = assembleSystemPrompt(definition, lowered);
+    const piTools = toolRecency?.declare(allPiTools) ?? allPiTools;
+    // One fixed line, the same on every call, tells the model what a compressed tool result is.
+    const compressedNote = hasToolResultRoute
+      ? "\n\nA tool result inside <cave-compressed> was shortened by Caveman: it says how many lines it kept, and " +
+        "cave_retrieve with its recovery_handle and no query returns the whole original, page by page."
+      : "";
+    const originalInstructions = assembleSystemPrompt(definition, lowered) + compressedNote;
     const ambiguousCustomAdapter = options.streamFn !== undefined &&
       options.providerPayloadContract !== "pi-on-payload-v1" &&
       appliedPlan.appliedTransformIDs.length > 0;
@@ -2290,7 +2456,7 @@ async function* streamAgentInternal(
     }
     const instructions = ambiguousCustomAdapter
       ? originalInstructions
-      : assembleSystemPrompt(definition, lowered, appliedPlan.bodies);
+      : assembleSystemPrompt(definition, lowered, appliedPlan.bodies) + compressedNote;
     const prefixDigest = sha256(stableStringify({
       instructions,
       tools: piTools.map((item) => ({
@@ -2318,7 +2484,8 @@ async function* streamAgentInternal(
       conversation.originalFrozen = undefined;
     }
     if (conversation) conversation.fingerprint = conversationFingerprint;
-    if (efficiencyPlan?.segment_routes.length && volatileStablePrefix(instructions, definition.tools)) {
+    // A gateway cache epoch needs a stable prefix; a local plan opens none, and a host's AGENTS.md may hold a UUID.
+    if (bindingPlan?.segment_routes.length && volatileStablePrefix(instructions, definition.tools)) {
       throw new Error("cave_cache_volatile_stable_slot");
     }
     // Every x-cave-* header exists for the Caveman gateway: x-cave-api-key is
@@ -2339,7 +2506,11 @@ async function* streamAgentInternal(
         invocationTrace,
       )
       : undefined;
-    const baseStream = options.streamFn ?? models.streamSimple.bind(models);
+    const rawStream: StreamFn = options.streamFn ?? models.streamSimple.bind(models);
+    // Anthropic's refusal fallback answers from another model than the one
+    // reserved, validated, and receipted. Fail closed: never request it.
+    const baseStream: StreamFn = (selected, context, streamOptions) =>
+      rawStream(withoutRefusalFallback(selected), context, streamOptions);
     // Native cache hints (phase 2, decision 3's "self-sufficient"): off the
     // gateway, the in-SDK cache planner adds provider-native cache markers to
     // the outgoing upstream request only. When the loopback gateway is routed
@@ -2423,8 +2594,64 @@ async function* streamAgentInternal(
     let lastCallCacheState: "warm" | "cold" | "unknown" = "unknown";
     let activeWorkingModel = routedModel;
     let toolErrorStreak = 0;
+    // Leaf calls only: a composite tool's own call changes every time, so it
+    // neither extends nor resets the streak of the calls nested inside it.
+    let repeatedToolCallStreak = 0;
+    let lastLeafCallSignature: string | undefined;
+    const observeLeafCall = (toolName: string, args: unknown): void => {
+      const signature = callSignature(toolName, args);
+      repeatedToolCallStreak = signature === lastLeafCallSignature ? repeatedToolCallStreak + 1 : 1;
+      lastLeafCallSignature = signature;
+    };
     let previousRouteUsage: ModelCallRouteInput["previousUsage"];
-    const queued: CavemanRunEvent[] = [];
+    // A warm whose usage is unreadable settled at worst case, so the run goes
+    // on, but its usage report can no longer claim to be complete.
+    let usageIncomplete = false;
+    // Every provider call this run made joins its totals and journal here.
+    // Unreadable usage is an unpriced zero, never a free call; a warm replays
+    // the previous request, so routing and cache state ignore it.
+    const accrueCall = (
+      kind: "model" | "compaction" | "cache_warm",
+      callModel: Model<Api>,
+      usage: ValidatedProviderUsage | undefined,
+      settledAmount: number | undefined,
+      journalIt = true,
+    ) => {
+      const call = providerCallRecord(callModel, usage);
+      if (call.unpriced) unpricedCall = true;
+      if (usage === undefined) {
+        if (kind === "cache_warm") usageIncomplete = true;
+        else usageFailure ??= new Error("cave_provider_usage_incomplete");
+      } else {
+        inputTokens += usage.inputTokens;
+        outputTokens += usage.outputTokens;
+        cacheReadTokens += usage.cacheReadTokens;
+        cacheWriteTokens += usage.cacheWriteTokens;
+        reasoningTokens += usage.reasoningTokens;
+        costUsd += usage.catalogCostUsd;
+        if (kind !== "cache_warm") {
+          lastCallCacheState = usage.cacheReadTokens > 0 ? "warm" : "cold";
+          previousRouteUsage = {
+            model: `${usage.provider}/${usage.model}`,
+            inputTokens: usage.inputTokens,
+            cacheReadTokens: usage.cacheReadTokens,
+            cacheWriteTokens: usage.cacheWriteTokens,
+          };
+        }
+      }
+      if (journalIt) {
+        activeJournal?.emit({
+          v: DURABLE_JOURNAL_VERSION,
+          at: activeJournal.now(),
+          type: "call_settled",
+          path: journalPath,
+          kind,
+          call,
+          ...(settledAmount === undefined ? {} : { settledAmount }),
+        });
+      }
+      return call;
+    };
     let wake: (() => void) | undefined;
     const wakeQueuedConsumer = (): void => {
       const pending = wake;
@@ -2517,7 +2744,7 @@ async function* streamAgentInternal(
       parentSignal,
       turnKey: suppliedTurnKey,
     }): Promise<unknown> => {
-      const nested = parent.nestedTools?.find((item) => item.name === name);
+      const nested = parent.nestedTools?.find((item) => item.name === name) ?? programmaticToolMetadata(parent)?.registry.get(name);
       if (nested === undefined) throw new Error(`cave_nested_tool_not_allowed:${name}`);
       if (dispatchOptions?.claimSpeculation === true) {
         if (nested.effect !== "read" || nested.speculative !== true ||
@@ -2574,6 +2801,7 @@ async function* streamAgentInternal(
         if (toolBudgetCallCount > maxToolCalls) {
           throw new Error("cave_tool_call_budget_exceeded");
         }
+        if (nested.allowRepeat !== true) observeLeafCall(nested.name, args);
         if (breakers !== undefined) {
           const decision = breakers.observeToolCall({
             toolCallId: nestedToolCallId,
@@ -2686,7 +2914,7 @@ async function* streamAgentInternal(
       } finally {
         outcome.isError = isError;
         receipt.recordToolOutcome(nested.name, isError);
-        breakers?.observeToolResult(nestedToolCallId, isError);
+        breakers?.observeToolResult(nestedToolCallId, isError, nested.effect === "write" || nested.effect === "external", eventResult);
         queued.push({
           type: "nested_tool_end",
           runId,
@@ -2765,12 +2993,14 @@ async function* streamAgentInternal(
         finalMessage = message;
         return;
       }
+      // A turn the run will retry is not a crash: its settle closes the intent.
       const journalThisSettle = activeJournal !== undefined &&
         !((message.stopReason === "error" || message.stopReason === "aborted") &&
-          budgetReservation === undefined && !carriedUsage);
+          budgetReservation === undefined && !carriedUsage && turnRetry?.retryable(message) !== true);
       try {
-        if (definition.reasoning !== "off" && callModel.reasoning === true &&
-            message.usage.reasoning === undefined) {
+        // An error turn reports no usage at all; that is not missing reasoning detail.
+        if ((pendingCall?.reasoning ?? definition.reasoning) !== "off" && callModel.reasoning === true &&
+            message.usage.reasoning === undefined && message.stopReason !== "error" && message.stopReason !== "aborted") {
           reasoningUsageUnavailable = true;
         }
         const usage = validateProviderUsage({
@@ -2802,78 +3032,22 @@ async function* streamAgentInternal(
             breakers?.settleRetry(pendingCall.retryAttempt, measuredSpend, "provider_reported");
           }
         }
-        inputTokens += usage.inputTokens;
-        outputTokens += usage.outputTokens;
-        cacheReadTokens += usage.cacheReadTokens;
-        cacheWriteTokens += usage.cacheWriteTokens;
-        reasoningTokens += usage.reasoningTokens;
-        costUsd += usage.catalogCostUsd;
-        if (!usage.priced) unpricedCall = true;
-        lastCallCacheState = usage.cacheReadTokens > 0 ? "warm" : "cold";
-        previousRouteUsage = {
-          model: `${usage.provider}/${usage.model}`,
-          inputTokens: usage.inputTokens,
-          cacheReadTokens: usage.cacheReadTokens,
-          cacheWriteTokens: usage.cacheWriteTokens,
-        };
-        receipt.recordCall({
-          provider: usage.provider,
-          model: usage.model,
-          inputTokens: usage.inputTokens,
-          outputTokens: usage.outputTokens,
-          cacheReadTokens: usage.cacheReadTokens,
-          cacheWriteTokens: usage.cacheWriteTokens,
-          reasoningTokens: usage.reasoningTokens,
-          estimatedUsd: usage.catalogCostUsd,
-          unpriced: !usage.priced,
-          usageBasis: "provider_reported",
-          clampedOutputTokens: pendingCall?.clampedOutputTokens,
-        });
-        if (journalThisSettle && activeJournal !== undefined) {
-          activeJournal.emit({
-            v: DURABLE_JOURNAL_VERSION,
-            at: activeJournal.now(),
-            type: "call_settled",
-            path: journalPath,
-            kind: "model",
-            call: {
-              provider: usage.provider,
-              model: usage.model,
-              inputTokens: usage.inputTokens,
-              outputTokens: usage.outputTokens,
-              cacheReadTokens: usage.cacheReadTokens,
-              cacheWriteTokens: usage.cacheWriteTokens,
-              reasoningTokens: usage.reasoningTokens,
-              estimatedUsd: usage.catalogCostUsd,
-              unpriced: !usage.priced,
-              usageBasis: "provider_reported",
-            },
-            ...(budgetReservation !== undefined && reservationMeter !== undefined
-              ? {
-                settledAmount: reservationMeter.denomination === "usd"
-                  ? usage.catalogCostUsd
-                  : usage.totalTokens,
-              }
-              : {}),
-          });
-        }
+        const call = accrueCall(
+          "model",
+          callModel,
+          usage,
+          budgetReservation !== undefined && reservationMeter !== undefined
+            ? reservationMeter.denomination === "usd" ? usage.catalogCostUsd : usage.totalTokens
+            : undefined,
+          journalThisSettle,
+        );
+        receipt.recordCall({ ...call, clampedOutputTokens: pendingCall?.clampedOutputTokens });
       } catch (error) {
         const failure = error instanceof Error ? error : new Error(String(error));
+        // A dropped stream reports no usage; the retried run goes on with its totals marked incomplete.
+        const retried = failure.message === "cave_provider_usage_incomplete" && turnRetry?.retryable(message) === true;
+        const priorFailure = usageFailure;
         usageFailure ??= failure;
-        unpricedCall = true;
-        receipt.recordCall({
-          provider: callModel.provider,
-          model: callModel.id,
-          inputTokens: 0,
-          outputTokens: 0,
-          cacheReadTokens: 0,
-          cacheWriteTokens: 0,
-          reasoningTokens: 0,
-          estimatedUsd: 0,
-          unpriced: true,
-          usageBasis: "unavailable",
-          clampedOutputTokens: pendingCall?.clampedOutputTokens,
-        });
         // Worst-case settlement keeps unreadable provider usage from looking
         // free. A later tool must see the resulting dead wallet.
         if (budgetReservation !== undefined) {
@@ -2890,31 +3064,11 @@ async function* streamAgentInternal(
           markSpendIncomplete(reservation.map((item) => item.ledger));
           spendFailure ??= failure;
         }
-        if (journalThisSettle && activeJournal !== undefined) {
-          // Unreadable usage settles at worst case in the meter; the journal
-          // records the same honesty — an unavailable-usage call, settled at
-          // the reservation amount, never a free call.
-          activeJournal.emit({
-            v: DURABLE_JOURNAL_VERSION,
-            at: activeJournal.now(),
-            type: "call_settled",
-            path: journalPath,
-            kind: "model",
-            call: {
-              provider: callModel.provider,
-              model: callModel.id,
-              inputTokens: 0,
-              outputTokens: 0,
-              cacheReadTokens: 0,
-              cacheWriteTokens: 0,
-              reasoningTokens: 0,
-              estimatedUsd: 0,
-              unpriced: true,
-              usageBasis: "unavailable",
-            },
-            ...(budgetReservation === undefined ? {} : { settledAmount: budgetReservation.amount }),
-          });
-        }
+        // The journal records the same honesty: an unavailable-usage call,
+        // settled at the reservation amount, never a free call.
+        const call = accrueCall("model", callModel, undefined, budgetReservation?.amount, journalThisSettle);
+        if (retried) [usageFailure, usageIncomplete] = [priorFailure, true];
+        receipt.recordCall({ ...call, clampedOutputTokens: pendingCall?.clampedOutputTokens });
       }
       finalMessage = message;
     };
@@ -2925,35 +3079,49 @@ async function* streamAgentInternal(
       streamOptions: Parameters<StreamFn>[2],
     ): Promise<{ selected: Model<Api>; decision?: ModelCallRouteDecision }> => {
       const hasImages = context.messages.some((message) => messageHasImage(message));
+      const imageLimit = (candidate: Model<Api>) =>
+        hasImages ? imageInputLimitViolation(candidate, context.messages) : undefined;
       if (options.modelRouter === undefined) {
         if (hasImages && !current.input.includes("image")) {
           throw new Error(`cave_model_input_unsupported:${current.provider}/${current.id}:images`);
         }
+        const limit = imageLimit(current);
+        if (limit !== undefined) throw new Error(`cave_model_input_limit:${current.provider}/${current.id}:${limit}`);
         return { selected: current };
       }
       const outputTokenCap = Math.min(
         streamOptions?.maxTokens ?? definition.output?.maxTokens ?? Number.MAX_SAFE_INTEGER,
         current.maxTokens,
       );
-      const ctxTokens = callCeilingFor(
+      const ctxTokens = transcriptCeiling(
         current,
-        context.systemPrompt ?? "",
         context.messages as unknown as readonly AgentMessage[],
-        context.tools,
         outputTokenCap,
         restorableRequestBytes(conversationOriginals, instructions, originalInstructions),
       ).inputTokenCeiling;
       const decision = await options.modelRouter({
         callIndex: routedCalls,
         role,
+        reason: role === "compaction" ? "direct"
+          : context.messages.findLast((item) => item.role !== "system")?.role === "toolResult"
+            ? "continuation" : "user",
         provider: model.provider,
         currentModel: `${current.provider}/${current.id}`,
         ctxTokens,
         hasImages,
         toolErrorStreak,
+        repeatedToolCallStreak,
+        reasoningLocked: efficiencyPlan !== undefined && options.cave !== "local",
         ...(previousRouteUsage === undefined ? {} : { previousUsage: previousRouteUsage }),
       });
       validateModelRouteDecision(decision);
+      // A locked or candidate plan fixed the reasoning level before the run;
+      // a router may not vary it per call underneath that plan. A plan applied
+      // locally was priced by no one, so a local run's router may.
+      if (efficiencyPlan !== undefined && options.cave !== "local" && decision.reasoning !== undefined &&
+          decision.reasoning !== definition.reasoning) {
+        throw new Error("cave_model_route_reasoning_locked");
+      }
       const slash = decision.model.indexOf("/");
       const provider = slash < 1 ? "" : decision.model.slice(0, slash);
       const id = slash < 1 ? "" : decision.model.slice(slash + 1);
@@ -2966,6 +3134,8 @@ async function* streamAgentInternal(
       if (hasImages && !raw.input.includes("image")) {
         throw new Error(`cave_model_route_incompatible:${decision.model}:images`);
       }
+      const limit = imageLimit(raw);
+      if (limit !== undefined) throw new Error(`cave_model_route_incompatible:${decision.model}:${limit}`);
       if (ctxTokens > raw.contextWindow) {
         throw new Error(`cave_model_route_incompatible:${decision.model}:context`);
       }
@@ -2981,6 +3151,61 @@ async function* streamAgentInternal(
       wake?.();
       wake = undefined;
     };
+    // Pi's streaming cache warming: a refresh is a metered call like any other,
+    // reserved first, settled from provider usage, receipted, and journaled.
+    const refreshCacheWarm = async (request: CacheWarmRequest, signal: AbortSignal): Promise<boolean> => {
+      const { model, context } = request;
+      const prior = previousRouteUsage;
+      if (request.sent === undefined || prior === undefined || options.signal?.aborted ||
+          breakers?.tripped !== undefined || (deadlineAt !== undefined && performance.now() >= deadlineAt) ||
+          budgetMeter?.revoked || budgetMeter?.capBreached || spendFailure || usageFailure || usageIncomplete ||
+          executionContext.spendLedgers.length > 0) {
+        return false;
+      }
+      const accountingAt = new Date();
+      const promptTokens = (prior.inputTokens ?? 0) + prior.cacheReadTokens + prior.cacheWriteTokens;
+      if (cacheWarmDecision(model.provider, model.id, promptTokens, accountingAt)?.action !== "warm") return false;
+      const cost = budgetMeter === undefined ? undefined : callCeilingCost(budgetMeter.denomination,
+        transcriptCeiling(model, context.messages as unknown as readonly AgentMessage[], CACHE_WARM_OUTPUT_TOKENS,
+          restorableRequestBytes(conversationOriginals, instructions, originalInstructions)),
+        CACHE_WARM_OUTPUT_TOKENS, accountingAt);
+      let held = cost === undefined ? undefined : budgetMeter?.reserve(cost, CACHE_WARM_OUTPUT_TOKENS);
+      if (budgetMeter !== undefined && held === undefined) return false;
+      try {
+        if (budgetMeter !== undefined) journalMeterCall(budgetMeter);
+        // The intent is durable before the verified replay can leave; a warm
+        // refused before sending journals and receipts nothing.
+        const sent = await sendCacheWarm(baseStream, request, accountingAt, budgetMeter?.denomination === "usd", () => {
+          activeJournal?.emit({ v: DURABLE_JOURNAL_VERSION, at: activeJournal.now(), type: "call_started",
+            path: journalPath, kind: "cache_warm", provider: model.provider, model: model.id });
+          return activeJournal?.flush() ?? Promise.resolve();
+        }, signal);
+        if (sent === undefined) return false;
+        // Unreadable or abandoned usage settles at the reserved worst case and
+        // ends warming; the wallet already holds the maximum, so the run goes on.
+        const metered = sent.usage === undefined ? held?.amount ?? 0
+          : budgetMeter?.denomination === "usd" ? sent.usage.catalogCostUsd : sent.usage.totalTokens;
+        if (held !== undefined) budgetMeter!.settle(held, metered);
+        held = undefined;
+        const call = {
+          ...accrueCall("cache_warm", model, sent.usage, budgetMeter === undefined ? undefined : metered),
+          clampedOutputTokens: undefined,
+          purpose: "cache_warm" as const,
+        };
+        receipt.recordCompactionCall(call);
+        queued.push({ type: "cache_warm", runId, call });
+        wakeQueuedConsumer();
+        await activeJournal?.flush();
+        return sent.ok;
+      } catch (error) {
+        // A journal that cannot persist a paid call's evidence stops the run.
+        spendFailure ??= error instanceof Error ? error : new Error(String(error));
+        return false;
+      } finally {
+        if (held !== undefined) budgetMeter!.cancel(held);
+      }
+    };
+    const warmingStream = cacheWarmer?.wrap(baseStream, refreshCacheWarm);
     const streamFn: StreamFn = async (_selected, context, streamOptions) => {
       if (options.signal?.aborted) {
         throw options.signal.reason ?? new Error("cave_run_aborted");
@@ -2992,12 +3217,12 @@ async function* streamAgentInternal(
       if (spendFailure) throw spendFailure;
       if (usageFailure) throw usageFailure;
       if (nestedUsage.incomplete) throw new Error("cave_nested_usage_incomplete");
-      if (efficiencyPlan && reasoningUsageUnavailable) {
+      if (bindingPlan && reasoningUsageUnavailable) {
         throw new Error("cave_reasoning_usage_unavailable");
       }
-      if (efficiencyPlan) {
-        enforceSemanticBudgets(contextBill(lowered.ir), outputTokens, efficiencyPlan);
-        if (reasoningTokens > efficiencyPlan.budgets.reasoning) {
+      if (bindingPlan) {
+        enforceSemanticBudgets(contextBill(lowered.ir), outputTokens, bindingPlan);
+        if (reasoningTokens > bindingPlan.budgets.reasoning) {
           throw new Error("cave_reasoning_budget_exceeded");
         }
       }
@@ -3014,7 +3239,7 @@ async function* streamAgentInternal(
       if (modelCalls >= maxModelCalls) {
         stopReason = "call_budget_exhausted";
         refusalPending = true;
-        throw new Error("cave_run_stopped");
+        return stoppedTurnStream(activeWorkingModel);
       }
       let routed: Awaited<ReturnType<typeof resolveModelRoute>>;
       try {
@@ -3074,12 +3299,11 @@ async function* streamAgentInternal(
         throw ladderFailure;
       }
       if (decided.action === "stop") {
-        // Pi answers a thrown streamFn with a synthesized zero-usage error turn,
-        // so record the refusal before throwing or the stop becomes the usage
-        // failure that turn produces.
+        // The refusal is one empty zero-usage `stop` turn that finishTurn ends,
+        // never a Pi-synthesized error turn the usage accounting must explain.
         stopReason = decided.reason;
         refusalPending = true;
-        throw new Error("cave_run_stopped");
+        return stoppedTurnStream(selected);
       }
       if (decided.action === "compact") {
         // Compaction happens between turns, where a rewritten context can
@@ -3088,10 +3312,11 @@ async function* streamAgentInternal(
         // closed rather than silently proceeding at an unreserved cost.
         stopReason = "budget_exhausted";
         refusalPending = true;
-        throw new Error("cave_run_stopped");
+        return stoppedTurnStream(selected);
       }
       const pendingCall: PendingCallRecord = {
         model: selected,
+        reasoning: routed.decision?.reasoning ?? options.reasoning ?? definition.reasoning,
         reservation: decided.reservation,
         reservationMeter: budgetMeter,
         retryAttempt: undefined,
@@ -3119,7 +3344,9 @@ async function* streamAgentInternal(
         throw spendFailure;
       }
       pendingSpendReservations.push(spendReservations);
-      const transformTrace = serializeTransformTrace(appliedPlan.trace);
+      // A gateway header, bounded for the gateway: a local run never sends it, so
+      // a long local run is not stopped by its 64-entry limit.
+      const transformTrace = headers === undefined ? "" : serializeTransformTrace(appliedPlan.trace);
       const requestHeaders = mergeHeaders(
         streamOptions?.headers,
         headers === undefined ? {} : {
@@ -3145,8 +3372,9 @@ async function* streamAgentInternal(
           ? options.signal
           : AbortSignal.any([streamOptions.signal, options.signal]);
       const streamOnce = async () => {
-        let source = await baseStream(selected, context, {
-        ...streamOptions,
+        // Routed reasoning first: the warmer must replay the request as sent.
+        let source = await (warmingStream ?? baseStream)(selected, context, {
+        ...withRoutedReasoning(streamOptions, routed.decision),
         ...(options.cacheRetention === undefined
           ? {}
           : { cacheRetention: options.cacheRetention }),
@@ -3345,14 +3573,17 @@ async function* streamAgentInternal(
           return activeJournal?.flush();
         },
         abandonPendingCall,
-      );
+      ).catch((error: unknown) => {
+        if (!refusalPending || (error as Error | undefined)?.message !== "cave_run_stopped") throw error;
+        return stoppedTurnStream(selected);
+      });
     };
 
     const pi = new Agent({
       initialState: {
         systemPrompt: instructions,
         model: routedModel,
-        thinkingLevel: definition.reasoning,
+        thinkingLevel: options.reasoning ?? definition.reasoning,
         tools: piTools,
         ...(conversation === undefined ? {} : {
           messages: initialProviderMessages,
@@ -3360,29 +3591,44 @@ async function* streamAgentInternal(
       },
       sessionId,
       streamFn,
-      transformContext: async (messages) => injectMemoryPrompt(
-        await transformConversationContext(
-          messages,
+      // A refused call ends the run here: no queue poll, no further request.
+      // Warming covers a request's tool run, so it is quiesced before the next one.
+      finishTurn: async () => {
+        await cacheWarmer?.stop(CACHE_WARM_QUIESCE_MS);
+        return refusalPending ? { action: "end" as const } : undefined;
+      },
+      prepareRequest: ({ context }) => turnRetry?.request(context),
+      // Indexes below are conversation indexes: Pi's leading system message
+      // stays in front, so recall can never land before it.
+      transformContext: async (messages) => {
+        const head = getInitialSystemMessage(messages);
+        return [...(head ? [head] : []), ...injectMemoryPrompt(
+          await transformConversationContext(
+            head ? messages.slice(1) : messages,
+            originalConversationMessages.length,
+            lowered,
+            efficiencyPlan,
+            options.engineBin,
+            appliedPlan,
+            conversationOriginals,
+            deferredToolOutputs,
+            options.signal,
+            options.engineLevers,
+          ),
           originalConversationMessages.length,
-          lowered,
-          efficiencyPlan,
-          options.engineBin,
-          appliedPlan,
-          conversationOriginals,
-          options.signal,
-        ),
-        originalConversationMessages.length,
-        passiveRecall?.prompt,
-      ),
+          passiveRecall?.prompt,
+        )];
+      },
       // The between-calls point where a compaction can persist: the turn has
       // settled, no tool is in flight, and the replacement context this returns
       // is what the next call is built from.
       prepareNextTurnWithContext: async (turn) => {
-        if (budgetMeter === undefined || budgetMeter.onExhausted !== "compact") return undefined;
-        if (compactionsUsed >= budgetMeter.compaction.maxCompactions) return undefined;
-        // Pi runs this hook after EVERY turn, including the last one. A turn
-        // that asked for no tools is the end of the loop: no working call
-        // follows it, so a rewrite here would buy a context nothing reads.
+        const wallet = budgetMeter?.onExhausted === "compact" ? budgetMeter : undefined;
+        const compaction = wallet?.compaction ?? windowCompaction;
+        if (compaction === undefined || compactionsUsed >= compaction.maxCompactions) return undefined;
+        // Pi runs this hook only when another call follows. A turn that asked
+        // for no tools continues only for queued input; compaction stays on
+        // the tool-loop path it is sized for.
         const requestedTools = turn.message.role === "assistant" &&
           turn.message.content.some((part) => part.type === "toolCall");
         if (!requestedTools) return undefined;
@@ -3396,35 +3642,34 @@ async function* streamAgentInternal(
           efficiencyPlan?.budgets.output ?? Number.MAX_SAFE_INTEGER,
           activeWorkingModel.maxTokens,
         );
-        const nextCall = callCeilingFor(
-          activeWorkingModel,
-          instructions,
-          turn.context.messages,
-          turn.context.tools,
+        // Compaction rewrites the conversation only; the head is put back.
+        const head = getInitialSystemMessage(turn.context.messages);
+        const conversationMessages = head ? turn.context.messages.slice(1) : turn.context.messages;
+        const nextCallCost = wallet === undefined ? undefined : callCeilingCost(
+          wallet.denomination,
+          callCeilingFor(activeWorkingModel, instructions, conversationMessages, turn.context.tools, outputTokenCap),
           outputTokenCap,
-        );
-        const compactionDecisionAt = new Date();
-        const nextCallCost = callCeilingCost(
-          budgetMeter.denomination,
-          nextCall,
-          nextCall.outputTokenCap,
-          compactionDecisionAt,
+          new Date(),
         );
         // Trigger before exhaustion. At-max same-model compaction is
         // mathematically unreachable: once one working call no longer fits,
         // that same-sized summarizer plus post-rewrite headroom cannot fit
         // either. Four call ceilings preserves default-on compact-and-continue
         // while every actual provider call remains hard-reserved.
-        if (nextCallCost === undefined ||
-            budgetMeter.remaining() >= COMPACTION_TRIGGER_MULTIPLIER * nextCallCost) {
+        const windowFull = contextWindowFull(compaction, activeWorkingModel, previousRouteUsage,
+          [turn.message, ...turn.toolResults]);
+        if (!windowFull && (nextCallCost === undefined ||
+            wallet!.remaining() >= COMPACTION_TRIGGER_MULTIPLIER * nextCallCost)) {
           return undefined;
         }
         const compacted = await compactContext({
           generation: compactionsUsed + 1,
-          messages: turn.context.messages,
+          messages: conversationMessages,
+          head,
           systemPrompt: instructions,
           tools: turn.context.tools,
           meter: budgetMeter,
+          config: compaction,
           selected: activeWorkingModel,
           outputTokenCap,
           baseStream,
@@ -3440,7 +3685,7 @@ async function* streamAgentInternal(
             emitModelRoute(decision);
             compactionsSpent++;
             if (activeJournal === undefined) return;
-            journalMeterCall(budgetMeter);
+            if (budgetMeter !== undefined) journalMeterCall(budgetMeter);
             activeJournal.emit({
               v: DURABLE_JOURNAL_VERSION,
               at: activeJournal.now(),
@@ -3471,69 +3716,7 @@ async function* streamAgentInternal(
           // run's own totals so RunResult and the receipt cannot disagree, and
           // so a parent aggregating this child sees the whole cost.
           accrue: (usage, compactionModel, settledAmount) => {
-            if (usage === undefined) {
-              usageFailure ??= new Error("cave_provider_usage_incomplete");
-              unpricedCall = true;
-              if (activeJournal !== undefined) {
-                activeJournal.emit({
-                  v: DURABLE_JOURNAL_VERSION,
-                  at: activeJournal.now(),
-                  type: "call_settled",
-                  path: journalPath,
-                  kind: "compaction",
-                  call: {
-                    provider: compactionModel.provider,
-                    model: compactionModel.id,
-                    inputTokens: 0,
-                    outputTokens: 0,
-                    cacheReadTokens: 0,
-                    cacheWriteTokens: 0,
-                    reasoningTokens: 0,
-                    estimatedUsd: 0,
-                    unpriced: true,
-                    usageBasis: "unavailable",
-                  },
-                  ...(budgetMeter === undefined ? {} : { settledAmount }),
-                });
-              }
-              return;
-            }
-            inputTokens += usage.inputTokens;
-            outputTokens += usage.outputTokens;
-            cacheReadTokens += usage.cacheReadTokens;
-            cacheWriteTokens += usage.cacheWriteTokens;
-            reasoningTokens += usage.reasoningTokens;
-            costUsd += usage.catalogCostUsd;
-            if (!usage.priced) unpricedCall = true;
-            previousRouteUsage = {
-              model: `${usage.provider}/${usage.model}`,
-              inputTokens: usage.inputTokens,
-              cacheReadTokens: usage.cacheReadTokens,
-              cacheWriteTokens: usage.cacheWriteTokens,
-            };
-            lastCallCacheState = usage.cacheReadTokens > 0 ? "warm" : "cold";
-            if (activeJournal !== undefined) {
-              activeJournal.emit({
-                v: DURABLE_JOURNAL_VERSION,
-                at: activeJournal.now(),
-                type: "call_settled",
-                path: journalPath,
-                kind: "compaction",
-                call: {
-                  provider: usage.provider,
-                  model: usage.model,
-                  inputTokens: usage.inputTokens,
-                  outputTokens: usage.outputTokens,
-                  cacheReadTokens: usage.cacheReadTokens,
-                  cacheWriteTokens: usage.cacheWriteTokens,
-                  reasoningTokens: usage.reasoningTokens,
-                  estimatedUsd: usage.catalogCostUsd,
-                  unpriced: !usage.priced,
-                  usageBasis: "provider_reported",
-                },
-                ...(budgetMeter === undefined ? {} : { settledAmount }),
-              });
-            }
+            accrueCall("compaction", compactionModel, usage, budgetMeter === undefined ? undefined : settledAmount);
           },
           cacheState: lastCallCacheState,
         });
@@ -3561,7 +3744,12 @@ async function* streamAgentInternal(
           journalNewTranches();
           await journal.flush();
         }
-        return { context: { ...turn.context, messages: compacted.messages } };
+        const messages = [...(head ? [head] : []), ...compacted.messages];
+        turnRetry?.compacted(messages);
+        // A compaction is a deliberate new prefix: the next request opens a new
+        // cache epoch instead of being "restored" to the pre-compaction bytes.
+        [providerPrefixDigest, providerFrozen, originalFrozen] = [undefined, undefined, undefined];
+        return { context: { ...turn.context, messages } };
       },
       beforeToolCall: async ({ toolCall, args, assistantMessage }) => {
         accountProviderMessage(assistantMessage);
@@ -3599,6 +3787,9 @@ async function* streamAgentInternal(
             return { block: true, reason: "cave_fan_out_cap_exceeded" };
           }
         }
+        if (configured?.nestedTools === undefined && configured?.allowRepeat !== true) {
+          observeLeafCall(toolCall.name, args);
+        }
         if (breakers !== undefined && configured?.nestedTools === undefined) {
           const decision = breakers.observeToolCall({
             toolCallId: toolCall.id,
@@ -3609,7 +3800,7 @@ async function* streamAgentInternal(
           });
           if (decision.block) return { block: true, reason: decision.reason! };
         }
-        if ((toolCall.name === "cave_retrieve" && needsRecoveryTool) ||
+        if ((toolCall.name === "cave_retrieve" && needsRecoveryTool) || toolCall.name === TOOL_RECENCY_LOADER ||
             (toolCall.name.startsWith("cave_memory_") && definition.memory !== undefined)) {
           if (args === null || typeof args !== "object" || Array.isArray(args)) {
             return { block: true, reason: "cave_tool_arguments_invalid" };
@@ -3693,6 +3884,7 @@ async function* streamAgentInternal(
       },
     });
 
+    if (toolRecency) pi.prepareNextTurnWithContext = toolRecency.nextTurn(pi.prepareNextTurnWithContext);
     options.controller?._attach(pi);
     controlledAgent = pi;
 
@@ -3723,6 +3915,7 @@ async function* streamAgentInternal(
       }
       if (event.type === "tool_execution_start") {
         toolCalls.push(event.toolName);
+        toolRecency?.access(event.toolName);
         receipt.recordToolCall(event.toolName);
         if (configuredToolsByName.get(event.toolName)?.nestedTools === undefined) {
           toolBudgetCallCount++;
@@ -3734,7 +3927,7 @@ async function* streamAgentInternal(
         receipt.recordToolOutcome(event.toolName, event.isError);
         const configured = configuredToolsByName.get(event.toolName);
         if (configured?.nestedTools === undefined) {
-          breakers?.observeToolResult(event.toolCallId, event.isError);
+          breakers?.observeToolResult(event.toolCallId, event.isError, configured?.effect === "write" || configured?.effect === "external", event.result);
         } else {
           foldNestedOutcomes(event.toolCallId);
           compositeTurnKeys.delete(event.toolCallId);
@@ -3777,7 +3970,7 @@ async function* streamAgentInternal(
             (event.message.stopReason === "error" || event.message.stopReason === "aborted")) {
           return;
         }
-        const messages = pi.state.messages;
+        const messages = withoutSystemMessages(pi.state.messages);
         if (journaledMessagesLen > 0 &&
             messages[journaledMessagesLen - 1] !== journaledMessagesTail) {
           ownJournal.emit({
@@ -3801,6 +3994,8 @@ async function* streamAgentInternal(
       });
     }
 
+    const turnRetry: TurnRetry | undefined = options.turnRetry === undefined
+      ? undefined : new TurnRetry(pi, options.turnRetry);
     const abort = () => pi.abort();
     activeAbort = abort;
     options.signal?.addEventListener("abort", abort, { once: true });
@@ -3810,7 +4005,13 @@ async function* streamAgentInternal(
     // one), so `continue()` picks up where the crashed process stopped
     // instead of `prompt()` appending the original input a second time.
     const resumeContinue = durableResume?.hasCompletedTurn === true;
-    const execution = (resumeContinue
+    const settle = (segment: Promise<void>) => activeExecution = segment.catch((error: unknown) => {
+      terminal = true;
+      wake?.();
+      wake = undefined;
+      throw error;
+    });
+    let execution = settle(resumeContinue
       ? pi.continue()
       : preparedInput.promptContent === undefined
         ? pi.prompt(input as string)
@@ -3818,35 +4019,41 @@ async function* streamAgentInternal(
           role: "user" as const,
           content: [...preparedInput.promptContent],
           timestamp: Date.now(),
-        })).catch((error: unknown) => {
-      terminal = true;
-      wake?.();
-      wake = undefined;
-      throw error;
-    });
-    activeExecution = execution;
-
-    while (!terminal || queued.length > 0) {
-      if (queued.length === 0) {
-        await new Promise<void>((resolve) => {
-          wake = resolve;
-        });
+        }));
+    for (;;) {
+      while (!terminal || queued.length > 0) {
+        if (queued.length === 0) {
+          await new Promise<void>((resolve) => {
+            wake = resolve;
+          });
+        }
+        while (queued.length > 0) {
+          yield queued.shift()!;
+        }
       }
-      while (queued.length > 0) {
-        yield queued.shift()!;
-      }
+      await execution;
+      // Only a run nothing else has stopped retries its last turn.
+      if (turnRetry === undefined || stopReason !== undefined || breakers?.tripped !== undefined ||
+          (ladderFailure ?? policyFailure ?? spendFailure) !== undefined ||
+          !(await turnRetry.retry(options.signal))) break;
+      terminal = false;
+      execution = settle(pi.continue());
     }
-    await execution;
+    await cacheWarmer?.stop();
+    await toolRecency?.save();
+    while (queued.length > 0) yield queued.shift()!;
     await closeProgrammaticSpeculation();
     activeDurableTools?.assertReconciled();
-    if (efficiencyPlan && reasoningUsageUnavailable) {
+    if (bindingPlan && reasoningUsageUnavailable) {
       throw new Error("cave_reasoning_usage_unavailable");
     }
     if (ladderFailure) throw ladderFailure;
     if (policyFailure) throw policyFailure;
     if (spendFailure) throw spendFailure;
+    // From here an unreadable warm reports exactly like an unreadable compaction.
+    if (usageIncomplete) usageFailure ??= new Error("cave_provider_usage_incomplete");
     if (usageFailure !== undefined &&
-        (efficiencyPlan !== undefined ||
+        (bindingPlan !== undefined ||
           executionContext.spendLedgers.length > 0 ||
           usageFailure.message === "cave_provider_model_identity_mismatch" ||
           usageFailure.message === "cave_provider_identity_missing")) {
@@ -3871,7 +4078,7 @@ async function* streamAgentInternal(
       memoryEngine?.endTurn({ sessionId, text });
     }
     let output: { readonly value: unknown } | undefined;
-    if (definition.output?.schema && finalMessage !== undefined) {
+    if (definition.output?.schema && finalMessage !== undefined && stopReason === undefined) {
       let parsed: unknown;
       try {
         parsed = JSON.parse(text);
@@ -3972,21 +4179,21 @@ async function* streamAgentInternal(
       unlocked: buildIdentity === undefined,
       ...(durableResume === undefined ? {} : { resumed: true }),
     };
-    if (efficiencyPlan) {
+    if (bindingPlan) {
       if (result.reasoningUsageBasis !== "provider_reported") {
         throw new Error("cave_reasoning_usage_unavailable");
       }
-      if (result.reasoningTokens > efficiencyPlan.budgets.reasoning) {
+      if (result.reasoningTokens > bindingPlan.budgets.reasoning) {
         throw new Error("cave_reasoning_budget_exceeded");
       }
     }
-    if (efficiencyPlan) {
-      enforceSemanticBudgets(result.contextBill, result.outputTokens, efficiencyPlan);
+    if (bindingPlan) {
+      enforceSemanticBudgets(result.contextBill, result.outputTokens, bindingPlan);
     }
     let conversationCommit: Parameters<typeof commitConversation>[1] | undefined;
     let completedConversation: DurableConversationCheckpoint | undefined;
     if (conversation) {
-      const produced = pi.state.messages.slice(initialProviderMessages.length);
+      const produced = withoutSystemMessages(pi.state.messages).slice(initialProviderMessages.length);
       // The refusal turn is the runtime declining to spend, not something the
       // model said. Resuming this conversation must not replay it.
       if (refusalMessage !== undefined && produced.at(-1) === refusalMessage) produced.pop();
@@ -4016,7 +4223,7 @@ async function* streamAgentInternal(
       // Same rule as the branch above: the synthesized refusal turn is the
       // runtime declining to spend, so it must not enter the checkpoint a
       // later attached Conversation synchronizes from.
-      const produced = [...pi.state.messages];
+      const produced = withoutSystemMessages(pi.state.messages);
       if (refusalMessage !== undefined && produced.at(-1) === refusalMessage) produced.pop();
       completedConversation = durableConversationCheckpoint(
         durableResume.conversation.sessionId,
@@ -4062,6 +4269,7 @@ async function* streamAgentInternal(
     budgetMeter?.revoke();
     activeAbort?.();
     if (activeExecution) await activeExecution.catch(() => undefined);
+    await cacheWarmer?.stop();
     try {
       await closeProgrammaticSpeculation();
     } catch (settlementError) {
@@ -4147,6 +4355,7 @@ async function* streamAgentInternal(
     }
     await releaseRunResources();
     finishInvocationSpan(2);
+    while (queued.length > 0) yield queued.shift()!;
     yield {
       type: "run_error",
       runId,
@@ -4157,6 +4366,7 @@ async function* streamAgentInternal(
   } finally {
     activeAbort?.();
     if (activeExecution) await activeExecution.catch(() => undefined);
+    await cacheWarmer?.stop();
     await closeProgrammaticSpeculation().catch(() => undefined);
     if (controlledAgent !== undefined) options.controller?._detach(controlledAgent);
     if (activeAbort) options.signal?.removeEventListener("abort", activeAbort);
@@ -4419,6 +4629,9 @@ function setConversationText(
   if (content?.type === "text") content.text = replacement;
 }
 
+/** Bound on the Keep query passed on the engine's argv. */
+const KEEP_QUERY_CHARS = 2_000;
+
 async function transformConversationContext(
   messages: AgentMessage[],
   currentPromptIndex: number,
@@ -4427,13 +4640,22 @@ async function transformConversationContext(
   engineBin: string | undefined,
   applied: AppliedPlan,
   originals: Map<string, string>,
+  deferredOutputs: ReadonlyMap<string, DeferredToolOutput>,
   signal?: AbortSignal,
+  levers?: InternalRunOptions["engineLevers"],
 ): Promise<AgentMessage[]> {
   if (!plan) return messages;
   const descriptors = conversationTextSegments(messages, currentPromptIndex);
+  // The current ask: the newest user message (not a compaction summary), so Keep trims toward it.
+  const ask = messages.findLast((message) => message.role === "user" &&
+    (message as { caveContextSummary?: unknown }).caveContextSummary !== true);
+  const query = levers?.keep === false ? "" : (typeof ask?.content === "string" ? ask.content : Array.isArray(ask?.content)
+    ? ask.content.map((part) => part.type === "text" ? part.text : "").join("\n") : "").slice(0, KEEP_QUERY_CHARS);
   const output = structuredClone(messages) as AgentMessage[];
   for (const descriptor of descriptors) {
     if (descriptor.text.startsWith("<cave-compressed ")) continue;
+    // A recovery result is the detail the model asked for: never compress it again.
+    if ((messages[descriptor.messageIndex] as { toolName?: unknown }).toolName === "cave_retrieve") continue;
     const routes = plan.segment_routes.filter((route) =>
       route.segment_kind === descriptor.kind &&
       (route.segment_id === undefined || route.segment_id === descriptor.id));
@@ -4449,8 +4671,30 @@ async function transformConversationContext(
       kind: descriptor.kind,
       body,
     });
+    // A capped tool result whose tool handed over its whole output: the engine
+    // reads all of it, once per tool call, and its answer is capped. The capped
+    // text stays the transcript, the bill and the cache-drift restore form.
+    const toolCallId = (messages[descriptor.messageIndex] as { toolCallId?: unknown }).toolCallId;
+    const deferred = typeof toolCallId === "string" ? deferredOutputs.get(toolCallId) : undefined;
+    if (deferred?.capped === descriptor.text) {
+      if (deferred.decision === undefined && deferred.output !== undefined) {
+        deferred.decision = await compressWholeOutput(deferred.output, segment, plan, routes[0]!, engineBin, applied,
+          signal, query);
+        delete deferred.output;
+      }
+      if (typeof deferred.decision === "string") {
+        setConversationText(output, descriptor, deferred.decision);
+        originals.set(deferred.decision, descriptor.text);
+      }
+      continue;
+    }
+    // Bound: only an output that overran its cap (handled above) reaches the engine.
+    if (levers?.compression === "bound" && descriptor.kind === "tool_result") continue;
+    // Decided on an earlier request, kept or declined: one engine call per segment
+    // per run, not one per segment per request.
     const existing = applied.bodies.get(segment.bodyHandle);
-    if (existing && !bytesEqual(existing, body)) {
+    if (existing) {
+      if (bytesEqual(existing, body)) continue;
       const replacement = new TextDecoder().decode(existing);
       setConversationText(output, descriptor, replacement);
       originals.set(replacement, descriptor.text);
@@ -4462,7 +4706,7 @@ async function transformConversationContext(
     }, {
       ...plan,
       segment_routes: [routes[0]!],
-    }, engineBin, signal);
+    }, engineBin, signal, query);
     mergeAppliedPlan(applied, dynamic, plan);
     const replacementBody = dynamic.bodies.get(segment.bodyHandle);
     if (!replacementBody || bytesEqual(replacementBody, body)) continue;
@@ -4472,6 +4716,28 @@ async function transformConversationContext(
     originals.set(replacement, descriptor.text);
   }
   return output;
+}
+
+/**
+ * The engine reads a capped tool's whole output and its answer is capped; the
+ * replacement for the capped text, or null to keep it. Trace and bill count the
+ * capped text the model would otherwise read, not bytes the cap drops anyway.
+ */
+async function compressWholeOutput(whole: FullToolOutput, capped: ReturnType<typeof appendRuntimeContextSegment>,
+  plan: CavePlan, route: CavePlan["segment_routes"][number], engineBin: string | undefined, applied: AppliedPlan,
+  signal: AbortSignal | undefined, query: string): Promise<string | null> {
+  const body = new TextEncoder().encode(whole.text);
+  const scratch: LoweredContext = { ir: { schemaVersion: 1, segments: [] }, bodies: new Map() };
+  const segment = {
+    ...appendRuntimeContextSegment(scratch, { id: runtimeSegmentId("tool_result", whole.text), kind: "tool_result", body }),
+    tokenCount: capped.tokenCount,
+  };
+  const dynamic = await applyEfficiencyPlan({ ir: { schemaVersion: 1, segments: [segment] }, bodies: scratch.bodies },
+    { ...plan, segment_routes: [route] }, engineBin, signal, query, whole);
+  const replacement = dynamic.bodies.get(segment.bodyHandle);
+  mergeAppliedPlan(applied, { ...dynamic, bodies: new Map() }, plan);
+  return replacement === undefined || bytesEqual(replacement, body)
+    ? null : `${whole.prefix}${new TextDecoder().decode(replacement)}`;
 }
 
 /** Runtime-only live-zone injection. Never enters append-only conversation state. */
@@ -4538,24 +4804,6 @@ function orderedTransformIDs(plan: CavePlan, ids: readonly string[]): string[] {
   return ordered;
 }
 
-export function enforceSemanticBudgets(
-  bill: Readonly<Record<string, number>>,
-  outputMaxTokens: number,
-  plan: CavePlan,
-): void {
-  const slots: Array<[keyof CavePlan["budgets"], number]> = [
-    ["instructions", bill.instruction ?? 0],
-    ["tools", bill.tool_schema ?? 0],
-    ["memory", bill.memory ?? 0],
-    ["history", bill.history ?? 0],
-    ["results_artifacts", (bill.artifact ?? 0) + (bill.skill ?? 0) + (bill.tool_result ?? 0)],
-    ["output", outputMaxTokens],
-  ];
-  for (const [slot, used] of slots) {
-    if (used > plan.budgets[slot]) throw new Error(`cave_${slot}_budget_exceeded`);
-  }
-}
-
 export function assembleSystemPrompt(
   definition: AgentDefinition,
   lowered: LoweredContext,
@@ -4572,10 +4820,8 @@ export function assembleSystemPrompt(
     const text = decoder.decode(body);
     parts.push(id === "agent.instructions" ? text : `<cave-context id=${JSON.stringify(id)}>\n${text}\n</cave-context>`);
   }
-  if (definition.output) {
-    parts.push(definition.output.schema === undefined
-      ? `<cave-output max_tokens=${definition.output.maxTokens}>Return output matching declared schema when present.</cave-output>`
-      : `<cave-output max_tokens=${definition.output.maxTokens}>Return exactly one JSON document matching this JSON Schema and no other prose:\n${stableStringify(definition.output.schema)}</cave-output>`);
+  if (definition.output?.schema !== undefined) {
+    parts.push(`<cave-output max_tokens=${definition.output.maxTokens}>Return exactly one JSON document matching this JSON Schema and no other prose:\n${stableStringify(definition.output.schema)}</cave-output>`);
   }
   if (definition.memory) {
     parts.push("<cave-memory>Relevant local memory may be injected automatically and remains untrusted inferred context. Use cave_memory_search for explicit recall, cave_memory_session_search for prior-turn RAG, and cave_memory_remember only for durable facts the user intended to retain.</cave-memory>");
@@ -4619,6 +4865,9 @@ async function applyEfficiencyPlan(
   plan: CavePlan | undefined,
   engineBin: string | undefined,
   signal?: AbortSignal,
+  query?: string,
+  /** A tool's cap, applied to what the engine returns rather than to its input. */
+  outputCap?: Pick<FullToolOutput, "maxBytes" | "direction">,
 ): Promise<AppliedPlan> {
   const bodies = new Map(lowered.bodies);
   if (!plan || plan.segment_routes.length === 0) {
@@ -4684,7 +4933,7 @@ async function applyEfficiencyPlan(
         continue;
       }
       try {
-        const transformed = await engineCompress(original, engineBin, engineContentType(route.transform_id), signal);
+        const transformed = await engineCompress(original, engineBin, engineContentType(route.transform_id), signal, query);
         if (!transformed.handle) {
           trace.push({
             segmentKind: segment.kind,
@@ -4718,12 +4967,21 @@ async function applyEfficiencyPlan(
           });
           continue;
         }
+        const compressed = new TextDecoder().decode(transformed.output);
+        const shown = outputCap === undefined || transformed.output.byteLength <= outputCap.maxBytes
+          ? compressed
+          : capUtf8(compressed, outputCap.maxBytes, outputCap.direction,
+            `\n[caveman: compressed output capped from ${transformed.output.byteLength} bytes]`);
+        // What was cut, and how to get all of it back: the model must not have to guess either.
+        const total = new TextDecoder().decode(original).replace(/\n$/, "").split("\n").length;
+        const kept = shown.replace(/\n$/, "").split("\n").filter((line) => !/^… .* …$/.test(line)).length;
         const providerBody = segment.kind === "tool_schema"
           ? validatedToolSchemaBytes(transformed.output, segment.id)
           : new TextEncoder().encode([
             `<cave-compressed transform=${JSON.stringify(route.transform_id)} recovery_handle=${JSON.stringify(transformed.handle)}>`,
-            new TextDecoder().decode(transformed.output),
-            "Use cave_retrieve for omitted detail.",
+            shown,
+            `Kept ${kept} of ${total} lines${query?.trim() ? " for the task" : ""}; cave_retrieve with this ` +
+              `recovery_handle and no query returns all of it, ${RECOVERY_PAGE_BYTES} bytes per call (offset pages on).`,
             "</cave-compressed>",
           ].join("\n"));
         bodies.set(segment.bodyHandle, providerBody);
@@ -4773,13 +5031,39 @@ async function applyEfficiencyPlan(
   };
 }
 
+/**
+ * The ask reaches the engine in a file only this user can read: a command line
+ * is visible to every local user (`ps`), so Keep's query never goes there.
+ */
+async function withPrivateQueryFile<T>(query: string, use: (path: string) => Promise<T>): Promise<T> {
+  const directory = await mkdtemp(resolve(tmpdir(), "cave-keep-"));
+  try {
+    const path = resolve(directory, "query");
+    await writeFile(path, query, { mode: 0o600 });
+    return await use(path);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
 async function engineCompress(
   input: Uint8Array,
   engineBin: string | undefined,
   contentType = "text",
   signal?: AbortSignal,
+  query?: string,
 ): Promise<{ output: Uint8Array; handle?: string; tokensBefore?: number; tokensAfter?: number }> {
-  const result = await runEngine(engineBin, ["compress", "--type", contentType], input, signal);
+  // A query turns on Keep (trim-1): the engine keeps the lines relevant to the ask.
+  const args = ["compress", "--type", contentType];
+  // ponytail: an engine without --query-file costs one refused spawn per call; remember it per engine sha if that matters.
+  const result = query === undefined || query.trim() === ""
+    ? await runEngine(engineBin, args, input, signal)
+    : await withPrivateQueryFile(query, (path) => runEngine(engineBin, [...args, "--query-file", path], input, signal))
+      .catch(async (error: unknown) => {
+        // An engine without --query-file runs without Keep: the ask never goes on its command line.
+        if (!String(error).includes("unknown compress flag: --query-file")) throw error;
+        return await runEngine(engineBin, args, input, signal);
+      });
   const lastLine = result.stderr.trim().split("\n").pop() ?? "{}";
   const report = JSON.parse(lastLine) as {
     recovery_handle?: unknown;
@@ -4825,7 +5109,6 @@ function engineContentType(transformID: string): string {
   if (!match) throw new Error(`cave_unknown_transform:${transformID}`);
   return match[1]!;
 }
-
 
 export interface SegmentRecoveryProof {
   transformID: string;
@@ -4903,129 +5186,8 @@ async function engineRetrieve(
   return result.stdout;
 }
 
-/** Default wall-clock ceiling for one engine subprocess. */
-const ENGINE_TIMEOUT_MS = 30_000;
-
-/**
- * The allow-listed environment the engine subprocess starts from.
- *
- * A compression engine never needs provider or account credentials, so the
- * parent's full environment — ANTHROPIC_API_KEY, CAVE_API_KEY, AWS_*, … — is
- * withheld. Namespace prefixes are not safe allowlists: Caveman also uses
- * `CAVEMAN_API_KEY`, `CAVEMAN_MCP_TOKEN`, and session-key variables. Pass only
- * exact configuration names read by Engine (plus test fixture store var).
- */
-export function buildEngineEnv(): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = {
-    LANG: process.env.LANG ?? "C",
-    LC_ALL: process.env.LC_ALL ?? "C",
-    PATH: process.env.PATH ?? "",
-    HOME: process.env.HOME ?? "",
-    TZ: process.env.TZ ?? "UTC",
-  };
-  for (const key of [
-    // Portable process-launch baseline; none carries account/provider secrets.
-    "ComSpec", "PATHEXT", "SystemRoot", "TEMP", "TMP", "TMPDIR", "USERPROFILE",
-    "CAVEMAN_CCR_DB",
-    "CAVEMAN_HOME",
-    "CAVE_ENGINE_TOON",
-    "CAVE_PIXEL_DENSITY",
-    "CAVE_PIXEL_GPT_PROFILES",
-    "CAVE_PIXEL_MODELS",
-    "CAVE_FAKE_ENGINE_STORE",
-  ]) {
-    const value = process.env[key];
-    if (value !== undefined) env[key] = value;
-  }
-  return env;
-}
-
-async function runEngine(
-  engineBin: string | undefined,
-  args: string[],
-  input?: Uint8Array,
-  signal?: AbortSignal,
-): Promise<{ stdout: Uint8Array; stderr: string }> {
-  const command = engineBin ?? process.env.CAVEMAN_ENGINE_BIN ?? "caveman-engine";
-  // A hung engine must not run forever: a default timeout plus the caller's own
-  // run/tool signal both terminate it, and the child is spawned detached so the
-  // whole process group is killed, not just the direct child.
-  const timeout = AbortSignal.timeout(ENGINE_TIMEOUT_MS);
-  const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
-  return new Promise((accept, reject) => {
-    const env = buildEngineEnv();
-    const invocation = portableInvocation(command, args, { env });
-    const child = spawn(invocation.command, [...invocation.args], {
-      env,
-      detached: process.platform !== "win32",
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    const stdout: Buffer[] = [];
-    const stderr: Buffer[] = [];
-    let outputBytes = 0;
-    let settled = false;
-    let killTimer: NodeJS.Timeout | undefined;
-    let terminalError: Error | undefined;
-    const cleanup = (): void => {
-      combined.removeEventListener("abort", onAbort);
-      if (killTimer !== undefined) clearTimeout(killTimer);
-    };
-    const terminate = (error: Error, immediate = false): void => {
-      terminalError ??= error;
-      killSandboxProcess(child, immediate ? "SIGKILL" : "SIGTERM");
-      if (!immediate && killTimer === undefined) {
-        killTimer = setTimeout(() => killSandboxProcess(child, "SIGKILL"), 250);
-        killTimer.unref();
-      }
-    };
-    function onAbort(): void {
-      const reason = combined.reason;
-      const isTimeout = reason instanceof DOMException && reason.name === "TimeoutError";
-      terminate(isTimeout
-        ? new Error("cave_engine_timeout")
-        : (reason instanceof Error ? reason : new Error("cave_engine_aborted")));
-    }
-    const collect = (target: Buffer[], chunk: Buffer): void => {
-      outputBytes += chunk.byteLength;
-      if (outputBytes > 16 * 1024 * 1024) {
-        terminate(new Error("engine_output_limit"), true);
-        return;
-      }
-      target.push(chunk);
-    };
-    child.stdout.on("data", (chunk: Buffer) => collect(stdout, chunk));
-    child.stderr.on("data", (chunk: Buffer) => collect(stderr, chunk));
-    child.once("error", (error) => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      reject(error);
-    });
-    child.once("close", (code) => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      if (terminalError !== undefined) {
-        reject(terminalError);
-        return;
-      }
-      if (code !== 0) {
-        reject(new Error(`engine_exit_${code}:${Buffer.concat(stderr).toString("utf8").slice(0, 256)}`));
-        return;
-      }
-      accept({
-        stdout: new Uint8Array(Buffer.concat(stdout)),
-        stderr: Buffer.concat(stderr).toString("utf8"),
-      });
-    });
-    if (combined.aborted) onAbort();
-    else combined.addEventListener("abort", onAbort, { once: true });
-    // A child that died before draining stdin makes end() emit EPIPE; swallow it
-    // so the real terminal error (timeout/exit) is what surfaces.
-    child.stdin.on("error", () => undefined);
-    child.stdin.end(input);
-  });
-}
+/** One cave_retrieve page: under the 32 KiB inline tool-result ceiling with its marker line. */
+const RECOVERY_PAGE_BYTES = 32_000;
 
 function recoveryTool(
   handles: ReadonlySet<string>,
@@ -5035,21 +5197,32 @@ function recoveryTool(
   return {
     name: "cave_retrieve",
     label: "cave_retrieve",
-    description: "Recover exact content omitted by an active Caveman transform. Handles are scoped to this run.",
+    description: "Recover content omitted by an active Caveman transform. Pass the recovery_handle from a " +
+      `<cave-compressed> marker. With no query it returns the whole original, ${RECOVERY_PAGE_BYTES} bytes per call ` +
+      "(pass offset for the next page); a query returns only the matching sections. Retrieve before guessing. " +
+      "Handles are scoped to this run.",
     parameters: Type.Object({
       recovery_handle: Type.String(),
       query: Type.Optional(Type.String()),
+      offset: Type.Optional(Type.Integer({ minimum: 0 })),
     }),
     executionMode: "parallel",
     async execute(_toolCallId, params) {
-      const input = params as { recovery_handle: string; query?: string };
+      const input = params as { recovery_handle: string; query?: string; offset?: number };
       if (!handles.has(input.recovery_handle)) throw new Error("cave_recovery_handle_out_of_scope");
       const value = await engineRetrieve(input.recovery_handle, input.query, engineBin);
       for (const item of trace ?? []) {
         if (item.recoveryHandle === input.recovery_handle) item.recoveryUsed = true;
       }
+      // A capped tool's original runs to 1 MiB: one retrieval is one page under
+      // the 32 KiB inline ceiling, cut on a character boundary, with the next offset.
+      const start = Math.min(input.offset ?? 0, value.byteLength);
+      let end = Math.min(value.byteLength, start + RECOVERY_PAGE_BYTES);
+      while (end > start && end < value.byteLength && (value[end]! & 0xc0) === 0x80) end--;
+      const text = new TextDecoder().decode(value.subarray(start, end)) + (start === 0 && end === value.byteLength ? ""
+        : `\n[cave_retrieve: bytes ${start}-${end} of ${value.byteLength}${end < value.byteLength ? `; pass offset ${end} for the next page` : ""}]`);
       return {
-        content: [{ type: "text", text: new TextDecoder().decode(value) }],
+        content: [{ type: "text", text }],
         details: { recovery: input.query ? "query" : "exact" },
       };
     },
@@ -5620,8 +5793,8 @@ function providerFrozenView(payload: unknown, api: string): ProviderFrozenView |
   let messageField: ProviderFrozenView["messageField"];
   let messagePrefix: unknown[] | undefined;
   if (api === "pi-messages") {
-    // Pi Messages sends one nested Context object, not Anthropic-shaped root
-    // fields. Track provider-visible JSON fields at their real paths.
+    // Pi Messages nests a transcript: its leading system message (prompt and
+    // tools) sits in the frozen message prefix. Legacy Context fields stay tracked.
     const context = isRecord(payload.context) ? payload.context : undefined;
     if (context && "systemPrompt" in context) fields["context.systemPrompt"] = context.systemPrompt;
     if (context && "tools" in context) fields["context.tools"] = context.tools;
@@ -5831,20 +6004,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function volatileStablePrefix(instructions: string, tools: readonly ToolDefinition[]): boolean {
-  const value = `${instructions}\n${stableStringify(tools.map((item) => ({
-    name: item.name,
-    description: item.description,
-    input: item.input,
-  })))}`;
-  return [
-    /\b20[0-9]{2}-[01][0-9]-[0-3][0-9][T ][0-2][0-9]:[0-5][0-9]/,
-    /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/i,
-    /["'](?:run|request|build|trace|span)[_-]?id["']\s*:/i,
-    /["']nonce["']\s*:/i,
-  ].some((pattern) => pattern.test(value));
-}
-
 function serializeTransformTrace(trace: readonly TransformTrace[]): string {
   if (trace.length > 64) throw new Error("cave_transform_trace_limit");
   const value = trace.map((item) => [
@@ -5961,7 +6120,8 @@ function toPiTool(
   recoveryHandles?: Set<string>,
   engineBin?: string,
   providerDefinition?: { description: string; input: TSchema },
-  deferLockedToolResult = false,
+  /** Present when a locked route transforms tool results later: capped tools hand their whole output here. */
+  deferredOutputs?: Map<string, DeferredToolOutput>,
   nestedDispatch?: (input: {
     parentToolCallId: string;
     name: string;
@@ -5992,7 +6152,15 @@ function toPiTool(
       const nestedInvocations: Promise<unknown>[] = [];
       let directEffectSettlement: Promise<unknown> | undefined;
       let acceptingNestedCalls = true;
+      let fullOutput: FullToolOutput | undefined;
+      let verbatim: string | undefined;
       const context: ToolExecutionContext = Object.freeze({
+          ...(deferredOutputs === undefined ? {} : {
+            [TOOL_FULL_OUTPUT]: (report: FullToolOutput | VerbatimToolResult) => {
+              if ("verbatim" in report) verbatim = report.capped;
+              else if (new TextEncoder().encode(report.text).byteLength <= FULL_TOOL_OUTPUT_MAX_BYTES) fullOutput = report;
+            },
+          }),
           toolCallId,
           ...(durable === undefined ? {} : { durable }),
           parentToolCallId: toolCallId,
@@ -6101,8 +6269,10 @@ function toPiTool(
       const maxInlineBytes = definition.artifact === undefined
         ? 32_768
         : definition.artifact.maxInlineTokens * 4;
-      if (deferLockedToolResult) {
+      if (deferredOutputs !== undefined) {
         if (raw.byteLength > 16 * 1024 * 1024) throw new Error("cave_tool_result_limit");
+        if (verbatim !== undefined && verbatim === text) deferredOutputs.set(toolCallId, { capped: text, decision: null });
+        else if (fullOutput?.capped === text) deferredOutputs.set(toolCallId, { capped: text, output: fullOutput });
         return {
           content: [{ type: "text", text: text ?? "null" }],
           details: { effect: definition.effect, resultPolicy: definition.result, lockedRoutePending: true },
@@ -6362,6 +6532,8 @@ async function runSubagent(input: {
     conversation: _conversation,
     model: _parentModel,
     signal: _parentSignal,
+    // The queue/steering handle belongs to the root loop; a child attaching it fails cave_agent_controller_in_use.
+    controller: _parentController,
     budget: _parentBudget,
     budgetController: _parentBudgetController,
     onBudgetExhausted: _parentOnBudgetExhausted,
@@ -6522,10 +6694,14 @@ export function callCeilingFor(
  * accepted.
  */
 async function compactContext(input: {
+  /** Conversation after Pi's leading system message, which `head` carries. */
   messages: readonly AgentMessage[];
+  head: AgentMessage | undefined;
   systemPrompt: string;
   tools: unknown;
-  meter: BudgetMeter;
+  /** Undefined on an unbudgeted run: no affordability gate, usage still accrued. */
+  meter: BudgetMeter | undefined;
+  config: NormalizedCompaction;
   selected: Model<Api>;
   outputTokenCap: number;
   baseStream: StreamFn;
@@ -6584,7 +6760,8 @@ async function compactContext(input: {
   summary: ContextSummary | undefined;
   tier: ReceiptCompaction["tier"];
 } | undefined> {
-  const config = input.meter.compaction;
+  const config = compactionForModel(input.config, `${input.selected.provider}/${input.selected.id}`);
+  const meter = input.meter;
   const accountingAt = new Date();
   const plan = planCompaction(input.messages, config);
   const summarySources = contextSummarySources(input.messages, plan.summarizable);
@@ -6594,7 +6771,9 @@ async function compactContext(input: {
   const evictable = new Set(plan.evictable);
   const evicted = input.messages.map((message, index) => {
     if (!evictable.has(index)) return message;
-    const citation = evictMessage(message, index);
+    // Fresh timestamp: pi-ai then ignores the stale usage of every later message
+    // and sizes the call (and its output clamp) from content, as after a summary.
+    const citation = { ...evictMessage(message, index), timestamp: Date.now() } as AgentMessage;
     // A citation longer than what it replaces is not a compaction.
     if (messagesTokens([citation]) >= messagesTokens([message])) return message;
     elidedDigests.push(elidedDigest(message));
@@ -6604,8 +6783,9 @@ async function compactContext(input: {
   const pinnedIds = plan.pinned.map((index) => `runtime.user_intent.${index}`);
   const evictionHelped = evictedTokens < preTokens;
 
-  const fitsAfterEviction = callFitsBudget(
-    input.meter,
+  // Without a wallet nothing says eviction alone bought enough: Pi summarizes.
+  const fitsAfterEviction = meter !== undefined && callFitsBudget(
+    meter,
     callCeilingFor(
       input.selected,
       input.systemPrompt,
@@ -6635,6 +6815,11 @@ async function compactContext(input: {
   // to settle — the only cost it can impose is the cold prefix the rewrite
   // forces, which `minYieldTokens` is already the guard for.
   if (config.mode === "new-context") {
+    // Priced with the longest plain seed, like the summarizer's placeholder:
+    // a rollover that cannot yield enough never reaches the sink, so a
+    // declined window is never archived again on every later turn.
+    const longest = messagesTokens(newContextMessages(input.messages, plan, "x".repeat(CONTEXT_SEED_MAX_CHARS)));
+    if (preTokens - longest < config.minYieldTokens) return evictionHelped ? finishEviction() : undefined;
     let seed: string;
     try {
       seed = await config.newContext!({
@@ -6685,13 +6870,14 @@ async function compactContext(input: {
       timestamp: Date.now(),
     } as AgentMessage,
   ];
+  // The working call's own leading system message, byte for byte: the summary
+  // extends the cached prefix and the prompt is sent exactly once.
+  const summarizerContext = {
+    messages: [...(input.head ? [input.head] : []), ...summarizerMessages],
+  } as unknown as Parameters<StreamFn>[1];
   const routedSummarizer = await input.routeModel(
     requestedSummarizer,
-    {
-      systemPrompt: input.systemPrompt,
-      messages: summarizerMessages as never,
-      tools: input.tools as never,
-    },
+    summarizerContext,
     { maxTokens: config.summaryMaxTokens, sessionId: input.sessionId },
   );
   const summarizerModel = routedSummarizer.selected;
@@ -6714,8 +6900,8 @@ async function compactContext(input: {
   // triggers while four cold working-call ceilings remain. This reserve still
   // prices the summarizer cold; reachability comes from earlier timing, never
   // an unevidenced cache discount.
-  const summarizerCost = callCeilingCost(
-    input.meter.denomination,
+  const summarizerCost = meter === undefined ? 0 : callCeilingCost(
+    meter.denomination,
     summarizerCall,
     config.summaryMaxTokens,
     accountingAt,
@@ -6735,8 +6921,8 @@ async function compactContext(input: {
     input.tools,
     input.outputTokenCap,
   );
-  const projectedCost = callCeilingCost(
-    input.meter.denomination,
+  const projectedCost = meter === undefined ? 0 : callCeilingCost(
+    meter.denomination,
     projectedCall,
     input.outputTokenCap,
     accountingAt,
@@ -6744,12 +6930,17 @@ async function compactContext(input: {
   if (projectedCost === undefined) return evictionHelped ? finishEviction() : undefined;
   // Budget floor: reserve enough for compaction and projected working calls;
   // otherwise eviction is the only safe fallback.
-  if (input.meter.remaining() < summarizerCost + config.headroomCalls * projectedCost) {
+  if (meter !== undefined && meter.remaining() < summarizerCost + config.headroomCalls * projectedCost) {
     return evictionHelped ? finishEviction() : undefined;
   }
 
-  const reservation = input.meter.reserve(summarizerCost, config.summaryMaxTokens);
-  if (reservation === undefined) return evictionHelped ? finishEviction() : undefined;
+  const reservation = meter?.reserve(summarizerCost, config.summaryMaxTokens);
+  if (meter !== undefined && reservation === undefined) return evictionHelped ? finishEviction() : undefined;
+  const release = (amount?: number) => {
+    if (reservation === undefined) return;
+    if (amount === undefined) meter!.cancel(reservation);
+    else meter!.settle(reservation, amount);
+  };
   // Preserve any legacy outer maxCostUsd holds too. A ledger that cannot cover
   // this call declines compaction rather than throwing; carved child-wallet
   // enforcement is already the BudgetMeter reservation above.
@@ -6762,7 +6953,7 @@ async function compactContext(input: {
       accountingAt,
     );
   } catch {
-    input.meter.cancel(reservation);
+    release();
     return evictionHelped ? finishEviction() : undefined;
   }
   // Past this point the attempt is paid for whatever happens to its output.
@@ -6773,14 +6964,7 @@ async function compactContext(input: {
   try {
     stream = await input.baseStream(
       summarizerModel,
-      {
-        systemPrompt: input.systemPrompt,
-        messages: summarizerMessages as never,
-        // Same tool definitions as a working call. Dropping them is what makes
-        // a compaction request diverge from the cached prefix and re-send the
-        // whole history as fresh input.
-        tools: input.tools as never,
-      },
+      summarizerContext,
       {
         maxTokens: config.summaryMaxTokens,
         sessionId: input.sessionId,
@@ -6800,7 +6984,7 @@ async function compactContext(input: {
   } catch {
     // The provider never returned a stream, so this attempt is proven
     // unbilled. Cancel both holds and close the durable intent as abandoned.
-    input.meter.cancel(reservation);
+    release();
     releaseLedgerHolds(ledgerReservations);
     await input.onAbandoned();
     return evictionHelped ? finishEviction() : undefined;
@@ -6813,7 +6997,7 @@ async function compactContext(input: {
     // A returned stream is provider-visible. If it then fails, billing is
     // uncertain: settle the full reservation, retain an unavailable call in
     // the receipt/journal, and make the run stop on incomplete usage evidence.
-    const metered = reservation.amount;
+    const metered = reservation?.amount ?? 0;
     markSpendIncomplete(ledgerReservations.map((item) => item.ledger));
     input.accrue(undefined, summarizerModel, metered);
     input.receipt.recordCompactionCall({
@@ -6829,10 +7013,10 @@ async function compactContext(input: {
       usageBasis: "unavailable",
       clampedOutputTokens: undefined,
     });
-    input.meter.settle(reservation, metered);
+    release(metered);
     return evictionHelped ? finishEviction(metered) : undefined;
   }
-  let metered = reservation.amount;
+  let metered = reservation?.amount ?? 0;
   let unpriced = true;
   let ledgerFailure: Error | undefined;
   try {
@@ -6846,7 +7030,8 @@ async function compactContext(input: {
       reasoningTokens: assistant.usage.reasoning ?? 0,
       totalTokens: assistant.usage.totalTokens,
     }, { accountingAt });
-    metered = input.meter.denomination === "usd" ? usage.catalogCostUsd : usage.totalTokens;
+    // Metered means against a wallet; an unbudgeted summary's cost is its receipt call.
+    metered = meter === undefined ? 0 : meter.denomination === "usd" ? usage.catalogCostUsd : usage.totalTokens;
     unpriced = !usage.priced;
     // Settle any legacy outer maxCostUsd ledgers. A carved child's own
     // compaction is settled by its BudgetMeter reservation above.
@@ -6885,11 +7070,11 @@ async function compactContext(input: {
       clampedOutputTokens: undefined,
     });
   }
-  input.meter.settle(reservation, metered);
+  release(metered);
   // A compaction that pushed a legacy outer ledger past its cap is that
   // ledger's failure to raise, exactly as a working call would be.
   if (ledgerFailure !== undefined) throw ledgerFailure;
-  if (unpriced && input.meter.denomination === "usd") {
+  if (unpriced && meter?.denomination === "usd") {
     return evictionHelped ? finishEviction(metered) : undefined;
   }
 
@@ -6972,79 +7157,6 @@ function placeholderSummary(summaryMaxTokens: number): Record<string, unknown> {
   };
 }
 
-async function retryModelCall(
-  attemptCall: () => ReturnType<StreamFn>,
-  breakers: BreakerState,
-  pending: PendingCallRecord,
-  stopError: () => Error | undefined,
-  onMeterReserved: (meter: BudgetMeter) => void | Promise<void>,
-  abandon: () => void,
-): Promise<Awaited<ReturnType<StreamFn>>> {
-  const meter = pending.reservationMeter;
-  const initial = pending.reservation;
-  if (meter === undefined || initial === undefined) return attemptCall();
-  const worstCaseSpend = initial.amount;
-  const outputTokenCap = initial.outputTokenCap;
-  let attempt = 0;
-  for (;;) {
-    try {
-      return await attemptCall();
-    } catch (error) {
-      if (pending.reservation !== undefined) {
-        pending.reservationMeter?.cancel(pending.reservation);
-        if (pending.retryAttempt !== undefined) {
-          breakers.settleRetry(pending.retryAttempt, 0, "pre_stream_no_usage");
-        }
-        pending.reservation = undefined;
-        pending.reservationMeter = undefined;
-        pending.retryAttempt = undefined;
-      }
-      const terminal = stopError();
-      if (terminal !== undefined || terminalRetryError(error)) {
-        abandon();
-        throw terminal ?? error;
-      }
-      attempt++;
-      if (!breakers.retryExposureAvailable(worstCaseSpend, attempt)) {
-        abandon();
-        throw error;
-      }
-      const reservation = meter.reserve(worstCaseSpend, outputTokenCap);
-      if (reservation === undefined) {
-        breakers.recordRetryExhausted(attempt);
-        abandon();
-        throw error;
-      }
-      pending.reservation = reservation;
-      pending.reservationMeter = meter;
-      pending.retryAttempt = attempt;
-      breakers.recordRetryAttempt(worstCaseSpend, attempt);
-      await onMeterReserved(meter);
-      const wait = breakers.backoffMs(attempt);
-      if (wait > 0) await new Promise((settle) => setTimeout(settle, wait));
-      const expired = stopError();
-      if (expired !== undefined) {
-        meter.cancel(reservation);
-        breakers.settleRetry(attempt, 0, "pre_stream_no_usage");
-        pending.reservation = undefined;
-        pending.reservationMeter = undefined;
-        pending.retryAttempt = undefined;
-        abandon();
-        throw expired;
-      }
-    }
-  }
-}
-
-function terminalRetryError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  return error.name === "AbortError" ||
-    error.message === "cave_run_aborted" ||
-    error.message === "cave_stream_cancelled" ||
-    error.message === "cave_run_stopped" ||
-    error.message === "cave_provider_terminal_aborted";
-}
-
 /**
  * How many bytes an outgoing payload could still grow by if `onPayload`
  * restores originals.
@@ -7066,16 +7178,6 @@ export function restorableRequestBytes(
   }
   return growth;
 }
-
-/** One in-flight provider call: its budget hold and the allowance it was given. */
-type PendingCallRecord = {
-  readonly model: Model<Api>;
-  reservation: BudgetReservation | undefined;
-  reservationMeter: BudgetMeter | undefined;
-  retryAttempt: number | undefined;
-  readonly clampedOutputTokens: number | undefined;
-  accountingAt: Date;
-};
 
 type NextCallDecision =
   | {
@@ -7102,7 +7204,7 @@ function decideNextCall(input: {
   breakers: BreakerState | undefined;
   deadlineAt: number | undefined;
   selected: Model<Api>;
-  context: Context;
+  context: Parameters<StreamFn>[1];
   requestedOutputTokens: number | undefined;
   outputMaxTokens: number | undefined;
   planOutputTokens: number | undefined;
@@ -7144,11 +7246,9 @@ function decideNextCall(input: {
   );
   // One construction for every reserve in the runtime, so the restorable term
   // cannot be present in one place and missing in another.
-  const call = callCeilingFor(
+  const call = transcriptCeiling(
     input.selected,
-    input.context.systemPrompt ?? "",
     input.context.messages as unknown as readonly AgentMessage[],
-    input.context.tools,
     outputTokenCap,
     input.restorableBytes ?? 0,
   );
@@ -7489,7 +7589,7 @@ export function rejectInternalRunOptions(options: RunOptions): void {
   const value = options as Record<string, unknown>;
   if ("buildIdentity" in value || "efficiencyPlan" in value ||
       "lockedBuild" in value || "candidatePlan" in value || "caveRoute" in value ||
-      "invocationTrace" in value) {
+      "invocationTrace" in value || "engineLevers" in value) {
     throw new Error(
       "cave_internal_run_option: Cave Build execution is available through caveman-agent dev/build after lock validation",
     );

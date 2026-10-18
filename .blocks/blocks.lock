@@ -1,0 +1,39 @@
+[first-error]
+source = 'registry:first-error@0.1.0'
+version = '0.1.0'
+hash = '31dea9e8a785'
+
+[grep-defs]
+source = 'registry:grep-defs@0.1.0'
+version = '0.1.0'
+hash = '9cf71b324094'
+
+[http-json]
+source = 'registry:http-json@0.1.0'
+version = '0.1.0'
+hash = 'd5ce6cac8069'
+
+[json-peek]
+source = 'registry:json-peek@0.1.0'
+version = '0.1.0'
+hash = '6a6aa0c6a5d1'
+
+[jsonl-stats]
+source = 'registry:jsonl-stats@0.1.0'
+version = '0.1.0'
+hash = '66f5cfb5eb2a'
+
+[replace-in-file]
+source = 'registry:replace-in-file@0.1.0'
+version = '0.1.0'
+hash = '7a6e17a42e94'
+
+[test-summary]
+source = 'registry:test-summary@0.1.0'
+version = '0.1.0'
+hash = 'fcb761231621'
+
+[wait-for]
+source = 'registry:wait-for@0.1.0'
+version = '0.1.0'
+hash = '2eb9db9d4a66'

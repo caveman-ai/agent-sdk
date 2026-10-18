@@ -242,6 +242,10 @@ test("a run crashed mid-call resumes from its last completed turn without re-ask
   assert.equal(lines.filter((entry) => entry.type === "turn").length, 1);
   assert.equal(lines.filter((entry) => entry.type === "call_settled").length, 1);
   assert.equal(lines.filter((entry) => entry.type === "call_started").length, 2);
+  // Pi 1.0's leading system message is rebuilt from the definition each run;
+  // the journal never carries one a resume would then trust.
+  assert.equal(lines.some((entry) => Array.isArray(entry.messages) &&
+    entry.messages.some((message) => message.role === "system")), false);
 
   let secondAttemptContexts = [];
   const result = await run(defined, "how many items are queued?", {
@@ -265,6 +269,8 @@ test("a run crashed mid-call resumes from its last completed turn without re-ask
   assert.equal(secondAttemptContexts.length, 1);
   const roles = secondAttemptContexts[0];
   assert.equal(roles.filter((role) => role === "user").length, 1);
+  assert.equal(roles[0], "system");
+  assert.equal(roles.filter((role) => role === "system").length, 1);
   assert.equal(roles.at(-1), "toolResult");
   // Totals cover the whole logical run; the resume block attributes it.
   assert.equal(result.inputTokens, 120 + 200);
@@ -782,6 +788,7 @@ test("terminal fsync repairs one public conversation without repeating intent or
     (JSON.stringify(conversation.snapshot().messages).match(/one durable intent/g) ?? []).length,
     1,
   );
+  assert.equal(conversation.snapshot().messages.some((message) => message.role === "system"), false);
 
   let mismatchedProviderCalls = 0;
   await assert.rejects(

@@ -144,6 +144,52 @@ export interface CapturedStandardSchema {
   readonly converter?: (...args: never[]) => unknown;
 }
 
+/**
+ * Context key, present only when a run compresses tool results: a tool that
+ * capped its output hands the whole text here, so compression and Keep read
+ * all of it and the cap applies to what compression returns.
+ */
+export const TOOL_FULL_OUTPUT = Symbol.for("@caveman-ai/agent:tool-full-output");
+/** The runtime holds at most this much of one tool's whole output. */
+export const FULL_TOOL_OUTPUT_MAX_BYTES = 1024 * 1024;
+
+export interface FullToolOutput {
+  /** Kept verbatim ahead of the compressed text, e.g. bash's exit line. */
+  readonly prefix: string;
+  readonly text: string;
+  /** The tool's cap for `text`, applied after compression. */
+  readonly maxBytes: number;
+  readonly direction: "head" | "tail";
+  /** What the tool returns instead; the runtime substitutes only a result that is exactly this. */
+  readonly capped: string;
+}
+
+/** The agent asked for this exact result (a file read, a short output): transforms leave it as it is. */
+export interface VerbatimToolResult {
+  readonly verbatim: true;
+  readonly capped: string;
+}
+
+type ToolResultSink = (report: FullToolOutput | VerbatimToolResult) => void;
+
+export function reportFullToolOutput(context: ToolExecutionContext | undefined, output: FullToolOutput): void {
+  (context as { [TOOL_FULL_OUTPUT]?: ToolResultSink } | undefined)?.[TOOL_FULL_OUTPUT]?.(output);
+}
+
+export function reportVerbatimToolResult(context: ToolExecutionContext | undefined, capped: string): void {
+  (context as { [TOOL_FULL_OUTPUT]?: ToolResultSink } | undefined)?.[TOOL_FULL_OUTPUT]?.({ verbatim: true, capped });
+}
+
+/** At most `maxBytes` of `text` from its head or tail, then `marker`, which counts toward it. */
+export function capUtf8(text: string, maxBytes: number, direction: "head" | "tail", marker: string): string {
+  const encoded = new TextEncoder().encode(text);
+  const keep = Math.max(0, maxBytes - new TextEncoder().encode(marker).byteLength);
+  const preview = direction === "head"
+    ? encoded.subarray(0, keep)
+    : encoded.subarray(Math.max(0, encoded.byteLength - keep));
+  return `${new TextDecoder().decode(preview)}${marker}`;
+}
+
 /** Invoke one SDK-created tool without its public result validator. */
 export function executeRawTool(
   definition: ToolDefinition,
@@ -513,4 +559,34 @@ function schemaContainsDynamicFormat(value: unknown, seen = new Set<object>()): 
   } finally {
     seen.delete(value);
   }
+}
+
+/**
+ * Script-facing companions of one trusted tool. Programmatic cells call
+ * `script` instead (same name and input, structured result), and spill
+ * oversized cell output through `retain` into the store that `reader` pages.
+ */
+export interface ToolScriptCompanions {
+  readonly script?: ToolDefinition;
+  readonly retain?: (label: string, text: string, complete: boolean) => string | undefined;
+  readonly reader?: ToolDefinition;
+}
+
+const TOOL_SCRIPT_COMPANIONS = new WeakMap<ToolDefinition, ToolScriptCompanions>();
+
+export function setToolScriptCompanions(
+  definition: ToolDefinition,
+  companions: ToolScriptCompanions,
+): void {
+  const script = companions.script;
+  if (script !== undefined && (script.name !== definition.name || script.effect !== definition.effect ||
+      script.speculative !== definition.speculative ||
+      JSON.stringify(script.input) !== JSON.stringify(definition.input))) {
+    throw new Error(`cave_tool_script_companion_invalid:${definition.name}`);
+  }
+  TOOL_SCRIPT_COMPANIONS.set(definition, Object.freeze({ ...companions }));
+}
+
+export function toolScriptCompanions(definition: ToolDefinition): ToolScriptCompanions | undefined {
+  return TOOL_SCRIPT_COMPANIONS.get(definition);
 }

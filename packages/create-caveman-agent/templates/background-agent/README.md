@@ -4,14 +4,20 @@ A server-first coding agent: sessions live on the server, follow-up messages
 queue onto the running turn, every session has its own durable journal, and the
 tools can execute in a sandbox that is not this machine.
 
+Use Node.js 22.19.0 or newer. The initializer installs dependencies unless you
+pass `--no-install`; in that case, install them first. Export the API key for the
+provider you selected; scripts do not load `.env` automatically.
+
 ```bash
 export CAVE_SERVE_TOKEN="$(openssl rand -hex 24)"
-export ANTHROPIC_API_KEY=...        # or OPENAI_API_KEY / GEMINI_API_KEY
+export ANTHROPIC_API_KEY="<your-api-key>"  # or OPENAI_API_KEY / GEMINI_API_KEY
+npm run doctor
 npm run dev
 ```
 
 `npm run doctor` checks the machine (Node version, sandbox containment,
 provider selection) and makes no model call.
+`npm run typecheck` checks the starter's TypeScript without calling a provider.
 
 ## Drive it with curl
 
@@ -47,7 +53,7 @@ would rather not hold an SSE connection open.
 | Variable | Required | What it does |
 | --- | --- | --- |
 | `CAVE_SERVE_TOKEN` | yes | Bearer token for every route. At least 16 characters; this endpoint spends money |
-| `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` | yes | Your provider key. Calls go direct to your provider |
+| `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` | yes | The key for the provider selected in `agent.ts`; Google also accepts `GOOGLE_API_KEY`. Calls go direct to your provider |
 | `CAVE_EXEC_URL` | no | Execution-backend base URL. Unset means the tools run on this host |
 | `CAVE_EXEC_TOKEN` | with `CAVE_EXEC_URL` | Bearer token for the execution backend |
 | `CAVE_WORKSPACE` | no | Workspace root. Defaults to the process working directory |

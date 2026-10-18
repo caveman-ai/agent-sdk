@@ -23,14 +23,13 @@ function queuedUserMessage(text: string): AgentMessage {
  *
  * Messages queued before Pi is constructed are retained and attached once the
  * run starts. Queue state is observable without exposing Pi's private queues,
- * and one-at-a-time draining keeps the visible count exact at turn boundaries.
+ * and Pi's message delivery events keep the visible count exact.
  */
 export class AgentRunController {
   private agent: Agent | undefined;
   private steering: AgentMessage[] = [];
   private followUps: AgentMessage[] = [];
   private listeners = new Set<AgentRunQueueListener>();
-  private seenTurnStart = false;
   private heldAfterInterrupt = false;
 
   get state(): AgentRunQueueState {
@@ -71,15 +70,12 @@ export class AgentRunController {
     if (!Number.isSafeInteger(index) || index < 0 || index >= this.state.queued) {
       throw new Error("cave_agent_queue_index_invalid");
     }
+    const message = [...this.steering, ...this.followUps][index]!;
+    if (this.agent !== undefined && !this.removeQueuedMessage(this.agent, message)) {
+      throw new Error("cave_agent_queue_message_in_flight");
+    }
     if (index < this.steering.length) this.steering.splice(index, 1);
     else this.followUps.splice(index - this.steering.length, 1);
-    // Pi exposes clearing, not indexed removal. Rebuild both queues from the
-    // controller's authoritative ordered copies.
-    if (this.agent !== undefined) {
-      this.agent.clearAllQueues();
-      for (const message of this.steering) this.agent.steer(message);
-      for (const message of this.followUps) this.agent.followUp(message);
-    }
     this.emit();
   }
 
@@ -102,7 +98,6 @@ export class AgentRunController {
       throw new Error("cave_agent_controller_in_use");
     }
     this.agent = agent;
-    this.seenTurnStart = false;
     agent.steeringMode = "one-at-a-time";
     agent.followUpMode = "one-at-a-time";
     for (const message of this.steering) agent.steer(message);
@@ -114,20 +109,42 @@ export class AgentRunController {
   _detach(agent: Agent): void {
     if (this.agent !== agent) return;
     this.agent = undefined;
-    this.seenTurnStart = false;
   }
 
-  /** Runtime hook: Pi drains one queued message immediately before next turn. */
+  /** Runtime hook: acknowledge only messages Pi actually adds to the transcript. */
   _observe(event: AgentEvent): void {
-    if (event.type !== "turn_start") return;
-    if (!this.seenTurnStart) {
-      this.seenTurnStart = true;
+    if (event.type !== "message_end" || event.message.role !== "user") return;
+    // Tool turns need not drain follow-ups; steering can arrive before the
+    // first request. Pi preserves queued message identity in delivery events.
+    for (const queue of [this.steering, this.followUps]) {
+      const index = queue.indexOf(event.message);
+      if (index < 0) continue;
+      queue.splice(index, 1);
+      this.heldAfterInterrupt = false;
+      this.emit();
       return;
     }
-    if (this.steering.length > 0) this.steering.shift();
-    else if (this.followUps.length > 0) this.followUps.shift();
-    this.heldAfterInterrupt = false;
-    this.emit();
+  }
+
+  private removeQueuedMessage(agent: Agent, target: AgentMessage): boolean {
+    // Pi may already have selected a message without emitting message_end.
+    // Snapshot its actual queues through public APIs, synchronously: no loop
+    // work can interleave while preview modes and the steering queue change.
+    const steeringMode = agent.steeringMode;
+    const followUpMode = agent.followUpMode;
+    agent.steeringMode = "all";
+    agent.followUpMode = "all";
+    const first = agent.peekQueuedMessages();
+    agent.clearSteeringQueue();
+    const followUps = agent.peekQueuedMessages();
+    const following = new Set(followUps);
+    const steering = first.filter((message) => !following.has(message));
+    agent.clearFollowUpQueue();
+    agent.steeringMode = steeringMode;
+    agent.followUpMode = followUpMode;
+    for (const message of steering) if (message !== target) agent.steer(message);
+    for (const message of followUps) if (message !== target) agent.followUp(message);
+    return steering.includes(target) || following.has(target);
   }
 
   private emit(): void {

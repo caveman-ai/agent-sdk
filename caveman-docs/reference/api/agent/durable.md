@@ -267,7 +267,7 @@ Declared in `packages/agent/dist/durable.d.ts`.
 export interface CallSettledEvent extends JournalEventBase {
     type: "call_settled";
     path: string;
-    kind: "model" | "compaction";
+    kind: "model" | "compaction" | "cache_warm";
     call: JournaledCallUsage;
     /** Amount settled into the run's meter, in its denomination. Absent on unmetered runs. */
     settledAmount?: number;
@@ -282,7 +282,7 @@ Declared in `packages/agent/dist/durable.d.ts`.
 export interface CallStartedEvent extends JournalEventBase {
     type: "call_started";
     path: string;
-    kind: "model" | "compaction";
+    kind: "model" | "compaction" | "cache_warm";
     provider: string;
     model: string;
 }

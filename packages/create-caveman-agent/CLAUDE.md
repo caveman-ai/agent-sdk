@@ -5,25 +5,25 @@
 > mirrored out deliberately; other checkouts carry integration copies only.
 
 Zero-runtime-dependency npm initializer for `@caveman-ai/agent`. `src/index.ts`
-parses provider/install flags, copies `templates/support-bot/` verbatim into a
-temporary directory, fills per-project values (package name, provider.json,
-.gitignore), installs dependencies by default, then atomically renames into
-target.
+parses provider/template/install flags, copies the selected template into a
+temporary directory, fills per-project values (package name, model,
+provider.json, .gitignore), installs dependencies by default, then renames into
+the absent target.
 
-`templates/support-bot/` is locked template content — the generator consumes it
-verbatim; only the `name` field of its package.json is overwritten. Never print
-or persist provider secrets. Ambiguous noninteractive provider selection fails
-without partial target. `--no-install` supports callers that manage
-dependencies.
+Both templates are copied verbatim except the `name` field of package.json and
+the selected model line in agent.ts. Never print or persist provider secrets.
+Ambiguous noninteractive provider selection fails without a partial target.
+`--no-install` supports callers that manage dependencies. Generated projects
+declare their own TypeScript and Node type dependencies.
 
 First-run honesty (F8): the template's `run.ts` fails with a named next step,
 never a stack trace — usage line, ticket-not-found with the real ticket list,
 and a one-line message + doctor pointer for framework errors. Eval fixtures
 name tickets with literal `new URL("…", import.meta.url)` — a computed
 (template-string) path is rejected by the source graph and fails doctor/build
-on the untouched scaffold (regression-tested). Known gap #228: split-role
-evals route build to the tool-free profiled lane and
-the tooled support bot ends at `capability_refused`, so the README's "locks
-the cheapest plan" promise is not currently reachable.
+on the untouched scaffold (regression-tested). Build can refuse unsupported
+capability combinations. Documentation must not promise an optimized plan,
+guaranteed cache hits, or verified savings from an untouched scaffold.
 
-Run `pnpm --dir public/create-caveman-agent test`.
+Run `npm --workspace @caveman-ai/create-agent test`. Build the agent package
+first to exercise both generated template typechecks.
