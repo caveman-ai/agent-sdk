@@ -241,6 +241,7 @@ export { AgentRunController } from "./run-controller.js";
 export type { AgentRunQueueState } from "./run-controller.js";
 import { AgentRunController } from "./run-controller.js";
 import { decideToolCall, type ToolCallPolicy } from "./tool-policy.js";
+import { TOOL_RECENCY_LOADER, openToolRecency, type ToolRecencyOptions } from "./tool-recency.js";
 
 /**
  * The error thrown by the promise-returning run entry points (`runAgent`,
@@ -970,6 +971,8 @@ export interface RunOptions {
    * evidence shares its journal. Breaker windows restart on resume.
    */
   durable?: DurableRunOptions;
+  /** Experimental, off by default: declare the folder's `hot` most recently used tools; the rest load on demand. */
+  toolRecency?: ToolRecencyOptions;
   /**
    * Host-owned authorization for every declared tool call, decided outside
    * model output (the Claude Agent SDK `canUseTool` shape). Runs after the
@@ -2344,7 +2347,8 @@ async function* streamAgentInternal(
         ...(durableTools === undefined ? {} : { durableTools }),
         durablePath: executionContext.durablePath ?? Object.freeze([]),
       });
-    const piTools: AgentTool<TSchema>[] = [
+    const toolRecency = executionContext.depth > 0 ? undefined : await openToolRecency(options, bindingPlan !== undefined);
+    const allPiTools: AgentTool<TSchema>[] = [
       ...definition.tools.map((item) => {
         const providerTool = providerToolDefinition(item, lowered, appliedPlan);
         const programmaticMetadata = programmaticToolMetadata(item);
@@ -2437,6 +2441,7 @@ async function* streamAgentInternal(
         journalPath,
       )),
     ];
+    const piTools = toolRecency?.declare(allPiTools) ?? allPiTools;
     // One fixed line, the same on every call, tells the model what a compressed tool result is.
     const compressedNote = hasToolResultRoute
       ? "\n\nA tool result inside <cave-compressed> was shortened by Caveman: it says how many lines it kept, and " +
@@ -3795,7 +3800,7 @@ async function* streamAgentInternal(
           });
           if (decision.block) return { block: true, reason: decision.reason! };
         }
-        if ((toolCall.name === "cave_retrieve" && needsRecoveryTool) ||
+        if ((toolCall.name === "cave_retrieve" && needsRecoveryTool) || toolCall.name === TOOL_RECENCY_LOADER ||
             (toolCall.name.startsWith("cave_memory_") && definition.memory !== undefined)) {
           if (args === null || typeof args !== "object" || Array.isArray(args)) {
             return { block: true, reason: "cave_tool_arguments_invalid" };
@@ -3879,6 +3884,7 @@ async function* streamAgentInternal(
       },
     });
 
+    if (toolRecency) pi.prepareNextTurnWithContext = toolRecency.nextTurn(pi.prepareNextTurnWithContext);
     options.controller?._attach(pi);
     controlledAgent = pi;
 
@@ -3909,6 +3915,7 @@ async function* streamAgentInternal(
       }
       if (event.type === "tool_execution_start") {
         toolCalls.push(event.toolName);
+        toolRecency?.access(event.toolName);
         receipt.recordToolCall(event.toolName);
         if (configuredToolsByName.get(event.toolName)?.nestedTools === undefined) {
           toolBudgetCallCount++;
@@ -4033,6 +4040,7 @@ async function* streamAgentInternal(
       execution = settle(pi.continue());
     }
     await cacheWarmer?.stop();
+    await toolRecency?.save();
     while (queued.length > 0) yield queued.shift()!;
     await closeProgrammaticSpeculation();
     activeDurableTools?.assertReconciled();
