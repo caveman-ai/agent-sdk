@@ -37,12 +37,13 @@ Supported providers: `anthropic`, `openai`, `google`.
 
 > `@caveman-ai/agent` v0.2 is not published to npm yet. Registry installs may
 > expose an older surface; use this checkout when testing anything described in
-> these docs.
+> these docs. The published `@caveman-ai/create-agent` 0.1.0 has no
+> `--template` flag yet.
 
 ## Option B — run from this repository
 
 ```bash
-git clone https://github.com/JuliusBrussee/agent-sdk.git
+git clone https://github.com/caveman-ai/agent-sdk.git
 cd agent-sdk
 npm ci
 npm --prefix packages/pebble-protocol run build
@@ -154,7 +155,7 @@ carry the ledger, and the promise entry points throw `CavemanRunError` whose
 ## Readiness check
 
 ```bash
-npx caveman-agent doctor        # add --json for a machine-readable report
+npx -p @caveman-ai/agent caveman-agent doctor        # add --json for a machine-readable report
 ```
 
 `doctor` makes no model request. Missing engine, runtime CLI, or gateway is a

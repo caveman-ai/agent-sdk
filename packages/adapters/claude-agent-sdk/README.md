@@ -7,6 +7,8 @@ runner in this package is a separate surface, not that adapter.
 Caveman adapter and unlocked Claude runner pinned to
 `@anthropic-ai/claude-agent-sdk@0.3.220`.
 
+Not yet published to npm; until it is, install it from this checkout.
+
 ```bash
 npm install @caveman-ai/agent @caveman-ai/adapter-claude-agent-sdk @anthropic-ai/claude-agent-sdk@0.3.220
 ```

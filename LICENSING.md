@@ -21,5 +21,5 @@ classifications.
 
 Unlisted paths inherit the root Apache-2.0 license. Third-party dependencies
 remain under their own terms. Proprietary Pebble product implementation lives
-only in private sibling repository `caveman-coding-agent` under commercial
-terms and must not be copied here.
+only in a separate proprietary repository under commercial terms and must not
+be copied here.

@@ -4,6 +4,11 @@ Every workspace package, what it is for, and how to install it.
 
 ## Published products
 
+On npm today: `@caveman-ai/agent` 0.1.0 and `@caveman-ai/create-agent` 0.1.0
+(the initializer behind `npm create @caveman-ai/agent`). The adapters,
+`@caveman-ai/coding-agent`, `@caveman-ai/react`, `@caveman-ai/evals`, and
+`@pebble-agent/protocol` are not yet published.
+
 ### `@caveman-ai/agent` — 0.2.0
 
 The core runtime, compiler, memory, compaction, programmatic-tool kernel,
@@ -121,7 +126,7 @@ explicitly requires them.
 | Directory | Contents |
 | --- | --- |
 | `packages/shared` | Pinned wire schemas and the provider-catalog snapshot used to regenerate and verify artifacts |
-| `packages/pebble`, `pebble-sessions`, `pebble-tui`, `libpebble` | Supporting Pebble material; the real implementation lives in a private sibling repository |
+| `packages/pebble`, `pebble-sessions`, `pebble-tui`, `libpebble` | Supporting Pebble material; the real implementation lives in a separate proprietary repository |
 | `examples/coding-agent` | Runnable example built on `@caveman-ai/coding-agent`; part of the public story and covered by tests |
 | `scripts/` | Catalog generation, licensing lint, pack verification, package type checks, docs generation |
 

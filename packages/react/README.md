@@ -2,6 +2,8 @@
 
 A React hook for streaming a Caveman agent run.
 
+Not yet published to npm; until it is, install it from this checkout.
+
 ```bash
 npm install @caveman-ai/react
 ```

@@ -40,11 +40,11 @@ test("package lifecycle builds executable initializer and ships the template", a
   assert.equal(pkg.scripts.prepack, "npm run build");
   assert.deepEqual(pkg.repository, {
     type: "git",
-    url: "git+https://github.com/JuliusBrussee/agent-sdk.git",
+    url: "git+https://github.com/caveman-ai/agent-sdk.git",
     directory: "packages/create-caveman-agent",
   });
   assert.equal(pkg.homepage, "https://caveman.so/products/caveman-agent");
-  assert.equal(pkg.bugs.url, "https://github.com/JuliusBrussee/agent-sdk/issues");
+  assert.equal(pkg.bugs.url, "https://github.com/caveman-ai/agent-sdk/issues");
   assert.equal(pkg.files.includes("templates"), true, "template must ship in the npm tarball");
   assert.equal(
     (await readFile(resolve(packageRoot, pkg.bin["create-caveman-agent"]), "utf8")).split("\n", 1)[0],

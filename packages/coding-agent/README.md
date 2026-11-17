@@ -2,10 +2,11 @@
 
 Interactive coding product built on `@caveman-ai/agent`, shipped separately so
 core framework stays small and coding UX can evolve on its own release cycle.
+Not yet published to npm; until it is, run it from this checkout.
 
 ```bash
 npm install @caveman-ai/agent @caveman-ai/coding-agent
-npx caveman-code --workspace .
+npx -p @caveman-ai/coding-agent caveman-code --workspace .
 ```
 
 Library use:

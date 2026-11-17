@@ -5,11 +5,8 @@
 Standalone TypeScript repository for `@caveman-ai/agent` and
 `@caveman-ai/create-agent`.
 
-Repository is private during development. Planned destination is public release
-after licensing, history, packaging, test, and publication gates pass.
-Caveman-Cloud remains private commercial source.
-Proprietary Pebble implementation lives in sibling `caveman-coding-agent` and
-must never land here. Only Apache-2.0 protocol remains in this repository.
+Proprietary Pebble implementation is not part of this repository and must
+never land here. Only Apache-2.0 protocol remains in this repository.
 
 ## Non-negotiable contracts
 
@@ -22,7 +19,7 @@ must never land here. Only Apache-2.0 protocol remains in this repository.
 - Host sandbox means uncontained host execution. Never describe it as isolation.
 - Generated `packages/agent/src/catalog.ts` changes only through
   `node scripts/generate-agent-catalog.mjs`.
-- Canonical GitHub repository is `JuliusBrussee/agent-sdk`.
+- Canonical GitHub repository is `caveman-ai/agent-sdk`.
 - Optional Agent Skills and Agent Plugins compatibility lives once
   in `packages/agent/src/agent-environment.ts`. Core runtime never discovers
   workspace files automatically. Product wrappers may add search roots, but

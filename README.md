@@ -23,6 +23,10 @@ key and zero configuration.
 > `@caveman-ai/agent` v0.2 source. That release is not yet published to npm;
 > registry installs may expose an older surface. Use this checkout when testing
 > capabilities described below.
+> On npm today: `@caveman-ai/agent` 0.1.0 and `@caveman-ai/create-agent` 0.1.0
+> (the initializer behind `npm create @caveman-ai/agent`). The adapters,
+> `@caveman-ai/coding-agent`, `@caveman-ai/react`, `@caveman-ai/evals`, and
+> `@pebble-agent/protocol` are not yet published.
 
 ```bash
 npm install @caveman-ai/agent      # Node 22.19+, one provider key
@@ -221,7 +225,7 @@ see [execution modes](./caveman-docs/concepts/execution-modes.md).
 ## Try this repository
 
 ```bash
-git clone https://github.com/JuliusBrussee/agent-sdk.git
+git clone https://github.com/caveman-ai/agent-sdk.git
 cd agent-sdk
 npm ci
 npm --prefix packages/pebble-protocol run build
@@ -229,8 +233,9 @@ npm ci --prefix examples/coding-agent --ignore-scripts
 npm test
 ```
 
-Or scaffold a project — `--template background-agent` is the server-first
-session agent from this front door:
+Or scaffold a project. `--template background-agent` is the server-first
+session agent from this front door; the published 0.1.0 initializer does not
+have `--template` yet, so run it from this checkout until 0.2 ships:
 
 ```bash
 npm create @caveman-ai/agent@latest my-agent -- --template background-agent
@@ -429,7 +434,8 @@ Threat model: [packages/agent/SANDBOX_THREAT_MODEL.md](./packages/agent/SANDBOX_
 
 ## Framework adapters
 
-Adapters install separately and pin exact upstream versions:
+Adapters install separately and pin exact upstream versions. They are not yet
+published to npm; until they are, install them from this checkout:
 
 ```bash
 npm install @caveman-ai/agent @caveman-ai/adapter-vercel-ai-sdk ai@7.0.43

@@ -7,6 +7,8 @@ and locked runner in this package are not that adapter.
 Caveman Pi adapter plus exact-native Pi compiler target, pinned to
 `@earendil-works/pi-agent-core@0.83.0`.
 
+Not yet published to npm; until it is, install it from this checkout.
+
 ```bash
 npm install @caveman-ai/agent @caveman-ai/adapter-pi @earendil-works/pi-agent-core@0.83.0
 ```

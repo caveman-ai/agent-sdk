@@ -7,6 +7,8 @@ Native, exact-pinned adapter for `ai@7.0.84`. Vercel keeps its model, agent
 loop, retries, tools, aborts, and streams. Adapter adds no proxy or replacement
 runner.
 
+Not yet published to npm; until it is, install it from this checkout.
+
 ```bash
 npm install @caveman-ai/agent @caveman-ai/adapter-vercel-ai-sdk ai@7.0.84
 ```

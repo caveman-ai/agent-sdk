@@ -89,7 +89,7 @@ instead.
 machine would do today:
 
 ```console
-$ npx caveman-agent doctor
+$ npx -p @caveman-ai/agent caveman-agent doctor
 PASS node         Node 22.19.0
 PASS sandbox      tool sandbox containment probe passed
 WARN engine       Caveman engine not found — transforms disabled (observe-only)

@@ -37,7 +37,7 @@ at the project root, next to `caveman.config.ts`.
 | `agent/schedules/` | none | **no v1 equivalent.** Schedules are v2 scope; use your own cron in the meantime |
 | `agent/connections/` | none | **not supported.** Connections ride Vercel Connect credentials, which this runtime does not use; tools read provider keys from an explicit env allow-list instead |
 | `agent/hooks/` | none | no equivalent; lifecycle behavior belongs in your calling code |
-| eve durable execution | none in v1 | runs here are plain by default; durable execution is an open design question (issue #218), not a shipped toggle |
+| eve durable execution | none in v1 | runs here are plain by default; durable execution is an open design question, not a shipped toggle |
 
 ## The move
 

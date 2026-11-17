@@ -58,7 +58,7 @@ supporting or internal material.
 | `coding-agent` | Coding UX, CLI, tools, session presentation, coding benchmarks | Runtime invariants — it consumes them |
 | `create-caveman-agent` | Project generation | Anything at runtime |
 | `evals` | Grader names, option types, validation, verdict semantics | A second evaluator inside `agent` |
-| `pebble-protocol` | Frozen public wire, event, and session contracts | The Pebble runtime, sessions, policy, and TUI, which live in a private sibling repository |
+| `pebble-protocol` | Frozen public wire, event, and session contracts | The Pebble runtime, sessions, policy, and TUI, which live in a separate proprietary repository |
 
 ## Dependency direction
 

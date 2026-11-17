@@ -2,11 +2,12 @@
 
 `@caveman-ai/coding-agent` is the interactive coding product built on the
 framework, shipped separately so core stays small and coding UX evolves on its
-own release cycle. `caveman-code` is its CLI.
+own release cycle. `caveman-code` is its CLI. It is not yet published to npm;
+until it is, run it from this checkout.
 
 ```bash
 npm install @caveman-ai/agent @caveman-ai/coding-agent
-npx caveman-code --workspace .
+npx -p @caveman-ai/coding-agent caveman-code --workspace .
 ```
 
 ```ts

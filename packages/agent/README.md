@@ -150,7 +150,7 @@ lock or candidate plan refuses to downgrade silently and fails with
 Check what this machine would do, with no model call:
 
 ```console
-$ npx caveman-agent doctor          # add --json for the machine-readable report
+$ npx -p @caveman-ai/agent caveman-agent doctor          # add --json for the machine-readable report
 PASS node         Node 22.19.0
 PASS sandbox      tool sandbox containment probe passed
 WARN engine       Caveman engine not found — transforms disabled (observe-only)

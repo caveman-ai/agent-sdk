@@ -1,7 +1,7 @@
 /**
  * Opt-in durable execution: an append-only per-run journal plus crash resume.
  *
- * Design provenance (founder decision 2026-08-15, issue #218): no embeddable
+ * Design provenance (decision 2026-08-15): no embeddable
  * durable-execution library exists for TypeScript with a zero-infra local
  * story, so this file is the substrate — deliberately thin, borrowing the
  * proven parts of the field instead of inventing new semantics:

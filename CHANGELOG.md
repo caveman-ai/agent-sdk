@@ -34,4 +34,4 @@ No changelog was kept before this file existed. `0.2.0` of `@caveman-ai/agent`
 and `0.1.0` of every other package are the first releases; consult the git
 history for what landed in them.
 
-[Unreleased]: https://github.com/JuliusBrussee/agent-sdk/compare/main...HEAD
+[Unreleased]: https://github.com/caveman-ai/agent-sdk/compare/main...HEAD

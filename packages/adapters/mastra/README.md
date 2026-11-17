@@ -7,6 +7,8 @@ Native Caveman `Processor` for exact `@mastra/core@1.63.2`. No wrapper agent,
 second model loop, proxy, cache, retry engine, workflow runtime, memory layer, or
 telemetry provider.
 
+Not yet published to npm; until it is, install it from this checkout.
+
 ```bash
 npm install @caveman-ai/agent @caveman-ai/adapter-mastra @mastra/core@1.63.2
 ```

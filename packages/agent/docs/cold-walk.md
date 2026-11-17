@@ -48,10 +48,9 @@ build gate ends at `capability_refused`, while its README promises "`npm run
 build` locks the cheapest plan that passes all of them." One of the two has
 to move (evals without split metadata would take the legacy v2 lane, or the
 README stops promising a lock until the compiler's tool-effect coverage
-lands). Tracked as issue #228 (JuliusBrussee/Caveman-Cloud); the walk stays
-red until the promise and the machine agree. The founder-side gates for the
-release are #226 (clean history export / PII) and #227 (npm publish gate,
-which carries this walk's NEEDS-LIVE checklist).
+lands). The walk stays red until the promise and the machine agree. The other
+release gates are a clean history export and the npm publish gate, which
+carries this walk's NEEDS-LIVE checklist.
 
 Also fixed during this walk (was blocking step 2): template's eval file
 used a computed `new URL(\`../tickets/${name}.md\`)` helper, which the source

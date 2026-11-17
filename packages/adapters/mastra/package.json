@@ -5,7 +5,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/JuliusBrussee/agent-sdk.git",
+    "url": "git+https://github.com/caveman-ai/agent-sdk.git",
     "directory": "packages/adapters/mastra"
   },
   "type": "module",

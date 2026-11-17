@@ -52,7 +52,7 @@ Caveman package at runtime, so installing core never installs React.
 
 `pebble-protocol` owns only frozen public wire, event, and session contracts.
 Pebble runtime, policy, sessions, TUI, distribution, and conformance code live
-in private sibling repository `caveman-coding-agent`.
+in a separate proprietary repository.
 
 ## Dependency direction
 

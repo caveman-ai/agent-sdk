@@ -134,6 +134,9 @@ keeps its own loop, tools, retries, and provider call.
 
 Adapters install separately and pin **one exact upstream version** each.
 
+The adapter packages are not yet published to npm; until they are, install
+them from this checkout.
+
 ```bash
 npm install @caveman-ai/agent @caveman-ai/adapter-vercel-ai-sdk ai@7.0.84
 npm install @caveman-ai/agent @caveman-ai/adapter-mastra @mastra/core@1.63.2

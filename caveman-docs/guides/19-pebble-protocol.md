@@ -2,7 +2,7 @@
 
 `@pebble-agent/protocol` is the **frozen** Apache-2.0 wire and storage contract
 for Pebble. Only the protocol lives in this repository; the Pebble runtime,
-sessions, policy, TUI, and distribution live in a private sibling repository.
+sessions, policy, TUI, and distribution live in a separate proprietary repository.
 
 > **Frozen at 0.1.0.** Any change to shape, field names, field types, enum
 > membership, ordering constraints, or meaning is **breaking** and requires a new

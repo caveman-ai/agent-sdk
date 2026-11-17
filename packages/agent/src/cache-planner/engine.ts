@@ -1,5 +1,5 @@
-// TS port of the deterministic planner core in public/cacheengine/engine.go
-// plus the drift/volatile guard from shared/platform/cacheguard. The Go engine
+// TS port of the deterministic planner core in the Caveman Cloud server's Go
+// cache engine, plus its drift/volatile guard. The Go engine
 // is the source of truth; tests/cache-planner-parity.runtime.mjs asserts this
 // port against Go-exported fixtures. Plans use input-rate units, never dollars.
 import { createHash } from "node:crypto";

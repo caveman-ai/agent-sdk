@@ -256,11 +256,11 @@ test("package lifecycle builds executable framework CLI before packing", async (
   assert.equal(pkg.scripts.prepack, "npm run build");
   assert.deepEqual(pkg.repository, {
     type: "git",
-    url: "git+https://github.com/JuliusBrussee/agent-sdk.git",
+    url: "git+https://github.com/caveman-ai/agent-sdk.git",
     directory: "packages/agent",
   });
   assert.equal(pkg.homepage, "https://caveman.so/products/caveman-agent");
-  assert.equal(pkg.bugs.url, "https://github.com/JuliusBrussee/agent-sdk/issues");
+  assert.equal(pkg.bugs.url, "https://github.com/caveman-ai/agent-sdk/issues");
   assert.deepEqual(pkg.exports["./adapters"], {
     types: "./dist/adapters.d.ts",
     import: "./dist/adapters.js",

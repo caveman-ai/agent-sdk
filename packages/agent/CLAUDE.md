@@ -644,7 +644,7 @@ prints what maps, what needs a rewrite, and what has no v1 equivalent —
 detection only, no import command, no file rewriting; the walk is
 `docs/eve-migration.md` (shipped in the npm tarball via `files`).
 `docs/cold-walk.md` is the Phase-5 release-gate script: each step marked
-VERIFIED-DRY or NEEDS-LIVE, blocking findings filed (#226 #227 #228).
+VERIFIED-DRY or NEEDS-LIVE, blocking findings recorded.
 F8 first-run states: `cave_budget_denomination_unavailable` refusals keep the
 same fail-closed behavior but the message names the state's one-line fix
 (missing env var by provider / subscription / unprovable credential / unpriced
@@ -656,7 +656,7 @@ Build execution; third-party adapter readiness remains separate per harness.
 Claude Agent SDK dependency is governed by Anthropic Commercial Terms linked
 from its README, not package Apache-2.0 license. Keep disclosure in public README.
 
-Run `pnpm --dir public/agent test`. Unknown state fails closed. Transform failure
+Run `npm --prefix packages/agent test`. Unknown state fails closed. Transform failure
 passes original bytes. Missing usage/pricing/eval/recovery writes no optimized
 legacy v2 lock. Exact tool-free native Pi may emit only its closed behavioral
 diff; generic/custom Pi and Vercel/Eve/Mastra v3 remain baseline-only. Claude

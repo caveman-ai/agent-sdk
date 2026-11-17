@@ -21,9 +21,9 @@ never a stack trace — usage line, ticket-not-found with the real ticket list,
 and a one-line message + doctor pointer for framework errors. Eval fixtures
 name tickets with literal `new URL("…", import.meta.url)` — a computed
 (template-string) path is rejected by the source graph and fails doctor/build
-on the untouched scaffold (regression-tested). Known gap #228: split-role
+on the untouched scaffold (regression-tested). Known gap: split-role
 evals route build to the tool-free profiled lane and
 the tooled support bot ends at `capability_refused`, so the README's "locks
 the cheapest plan" promise is not currently reachable.
 
-Run `pnpm --dir public/create-caveman-agent test`.
+Run `npm --prefix packages/create-caveman-agent test`.
