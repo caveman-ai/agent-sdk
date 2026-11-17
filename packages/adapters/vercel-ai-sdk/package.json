@@ -28,12 +28,12 @@
   },
   "peerDependencies": {
     "@caveman-ai/agent": "0.2.0",
-    "ai": "7.0.84"
+    "ai": "7.0.91"
   },
   "devDependencies": {
     "@types/json-schema": "7.0.15",
     "@types/node": "24.10.1",
-    "ai": "7.0.84",
+    "ai": "7.0.91",
     "typescript": "5.9.3"
   },
   "engines": { "node": ">=22.19.0" },
