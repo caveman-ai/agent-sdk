@@ -1,0 +1,68 @@
+{
+  "name": "compact-v0-plain",
+  "surface": "compact",
+  "prompt": {
+    "sections": [
+      "core.identity",
+      "compact.tools",
+      "core.verify",
+      "core.finish"
+    ]
+  },
+  "tools": {
+    "read": {
+      "exposure": "eager",
+      "limits": {
+        "line_numbers": false
+      }
+    },
+    "bash": {
+      "exposure": "eager",
+      "limits": {
+        "default_yield_s": 120,
+        "max_yield_s": 600,
+        "hard_timeout_s": 3600
+      }
+    },
+    "wait": {
+      "exposure": "eager",
+      "limits": {
+        "default_s": 120,
+        "max_s": 600
+      }
+    },
+    "edit": {
+      "exposure": "eager",
+      "limits": {
+        "fuzzy": true
+      }
+    },
+    "write": {
+      "exposure": "eager"
+    }
+  },
+  "limits": {
+    "output_cap_bytes": 51200,
+    "output_cap_lines": 2000,
+    "spill": true
+  },
+  "policy": {
+    "loop": {
+      "nudge_at": 3,
+      "stop_at": 6
+    },
+    "empty_turns_stop": 3,
+    "length_continuations": 3,
+    "tool_execution": "parallel"
+  },
+  "wire": {
+    "cache_retention": "short",
+    "max_retries": 3,
+    "mid_convo_effort": false,
+    "reasoning_context": "all_turns",
+    "reasoning_summary": "none"
+  },
+  "context": {
+    "env": "user"
+  }
+}

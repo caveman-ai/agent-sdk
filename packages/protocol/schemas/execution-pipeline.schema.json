@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://caveman.so/schemas/execution-pipeline.schema.json",
+  "title": "Caveman Executable Agent Pipeline v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "target", "semantic_plan_sha256", "entry_step_id", "steps"],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "target": {
+      "$ref": "#/$defs/target"
+    },
+    "semantic_plan_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "entry_step_id": {
+      "const": "selected"
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "prefixItems": [
+        {
+          "$ref": "#/$defs/selectedStep"
+        },
+        {
+          "$ref": "#/$defs/baselineStep"
+        }
+      ],
+      "items": false
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "target": {
+      "enum": ["pi", "claude", "vercel-ai-sdk", "eve", "mastra"]
+    },
+    "selectedStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["step_id", "kind", "plan_id", "plan_sha256", "on_error"],
+      "properties": {
+        "step_id": {
+          "const": "selected"
+        },
+        "kind": {
+          "const": "harness"
+        },
+        "plan_id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "plan_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "on_error": {
+          "const": "abort",
+          "description": "v0.2 aborts after any started attempt. Baseline step is a recovery pointer only; runtime replay awaits complete effect and spend accounting."
+        }
+      }
+    },
+    "baselineStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["step_id", "kind", "plan_id", "plan_sha256"],
+      "properties": {
+        "step_id": {
+          "const": "baseline"
+        },
+        "kind": {
+          "const": "baseline_fallback"
+        },
+        "plan_id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "plan_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    }
+  }
+}

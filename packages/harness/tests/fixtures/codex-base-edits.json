@@ -1,0 +1,83 @@
+{
+ "source": {
+  "cli_version": "0.163.0",
+  "model": "gpt-6.1-sol",
+  "field": "session_meta.payload.base_instructions.text",
+  "chars": 21769,
+  "sha256": "e1bdd4f8f0df4b20f4a0ffc8a861ce819df45325d8cecdfb92e80379cf8d142e"
+ },
+ "edits": [
+  {
+   "at": 727,
+   "from": "must take precedence over any guidelines provided in skills or external files.",
+   "to": "must take precedence over any guidelines provided in external files.",
+   "why": "skills (SKILL.md files, a skill catalog, skills.list/skills.read): exec-v0 has none"
+  },
+  {
+   "at": 1490,
+   "from": "unless given explicit instructions to do so, or instructed to do so as part of an explicitly-invoked skill or plugin.",
+   "to": "unless given explicit instructions to do so.",
+   "why": "skills and plugins: exec-v0 has neither"
+  },
+  {
+   "at": 1607,
+   "from": " If authorized by a skill or plugin, name and link the skill or plugin in the final channel.",
+   "to": "",
+   "why": "skills and plugins: exec-v0 has neither"
+  },
+  {
+   "at": 1850,
+   "from": "(for example, a SKILL.md, AGENTS.md, memory, or approval auto-review block)",
+   "to": "(for example, AGENTS.md)",
+   "why": "skills, memory and approval auto-review: exec-v0 has none of them (AGENTS.md is a repo file the model can read)"
+  },
+  {
+   "at": 1949,
+   "from": " If you receive an auto-review rejection and are not able to complete the task in a more safe way, explicitly tell the user that automatic approval review rejected the action, identify the action, and summarize the stated reason.",
+   "to": "",
+   "why": "approval auto-review: exec-v0 has no approvals"
+  },
+  {
+   "at": 3716,
+   "from": "exceptions to requirements in local markdown and skill files",
+   "to": "exceptions to requirements in local markdown files",
+   "why": "skills (SKILL.md files, a skill catalog, skills.list/skills.read): exec-v0 has none"
+  },
+  {
+   "at": 8624,
+   "from": "When available, you can use the `functions.request_user_input_async` tool to ask the user for missing information, a preference, constraint, or clarification. You can ask multiple questions in a single tool call. Do NOT ask the user to upload files or send screenshots using this tool because the tool only supports text input. Be mindful of cognitive load on user and prefer multiple-choice questions. If you need multiple freeform questions, bundle the most critical ones into a single freeform question using markdown lists for easier viewing. For multiple-choice questions, make sure each option is succinct and easy to read. Ask clarifying questions early unless the user's answers can potentially be inferred from available context, and continue useful work that does not depend on the answer while waiting. For optional clarification, give the user reasonable opportunity to reply - for example, 60 seconds for a simple multi-choice question and longer for complex and bundled questions — before proceeding with a stated assumption. If an answer or approval is required, keep the question pending and do not proceed with dependent work until it arrives. Elapsed time is not an answer or approval.\n\n",
+   "to": "",
+   "why": "request_user_input_async: exec-v0 exposes no question tool (the whole paragraph is about that tool)"
+  },
+  {
+   "at": 10397,
+   "from": "When you run out of context, the conversation is automatically compacted into a summary, but you will still see all prior user requests. Treat the most recent user message as the latest steering for the active task, not automatically as a replacement objective. Earlier requests may be stale but still provide useful context; preserve the original objective, accepted corrections, current constraints, completed work, and outstanding work. Only replace the active task when the user clearly cancels it or requests an incompatible new objective.\n\n",
+   "to": "",
+   "why": "automatic compaction: exec-v0 does not compact"
+  },
+  {
+   "at": 10943,
+   "from": "Compaction does not end the task. Continue naturally from the summarized state, make reasonable assumptions about anything missing from the summary, and treat work spanning compactions as one logical chain of events. Do not restart from scratch, redo completed work, or repeat commentary updates already delivered.\n\n",
+   "to": "",
+   "why": "automatic compaction: exec-v0 does not compact"
+  },
+  {
+   "at": 17321,
+   "from": "\n\n# Using skills\n\nA skill is a set of instructions provided through a `SKILL.md` source. Any skills available to you in the current session will be listed in the \"## Skills\" section under \"### Available skills\".\n\nEach entry includes a name, description, and location for its `SKILL.md`. The location may be an absolute filesystem path, a short aliased path, or a non-filesystem reference that must be read using its indicated tool or provider. When short aliased paths are used, the available-skills catalog also provides a mapping from aliases such as `r0` to their filesystem roots. Expand the alias before accessing the skill.\n\nThe user's instructions take precedence over guidelines provided in a skill. If explicit user instructions conflict with a skill's instructions, prioritize the user's instructions. \n\nThe first time in a conversation that you decide to apply a skill, inform the user in the commentary channel.\n\nIf a skill causes you to ask for permission or confirmation, pause, or leave requested work unfinished, name and link to the exact SKILL.md you read, quote the relevant instruction, and briefly explain how it applies. Distinguish explicit skill requirements from your interpretation. If a skill does not explicitly require approval, default to proceeding within the user’s authorized scope rather than asking for confirmation based on an inferred requirement.\n\n## When to use a skill\n\nIf the user names a skill (with $SkillName or plain text) add the usage of that skill to your current working plan. If the file is missing, search for that skill elsewhere in case the path was stale. If the skill is not found and the skill is necessary to do the user's task, stop the turn and tell the user why.\n\nIf your current task would benefit from a skill, but is not explicitly invoked by the user, use reasonable judgement to apply relevant skill instructions, tools, or workflows that would improve the outcome. Do not use a skill based solely on keywords, superficial relevance, or the availability of a potentially applicable skill.\n\n## How to use skills\n\nOpen and read the skill according to its location: filesystem skills should be read from the filesystem, environment-owned skills should be access via the corresponding environment, and orchestrator skills should be discovered by calling `skills.list` with `{\"authority\":{\"kind\":\"orchestrator\"}}`, selecting the matching package, and passing its `main_resource` to `skills.read`. Avoid re-reading skills when possible. \n\nWhen a `SKILL.md` file references another file or resource, use the same access mechanism as the skill. Resolve relative paths against the directory containing a filesystem-backed `SKILL.md`. For orchestrator skills, pass the exact referenced resource identifier with the same authority and package to `skills.read`; do not treat `skill://` identifiers as filesystem paths.",
+   "to": "",
+   "why": "skills (SKILL.md files, a skill catalog, skills.list/skills.read): exec-v0 has none (the whole section)"
+  },
+  {
+   "at": 20192,
+   "from": "\n\n# Apps (Connectors)\n\nApps (Connectors) can be explicitly triggered in user messages in the format `[$app-name](app://{{connector_id}})`. Apps can also be implicitly triggered as long as the context suggests usage of available apps.\nAn app is equivalent to a set of MCP tools within the `codex_apps` MCP.\nAn installed app's MCP tools are either provided to you already, or can be lazy-loaded through the `tool_search` tool. If `tool_search` is available, the apps that are searchable by `tools_search` will be listed by it.\nDo not additionally call list_mcp_resources or list_mcp_resource_templates for apps.",
+   "to": "",
+   "why": "apps/connectors (codex_apps MCP, tool_search, list_mcp_resources): exec-v0 has none (the whole section)"
+  },
+  {
+   "at": 20801,
+   "from": "\n\n# Plugins\n\nA plugin is a local bundle of skills, MCP servers, and apps.\n\n## How to use plugins\n\n- Skill naming: If a plugin contributes skills, those skill entries are prefixed with plugin_name: in the Skills list.\n- MCP naming: Plugin-provided MCP tools keep standard MCP identifiers such as mcp__server__tool; use tool provenance to tell which plugin they come from.\n- Trigger rules: If the user explicitly names a plugin, prefer capabilities associated with that plugin for that turn.\n- Relationship to capabilities: Plugins are not invoked directly. Use their underlying skills, MCP tools, and app tools to help solve the task.\n- Relevance: Determine what a plugin can help with from explicit user mention or from the plugin-associated skills, MCP tools, and apps exposed elsewhere in this turn.\n- Missing/blocked: If the user requests a plugin that does not have relevant callable capabilities for the task, say so briefly and continue with the best fallback.\n\n",
+   "to": "",
+   "why": "plugins: exec-v0 has none (the whole section)"
+  }
+ ]
+}

@@ -1,0 +1,19 @@
+{
+  "extends": "compact-v0-plain",
+  "name": "placebo-compact-v0-plain",
+  "prompt": {
+    "sections": [
+      "core.identity",
+      "compact.tools",
+      "core.verify",
+      "core.finish"
+    ],
+    "addenda": [
+      {
+        "id": "evidence_gate",
+        "text": "Before you finish: nothing has run since your last change to the files (no test, build or run of the result). Run the check that proves the task's stated requirement is met, the requirement itself rather than a proxy such as \"it compiles\" or \"the script runs\". Fix what fails, then finish."
+      }
+    ],
+    "placebo": true
+  }
+}

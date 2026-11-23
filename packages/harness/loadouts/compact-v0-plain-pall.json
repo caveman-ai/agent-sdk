@@ -1,0 +1,17 @@
+{
+  "extends": "compact-v0-plain",
+  "name": "compact-v0-plain-pall",
+  "policy": {
+    "loop": {
+      "nudge_at": 3,
+      "stop_at": 6
+    },
+    "empty_turns_stop": 3,
+    "length_continuations": 3,
+    "tool_execution": "parallel",
+    "evidence_gate": true,
+    "first_green": true,
+    "hedge_continue": true,
+    "discovery": true
+  }
+}

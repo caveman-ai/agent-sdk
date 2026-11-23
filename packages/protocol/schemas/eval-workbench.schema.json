@@ -1,0 +1,442 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://caveman.so/schemas/eval-workbench.schema.json",
+  "title": "Caveman evaluation workbench",
+  "description": "Versioned dataset-target-evaluator document used by UI, REST, CI and agent tools.",
+  "type": "object",
+  "required": ["schema_version", "datasets", "active_dataset_key", "targets", "evaluators", "settings"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "datasets": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "items": { "$ref": "#/$defs/dataset-ref" }
+    },
+    "active_dataset_key": { "$ref": "#/$defs/key" },
+    "targets": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 24,
+      "items": { "$ref": "#/$defs/target" }
+    },
+    "evaluators": {
+      "type": "array",
+      "maxItems": 24,
+      "items": { "$ref": "#/$defs/evaluator" }
+    },
+    "settings": { "$ref": "#/$defs/settings" },
+    "comparison": { "$ref": "#/$defs/comparison" }
+  },
+  "$defs": {
+    "uuid": { "type": "string", "format": "uuid" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "key": { "type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,95}$" },
+    "dataset-ref": {
+      "type": "object",
+      "required": ["key", "dataset_id"],
+      "additionalProperties": false,
+      "properties": {
+        "key": { "$ref": "#/$defs/key" },
+        "dataset_id": { "$ref": "#/$defs/uuid" },
+        "version": { "type": "integer", "minimum": 1 },
+        "document_sha256": { "$ref": "#/$defs/sha256" }
+      },
+      "dependentRequired": {
+        "version": ["document_sha256"],
+        "document_sha256": ["version"]
+      }
+    },
+    "mapping": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/key" }
+    },
+    "dataset-mappings": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/mapping" }
+    },
+    "target-base": {
+      "type": "object",
+      "required": ["key", "name", "kind", "input_mapping", "config"],
+      "properties": {
+        "key": { "$ref": "#/$defs/key" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "kind": { "enum": ["prompt", "agent", "workflow", "recorded", "external", "http", "model", "evaluator", "scenario"] },
+        "input_mapping": { "$ref": "#/$defs/mapping" },
+        "dataset_input_mappings": { "$ref": "#/$defs/dataset-mappings" },
+        "config": { "type": "object" }
+      }
+    },
+    "target": {
+      "oneOf": [
+        {
+          "allOf": [
+            { "$ref": "#/$defs/target-base" },
+            {
+              "properties": {
+                "kind": { "const": "prompt" },
+                "config": {
+                  "type": "object",
+                  "required": ["prompt_id", "prompt_version", "provider", "model"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "prompt_id": { "$ref": "#/$defs/uuid" },
+                    "prompt_version": { "type": "integer", "minimum": 1 },
+                    "provider": { "type": "string", "minLength": 1, "maxLength": 100 },
+                    "model": { "type": "string", "minLength": 1, "maxLength": 200 },
+                    "temperature": { "type": "number", "minimum": 0, "maximum": 2 },
+                    "max_tokens": { "type": "integer", "minimum": 1, "maximum": 1048576 },
+                    "response_format": { "enum": ["text", "json"] }
+                  }
+                }
+              }
+            }
+          ],
+          "unevaluatedProperties": false
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/target-base" },
+            {
+              "properties": {
+                "kind": { "const": "agent" },
+                "config": {
+                  "type": "object",
+                  "required": ["agent_id", "endpoint", "method", "authentication"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "agent_id": { "$ref": "#/$defs/uuid" },
+                    "workflow_id": { "$ref": "#/$defs/uuid" },
+                    "endpoint": { "$ref": "#/$defs/remote-endpoint" },
+                    "method": { "const": "POST" },
+                    "authentication": { "$ref": "#/$defs/no-auth" },
+                    "output_path": { "$ref": "#/$defs/json-pointer" }
+                  }
+                }
+              }
+            }
+          ],
+          "unevaluatedProperties": false
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/target-base" },
+            {
+              "properties": {
+                "kind": { "const": "workflow" },
+                "config": {
+                  "type": "object",
+                  "required": ["workflow_id", "endpoint", "method", "authentication"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "workflow_id": { "$ref": "#/$defs/uuid" },
+                    "endpoint": { "$ref": "#/$defs/remote-endpoint" },
+                    "method": { "const": "POST" },
+                    "authentication": { "$ref": "#/$defs/no-auth" },
+                    "output_path": { "$ref": "#/$defs/json-pointer" }
+                  }
+                }
+              }
+            }
+          ],
+          "unevaluatedProperties": false
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/target-base" },
+            {
+              "properties": {
+                "kind": { "const": "recorded" },
+                "config": {
+                  "type": "object",
+                  "required": ["output_column"],
+                  "additionalProperties": false,
+                  "properties": { "output_column": { "$ref": "#/$defs/key" } }
+                }
+              }
+            }
+          ],
+          "unevaluatedProperties": false
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/target-base" },
+            {
+              "properties": {
+                "kind": { "const": "external" },
+                "config": {
+                  "description": "The caller ran this step: a run of it carries each output (evals.run outputs). At most one per document.",
+                  "type": "object",
+                  "additionalProperties": false
+                }
+              }
+            }
+          ],
+          "unevaluatedProperties": false
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/target-base" },
+            {
+              "properties": {
+                "kind": { "const": "http" },
+                "config": {
+                  "type": "object",
+                  "required": ["endpoint", "method", "authentication"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "endpoint": { "$ref": "#/$defs/remote-endpoint" },
+                    "method": { "const": "POST" },
+                    "authentication": { "$ref": "#/$defs/no-auth" },
+                    "output_path": { "$ref": "#/$defs/json-pointer" }
+                  }
+                }
+              }
+            }
+          ],
+          "unevaluatedProperties": false
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/target-base"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "const": "model"
+                },
+                "config": {
+                  "type": "object",
+                  "required": [
+                    "user_template",
+                    "provider",
+                    "model"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "provider": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "model": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "temperature": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 2
+                    },
+                    "max_tokens": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 1048576
+                    },
+                    "response_format": {
+                      "enum": [
+                        "text",
+                        "json"
+                      ]
+                    },
+                    "user_template": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 262144
+                    },
+                    "system_template": {
+                      "type": "string",
+                      "maxLength": 262144
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "unevaluatedProperties": false
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/target-base"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "const": "evaluator"
+                },
+                "config": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "evaluator_id",
+                    "evaluator_version",
+                    "config_sha256"
+                  ],
+                  "properties": {
+                    "evaluator_id": {
+                      "$ref": "#/$defs/uuid"
+                    },
+                    "evaluator_version": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "config_sha256": {
+                      "$ref": "#/$defs/sha256"
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "unevaluatedProperties": false
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/target-base"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "const": "scenario"
+                },
+                "config": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "dataset_id",
+                    "version",
+                    "scenario_sha256",
+                    "repository_commit_sha",
+                    "recipe_id",
+                    "recipe_sha256"
+                  ],
+                  "properties": {
+                    "dataset_id": {
+                      "$ref": "#/$defs/uuid"
+                    },
+                    "version": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "scenario_sha256": {
+                      "$ref": "#/$defs/sha256"
+                    },
+                    "repository_commit_sha": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{40}$"
+                    },
+                    "recipe_id": {
+                      "$ref": "#/$defs/key"
+                    },
+                    "recipe_sha256": {
+                      "$ref": "#/$defs/sha256"
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "unevaluatedProperties": false
+        }
+      ]
+    },
+    "remote-endpoint": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://[^?#]+$"
+    },
+    "no-auth": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": { "type": { "const": "none" } }
+    },
+    "json-pointer": { "type": "string", "pattern": "^/" },
+    "evaluator": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["key", "name", "source", "evaluator_id", "evaluator_version", "config_sha256"],
+          "additionalProperties": false,
+          "properties": {
+            "key": { "$ref": "#/$defs/key" },
+            "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+            "source": { "const": "saved" },
+            "target_keys": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/key" } },
+            "evaluator_id": { "$ref": "#/$defs/uuid" },
+            "evaluator_version": { "type": "integer", "minimum": 1 },
+            "config_sha256": { "$ref": "#/$defs/sha256" },
+            "input_mapping": { "$ref": "eval-evaluator-config.schema.json#/$defs/input-mapping" },
+            "dataset_input_mappings": {
+              "type": "object",
+              "additionalProperties": { "$ref": "eval-evaluator-config.schema.json#/$defs/input-mapping" }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["key", "name", "source", "grader_type", "options", "input_mapping"],
+          "additionalProperties": false,
+          "properties": {
+            "key": { "$ref": "#/$defs/key" },
+            "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+            "source": { "const": "inline" },
+            "target_keys": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/key" } },
+            "grader_type": { "type": "string", "minLength": 1, "maxLength": 100 },
+            "options": { "type": "object" },
+            "input_mapping": { "$ref": "eval-evaluator-config.schema.json#/$defs/input-mapping" },
+            "dataset_input_mappings": {
+              "type": "object",
+              "additionalProperties": { "$ref": "eval-evaluator-config.schema.json#/$defs/input-mapping" }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["key", "name", "source", "criterion_id", "criterion_version"],
+          "additionalProperties": false,
+          "properties": {
+            "key": { "$ref": "#/$defs/key" },
+            "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+            "source": { "const": "criterion" },
+            "target_keys": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/key" } },
+            "criterion_id": { "$ref": "#/$defs/uuid" },
+            "criterion_version": { "type": "integer", "minimum": 1 },
+            "input_mapping": { "$ref": "eval-evaluator-config.schema.json#/$defs/input-mapping" },
+            "dataset_input_mappings": {
+              "type": "object",
+              "additionalProperties": { "$ref": "eval-evaluator-config.schema.json#/$defs/input-mapping" }
+            }
+          }
+        }
+      ]
+    },
+    "settings": {
+      "type": "object",
+      "required": ["concurrency", "row_height"],
+      "additionalProperties": false,
+      "properties": {
+        "concurrency": { "type": "integer", "minimum": 1, "maximum": 24 },
+        "row_height": { "enum": ["compact", "comfortable"] },
+        "trials": { "type": "integer", "minimum": 1, "maximum": 10 },
+        "judge_order": { "enum": ["randomized", "fixed"] },
+        "judge_seed": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "comparison": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "primary_evaluator_key": { "$ref": "#/$defs/key" },
+        "confidence_level": { "enum": [0.9, 0.95, 0.99] },
+        "minimum_samples": { "type": "integer", "minimum": 2, "maximum": 10000 },
+        "baseline_target_key": { "$ref": "#/$defs/key" }
+      }
+    }
+  }
+}

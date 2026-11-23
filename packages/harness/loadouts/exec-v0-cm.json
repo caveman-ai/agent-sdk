@@ -1,0 +1,7 @@
+{
+  "extends": "exec-v0",
+  "name": "exec-v0-cm",
+  "trace": {
+    "cache_monitor": true
+  }
+}

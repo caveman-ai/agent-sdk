@@ -1,0 +1,7 @@
+{
+  "extends": "exec-v0",
+  "name": "exec-v0-r1",
+  "results": {
+    "shaping": "all"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "extends": "exec-v0",
+  "name": "exec-v0-d3",
+  "depth": {
+    "wall_notice": true
+  }
+}

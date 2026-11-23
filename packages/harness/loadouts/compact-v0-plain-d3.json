@@ -1,0 +1,7 @@
+{
+  "extends": "compact-v0-plain",
+  "name": "compact-v0-plain-d3",
+  "depth": {
+    "wall_notice": true
+  }
+}

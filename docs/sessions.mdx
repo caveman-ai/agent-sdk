@@ -1,0 +1,45 @@
+A Session is one continuous conversation with one append-only event log. Use `cave.sessions.create()` for multi-turn interactions, live event streaming, custom tool callbacks, approvals, and interrupts.
+
+## Stream events and send follow-ups
+
+```ts
+import { Caveman } from "@caveman-ai/agent";
+
+const cave = new Caveman();
+const session = await cave.sessions.create({
+  agent: "builder",
+  task: "Fix the flaky retry test",
+  cwd: ".",
+});
+
+for await (const event of session.events()) {
+  console.log(event.seq, event.type, event.data);
+}
+
+const first = await session.next();
+const followUp = await session.send("Also add a regression test for 429 responses.");
+await session.close();
+```
+
+## Approvals and questions
+
+When an agent calls a custom tool, requests approval, or asks a question, the session emits a `requires_action` event carrying an `Ask`:
+
+- **`kind: "tool"`**: answered automatically by the handler passed to `tool()`.
+- **`kind: "approval"`**: answered by `canUseTool`. Denied by default when no handler is provided.
+- **`kind: "question"`**: answered by `onQuestion`. When omitted, the agent decides and states its assumption.
+
+## Cheap-first escalation with checks
+
+```ts
+const result = await cave.run({
+  agent: "builder",
+  task: "Fix the failing parser test",
+  model: "fast",
+  check: "pnpm test",
+  escalate: ["base", "frontier"],
+  budget: { usd: 2 },
+});
+```
+
+If `check` exits non-zero (or returns a failure string from a function), the SDK passes the failure output to the next model in `escalate` and stops immediately if `budget.usd` is reached.

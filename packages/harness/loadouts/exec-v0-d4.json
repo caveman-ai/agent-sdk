@@ -1,0 +1,13 @@
+{
+  "extends": "exec-v0",
+  "name": "exec-v0-d4",
+  "depth": {
+    "deescalate": {
+      "to": "medium",
+      "on": [
+        "read_only",
+        "poll"
+      ]
+    }
+  }
+}

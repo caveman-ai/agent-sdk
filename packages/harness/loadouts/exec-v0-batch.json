@@ -1,0 +1,44 @@
+{
+  "extends": "exec-v0",
+  "name": "exec-v0-batch",
+  "tools": {
+    "exec": {
+      "exposure": "eager",
+      "limits": {
+        "default_yield_ms": 30000,
+        "max_output_tokens": 10000,
+        "cell_timeout_s": 3600,
+        "mcp_types": true,
+        "batch": true
+      }
+    },
+    "wait": {
+      "exposure": "eager",
+      "limits": {
+        "default_yield_ms": 10000,
+        "default_max_tokens": 10000
+      }
+    },
+    "exec_command": {
+      "exposure": "eager",
+      "limits": {
+        "default_yield_ms": 10000,
+        "max_yield_ms": 30000,
+        "hard_timeout_s": 3600
+      }
+    },
+    "write_stdin": {
+      "exposure": "eager",
+      "limits": {
+        "min_poll_ms": 5000,
+        "max_poll_ms": 300000
+      }
+    },
+    "apply_patch": {
+      "exposure": "eager"
+    },
+    "view_image": {
+      "exposure": "eager"
+    }
+  }
+}

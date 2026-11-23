@@ -1,0 +1,61 @@
+An agent build is either a folder containing `AGENT.md` or a TypeScript `AgentDefinition`. Both compile to the same deterministic `agent.json` manifest and SHA-256 digest (`packages/agent/src/build.ts`).
+
+## Folder layout
+
+```text
+triage/
+├── AGENT.md                  # YAML frontmatter + instructions
+├── skills/
+│   └── refunds/
+│       └── SKILL.md          # Skill loaded lazily on activation
+├── agents/
+│   └── security/
+│       └── AGENT.md          # Subagent definition
+└── evals/
+    └── basic.eval.json       # Eval file gated in CI
+```
+
+## Frontmatter keys
+
+```markdown
+---
+name: triage
+description: Route billing and refund requests
+engine: caveman
+model: fast
+computer: none
+connectors: [linear]
+budgets:
+  tools: 4000
+---
+
+Classify the ticket and check refund eligibility before replying.
+```
+
+| Key | Allowed values | Notes |
+|---|---|---|
+| `name` | `[A-Za-z0-9._-]{1,100}` | Defaults to the folder name if omitted |
+| `engine` | `caveman`, `claude-agent`, `codex` | Defaults to `caveman` |
+| `model` | `fast`, `base`, `frontier`, `auto`, or exact model ID | Model class resolves within the configured provider |
+| `computer` | `none`, `readonly`, `code`, `linux` | `none` strips all coding tools to keep the prompt prefix small |
+| `connectors` | List or map of org connector names | Names only; credentials never enter a build |
+
+## Compile from code or CLI
+
+```ts
+import { compileAgentFolder } from "@caveman-ai/agent";
+
+const build = compileAgentFolder("./triage");
+console.log(build.digest);
+```
+
+From the terminal using [`cvm`](/docs/sdk/cli):
+
+```bash
+cvm agent build ./triage
+cvm deploy ./triage --budget 2
+```
+
+## Determinism rules
+
+Files are sorted bytewise by path and no timestamps, local paths, or git commits enter `agent.json`. Symlinks and non-UTF-8 files are rejected. Two identical folders always produce the exact same SHA-256 digest.

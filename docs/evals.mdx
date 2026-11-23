@@ -1,0 +1,35 @@
+`@caveman-ai/evals` (TypeScript) and `caveman-evals` (Python) ship 30 fail-closed graders sharing one machine-readable registry (`packages/protocol/schemas/grader-registry.json`). Unknown grader types, malformed regexes, invalid JSON Schemas, missing cost/token fields, and SSRF violations always fail closed rather than passing silently.
+
+## Install
+
+### TypeScript
+
+```bash
+npm install @caveman-ai/evals
+```
+
+### Python
+
+```bash
+pip install caveman-evals
+```
+
+## Run a grader
+
+```ts
+import { grade } from "@caveman-ai/evals";
+
+const check = await grade(
+  { type: "tool_called", tool: "lookup_invoice" },
+  { text: "Refund issued.", tool_calls: [{ name: "lookup_invoice", arguments: { id: "4411" } }] },
+);
+
+console.log(check.passed, check.score, check.reason);
+```
+
+## Grader families
+
+- **Deterministic text:** `exact_match`, `contains`, `not_contains`, `regex` (worker-bounded against catastrophic backtracking), `not_regex`, `blocklist`, `bleu_score`, `rouge_score`.
+- **Structured & tools:** `json_schema`, `json_path_assertion`, `tool_called`, `tool_not_called`, `tool_sequence`, `tool_argument_assertion`, `localization_f1`.
+- **Operational thresholds:** `http_status`, `latency_threshold`, `cost_threshold`, `token_threshold`, `no_pii`.
+- **Webhooks & LLM judges:** `custom_webhook` (with DNS-pinned SSRF guard and redirect refusal), `llm_judge`, `llm_pairwise` (runs both AB and BA orderings), `llm_answer_match`, with same-family bias guard.

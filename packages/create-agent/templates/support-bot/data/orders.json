@@ -1,0 +1,47 @@
+[
+  {
+    "id": "NB-1042",
+    "status": "in_transit",
+    "items": ["Ridgeline 2P Tent", "Titanium Spork"],
+    "totalUsd": 289.5,
+    "carrier": "UPS",
+    "carrierEstimate": "3-5 business days from dispatch",
+    "deliveredOn": null
+  },
+  {
+    "id": "NB-2077",
+    "status": "delivered",
+    "items": ["Cascade 40L Pack"],
+    "totalUsd": 179.0,
+    "carrier": "DHL",
+    "carrierEstimate": null,
+    "deliveredOn": "2026-07-18"
+  },
+  {
+    "id": "NB-3315",
+    "status": "processing",
+    "items": ["Ember Down Jacket", "Wool Base Layer", "Trail Gaiters"],
+    "totalUsd": 412.25,
+    "carrier": null,
+    "carrierEstimate": null,
+    "deliveredOn": null
+  },
+  {
+    "id": "NB-8214",
+    "status": "in_transit",
+    "items": ["Solstice Cook System", "Filter Bottle"],
+    "totalUsd": 134.75,
+    "carrier": "FedEx",
+    "carrierEstimate": "2-4 business days from dispatch",
+    "deliveredOn": null
+  },
+  {
+    "id": "NB-5580",
+    "status": "delivered",
+    "items": ["Ridgeline 2P Tent"],
+    "totalUsd": 249.0,
+    "carrier": "UPS",
+    "carrierEstimate": null,
+    "deliveredOn": "2026-08-05"
+  }
+]

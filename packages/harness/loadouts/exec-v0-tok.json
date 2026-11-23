@@ -1,0 +1,10 @@
+{
+  "extends": "exec-v0",
+  "name": "exec-v0-tok",
+  "limits": {
+    "output_cap_bytes": 51200,
+    "output_cap_lines": 2000,
+    "spill": true,
+    "token_estimate": "dense"
+  }
+}

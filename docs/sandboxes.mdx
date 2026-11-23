@@ -1,0 +1,36 @@
+Harness v4 separates the agent loop from where commands execute through the `ExecEnv` interface (`packages/harness/src/env/types.ts`). Three environments ship in `@caveman-ai/harness`.
+
+## Environments
+
+| Environment | Class | Isolation | Use case |
+|---|---|---|---|
+| Host machine | `LocalEnv` | None (allowlisted env vars only) | Local development, CI runners |
+| Local container | `DockerEnv` | Container boundary (`docker exec`) | Benchmarks, no-network task containers |
+| Caveman Cloud | `SandboxEnv` | Firecracker microVM via `@caveman-ai/sdk/sandboxes` | Unattended Cloud runs, snapshot/fork, persistent disks |
+
+## LocalEnv
+
+```ts
+import { LocalEnv } from "@caveman-ai/harness";
+
+const env = new LocalEnv({
+  cwd: process.cwd(),
+  env: { NODE_ENV: "test" },
+});
+```
+
+`LocalEnv` builds a minimal environment allowlist (`PATH`, `HOME`, `USER`, `LANG`, plus variables you pass explicitly) and strips ambient provider keys. On POSIX, every command runs in its own process group. On Windows, commands run in Git Bash (never `cmd.exe`, PowerShell, or WSL) and clean up process trees with `taskkill /T /F`.
+
+## SandboxEnv (Caveman Cloud)
+
+```ts
+import { SandboxEnv } from "@caveman-ai/harness";
+
+const env = new SandboxEnv({
+  controlURL: "https://api.caveman.so",
+  apiKey: process.env.CAVEMAN_API_KEY!,
+  cwd: "/workspace",
+});
+```
+
+`SandboxEnv` provisions a microVM lazily on the first tool call that needs compute, streams exec/file traffic over the Cloud relay, and keeps the API key in the harness process so credentials never enter the sandbox.

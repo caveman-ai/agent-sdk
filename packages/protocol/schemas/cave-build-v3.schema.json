@@ -1,0 +1,456 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://caveman.so/schemas/cave-build-v3.schema.json",
+  "title": "Immutable Profile-Guided Caveman Agent Build v3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "agent_id",
+    "build_sha256",
+    "plan_sha256",
+    "source_sha256",
+    "agent_definition_sha256",
+    "context_ir_sha256",
+    "eval_suite_sha256",
+    "context_ir_schema",
+    "harness",
+    "runtime",
+    "catalog_sha256",
+    "baseline_plan_id",
+    "selected_plan_id",
+    "selected_plan",
+    "evidence",
+    "compiler",
+    "capability_manifest",
+    "executable_pipeline",
+    "passes",
+    "baseline_fallback",
+    "validation"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 3
+    },
+    "agent_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "build_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "plan_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "source_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "agent_definition_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "context_ir_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "eval_suite_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "context_ir_schema": {
+      "const": "1"
+    },
+    "harness": {
+      "$ref": "#/$defs/harness"
+    },
+    "runtime": {
+      "$ref": "#/$defs/runtime"
+    },
+    "catalog_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "baseline_plan_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "selected_plan_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "selected_plan": {
+      "$ref": "https://caveman.so/schemas/cave-plan.schema.json"
+    },
+    "evidence": {
+      "$ref": "#/$defs/evidence"
+    },
+    "compiler": {
+      "$ref": "#/$defs/compiler"
+    },
+    "capability_manifest": {
+      "$ref": "https://caveman.so/schemas/adapter-capabilities.schema.json"
+    },
+    "executable_pipeline": {
+      "$ref": "https://caveman.so/schemas/execution-pipeline.schema.json"
+    },
+    "passes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/pass"
+      }
+    },
+    "baseline_fallback": {
+      "$ref": "#/$defs/baselineFallback"
+    },
+    "validation": {
+      "$ref": "#/$defs/validation"
+    }
+  },
+  "allOf": [
+    {
+      "not": {
+        "properties": {
+          "harness": {
+            "type": "object",
+            "properties": { "id": { "const": "claude" } },
+            "required": ["id"]
+          }
+        },
+        "required": ["harness"]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "harness": {
+            "type": "object",
+            "properties": { "id": { "const": "eve" } },
+            "required": ["id"]
+          }
+        },
+        "required": ["harness"]
+      },
+      "then": {
+        "properties": {
+          "selected_plan": {
+            "type": "object",
+            "properties": { "reasoning": { "const": "none" } },
+            "required": ["reasoning"]
+          },
+          "baseline_fallback": {
+            "type": "object",
+            "properties": {
+              "plan": {
+                "type": "object",
+                "properties": { "reasoning": { "const": "none" } },
+                "required": ["reasoning"]
+              }
+            },
+            "required": ["plan"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "capability_manifest": {
+            "type": "object",
+            "properties": {
+              "adapter_contract_sha256": {
+                "const": "b980643d116ce73805bbe0b4256a2918514efe5ccfe83a21abb99b88bbcc2313"
+              }
+            },
+            "required": ["adapter_contract_sha256"]
+          }
+        },
+        "required": ["capability_manifest"]
+      },
+      "then": {
+        "properties": {
+          "harness": {
+            "type": "object",
+            "properties": {
+              "id": { "const": "pi" },
+              "adapter_version": { "const": "0.2.0" },
+              "upstream_version": { "const": "0.83.0" }
+            },
+            "required": ["id", "adapter_version", "upstream_version"]
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "executable_pipeline": {
+          "type": "object",
+          "properties": {
+            "steps": {
+              "type": "array",
+              "contains": {
+                "type": "object",
+                "properties": {
+                  "step_id": { "const": "selected" },
+                  "on_error": { "const": "abort" }
+                },
+                "required": ["step_id", "on_error"]
+              },
+              "minContains": 1,
+              "maxContains": 1
+            }
+          },
+          "required": ["steps"]
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "target": {
+      "enum": ["pi", "claude", "vercel-ai-sdk", "eve", "mastra"]
+    },
+    "harness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "adapter_version", "upstream_version"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/target"
+        },
+        "adapter_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "upstream_version": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "caveman_version",
+        "transform_registry_sha256",
+        "external_provenance_sha256"
+      ],
+      "properties": {
+        "caveman_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "transform_registry_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "external_provenance_sha256": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "const": ""
+            }
+          ]
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "basis",
+        "quality_retention_lcb95",
+        "error_rate",
+        "p95_latency_ms",
+        "catalog_cost_usd_per_task",
+        "completed_runs"
+      ],
+      "properties": {
+        "status": {
+          "const": "locked"
+        },
+        "basis": {
+          "const": "inferred"
+        },
+        "quality_retention_lcb95": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "error_rate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "p95_latency_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "catalog_cost_usd_per_task": {
+          "type": "number",
+          "minimum": 0
+        },
+        "completed_runs": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "compiler": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "compiler_sha256",
+        "policy_sha256",
+        "profile_sha256",
+        "profile_partition_sha256",
+        "development_sha256",
+        "holdout_sha256",
+        "capability_manifest_sha256"
+      ],
+      "properties": {
+        "id": {
+          "const": "@caveman-ai/agent/profiled-compiler"
+        },
+        "version": {
+          "const": "0.2.0"
+        },
+        "compiler_sha256": {
+          "const": "d233b416c97cced3001d8b633cb63f496f1d2b4e1afb201e320ec6f74b886941"
+        },
+        "policy_sha256": {
+          "$ref": "#/$defs/sha256",
+          "description": "SHA-256 of canonical validated frozen BuildConfig used for this compile."
+        },
+        "profile_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "profile_partition_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "development_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "holdout_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "capability_manifest_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "pass": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pass_id", "version", "basis", "evidence_sha256"],
+      "properties": {
+        "pass_id": {
+          "anyOf": [
+            { "const": "profile_guided_selection" },
+            { "const": "model_selection" },
+            { "const": "output_budget_selection" },
+            { "const": "reasoning_selection" },
+            {
+              "type": "string",
+              "pattern": "^context_route:(instruction|user_intent|tool_schema|skill|memory|history|tool_result|artifact|error|output_contract):caveman\\.[a-z0-9.-]{1,120}$"
+            }
+          ]
+        },
+        "version": {
+          "const": 1
+        },
+        "basis": {
+          "const": "development"
+        },
+        "evidence_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "baselineFallback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["plan_id", "plan_sha256", "plan"],
+      "properties": {
+        "plan_id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "plan_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "plan": {
+          "$ref": "https://caveman.so/schemas/cave-plan.schema.json"
+        }
+      }
+    },
+    "validationEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "split_sha256",
+        "eval_suite_sha256",
+        "completed_runs",
+        "actual_cost_usd",
+        "baseline_catalog_cost_usd_per_task",
+        "selected_catalog_cost_usd_per_task",
+        "selected_plan_id"
+      ],
+      "properties": {
+        "split_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "eval_suite_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "completed_runs": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "actual_cost_usd": {
+          "type": "number",
+          "minimum": 0
+        },
+        "baseline_catalog_cost_usd_per_task": {
+          "type": "number",
+          "minimum": 0
+        },
+        "selected_catalog_cost_usd_per_task": {
+          "type": "number",
+          "minimum": 0
+        },
+        "selected_plan_id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        }
+      }
+    },
+    "validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["development", "holdout"],
+      "properties": {
+        "development": {
+          "$ref": "#/$defs/validationEvidence"
+        },
+        "holdout": {
+          "$ref": "#/$defs/validationEvidence"
+        }
+      }
+    }
+  }
+}

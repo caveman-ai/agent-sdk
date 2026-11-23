@@ -1,0 +1,71 @@
+`@caveman-ai/harness` (Harness v4) is the open-source agent loop underneath `@caveman-ai/agent` and Caveman Code. It keeps prompt prefixes byte-stable across turns, loads only the tools a loadout needs, isolates secrets from shell and MCP subprocesses, and exits cleanly when parked between turns.
+
+## Install
+
+```bash
+npm install @caveman-ai/harness
+```
+
+## Loadouts
+
+A loadout decides which built-in tools and execution environment an agent receives. Smaller loadouts keep prompt prefixes short and cache hits high.
+
+| Loadout | Execution environment | Built-in tools | Intended use |
+|---|---|---|---|
+| `app-general` | None (`computer: "none"`) | User-declared tools only | Non-coding workflows, support, triage, structured extraction |
+| `app-code` | In-process QuickJS (`sandbox: false`) | `program` over declared tools | Tool-heavy workflows that compose calls in code without a Linux shell |
+| `app-claude` | `LocalEnv`, `DockerEnv`, or `SandboxEnv` | `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`, `compact` | Coding tasks targeting Claude models |
+| `app-gpt` | `LocalEnv`, `DockerEnv`, or `SandboxEnv` | `apply_patch`, `exec` / `bash`, `read`, `compact` | Coding tasks targeting OpenAI models |
+
+## Cache-stable prefix contract
+
+Provider prompt caching resets whenever earlier bytes change. Harness v4 preserves prefix stability across turns by construction:
+
+- **Fixed tool ordering.** Built-in, custom, and MCP tools serialize in a deterministic order.
+- **Lazy skill activation.** Skill summaries are declared up front; full skill bodies load only when activated.
+- **Fault-tolerant MCP registration.** If an optional MCP server is unreachable, the loop surfaces the error cleanly without mutating earlier tool declarations.
+- **Explicit compaction.** The `compact` tool summarizes older turns into a single handoff frame rather than mutating history mid-prefix.
+
+## Execution environments
+
+Every environment implements the same file and command interface so the same agent runs locally, in Docker, or on Caveman Cloud without code changes:
+
+- **`LocalEnv`** runs commands directly on the host with an explicit environment allowlist (`inheritEnv: false`).
+- **`DockerEnv`** runs commands inside a local container image with mounted workspace isolation.
+- **`SandboxEnv`** delegates file and shell calls to a Caveman Cloud Firecracker microVM via `@caveman-ai/sdk/sandboxes`. API keys stay on the host and never enter the sandbox.
+
+## Programmatic usage
+
+```ts
+import { HarnessSession, appLoadouts } from "@caveman-ai/harness";
+
+const session = new HarnessSession({
+  loadout: appLoadouts()["app-general"],
+  model,
+  stream,
+  systemPrompt: "Answer concisely.",
+  tools: [myTool],
+});
+
+const result = await session.runTurn("Summarize open items", {
+  onEvent: (event) => {
+    if (event.type === "text_delta") process.stdout.write(event.delta);
+  },
+});
+
+await session.close();
+```
+
+## Headless exit codes
+
+When driven as a headless subprocess, `caveman-harness` returns stable exit codes so schedulers and hosts can reclaim compute while an agent waits:
+
+| Code | Meaning |
+|---|---|
+| `0` | Turn completed normally |
+| `1` | Unrecoverable error |
+| `2` | Invalid arguments or configuration |
+| `3` | Budget or turn limit reached |
+| `4` | Cancelled by caller |
+| `5` | Parked waiting for approval, external tool result, or timer |
+| `6` | Idle between turns; safe to hibernate and resume from event log |

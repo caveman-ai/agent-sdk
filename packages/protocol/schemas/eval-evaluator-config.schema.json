@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://caveman.so/schemas/eval-evaluator-config.schema.json",
+  "title": "Caveman reusable evaluator",
+  "description": "Versioned evaluator configuration. grader_type is validated against grader-registry.json by control-api.",
+  "type": "object",
+  "required": ["schema_version", "grader_type", "options", "input_mapping"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "grader_type": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "options": { "type": "object" },
+    "input_mapping": { "$ref": "#/$defs/input-mapping" }
+  },
+  "$defs": {
+    "key": { "type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,95}$" },
+    "input-mapping": {
+      "type": "object",
+      "required": ["candidate"],
+      "additionalProperties": false,
+      "properties": {
+        "candidate": { "$ref": "#/$defs/value-source" },
+        "reference": { "$ref": "#/$defs/value-source" },
+        "baseline": { "$ref": "#/$defs/value-source" }
+      }
+    },
+    "value-source": {
+      "type": "object",
+      "required": ["source", "key"],
+      "additionalProperties": false,
+      "properties": {
+        "source": { "enum": ["dataset", "target"] },
+        "key": {
+          "oneOf": [
+            { "$ref": "#/$defs/key" },
+            { "const": "$target" }
+          ]
+        }
+      }
+    }
+  }
+}

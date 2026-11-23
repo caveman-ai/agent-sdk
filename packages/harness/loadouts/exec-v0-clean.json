@@ -1,0 +1,13 @@
+{
+  "extends": "exec-v0",
+  "name": "exec-v0-clean",
+  "prompt": {
+    "sections": [
+      "core.identity",
+      "exec.tools",
+      "core.verify",
+      "core.finish"
+    ],
+    "clean_env": true
+  }
+}

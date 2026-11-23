@@ -1,0 +1,27 @@
+{
+  "extends": "exec-v0",
+  "name": "exec-v0-ctuplac",
+  "prompt": {
+    "sections": [
+      "core.identity",
+      "exec.tools",
+      "core.verify",
+      "core.finish"
+    ],
+    "clean_env": true,
+    "clean_env_placebo": true
+  },
+  "policy": {
+    "loop": {
+      "nudge_at": 3,
+      "stop_at": 6
+    },
+    "empty_turns_stop": 3,
+    "length_continuations": 3,
+    "tool_execution": "sequential",
+    "travel_check": true,
+    "travel_check_placebo": true,
+    "unmet_target": true,
+    "unmet_target_placebo": true
+  }
+}

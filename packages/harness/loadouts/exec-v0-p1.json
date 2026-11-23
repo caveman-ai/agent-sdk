@@ -1,0 +1,14 @@
+{
+  "extends": "exec-v0",
+  "name": "exec-v0-p1",
+  "policy": {
+    "loop": {
+      "nudge_at": 3,
+      "stop_at": 6
+    },
+    "empty_turns_stop": 3,
+    "length_continuations": 3,
+    "tool_execution": "sequential",
+    "evidence_gate": true
+  }
+}

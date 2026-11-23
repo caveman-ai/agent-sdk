@@ -1,0 +1,30 @@
+name: "Caveman Eval"
+description: "Run agent evals via @caveman/evals, compare against baseline, and post a sticky PR diff comment."
+inputs:
+  files:
+    description: "Space-separated list of *.eval.mjs / *.eval.js files to run"
+    required: true
+  api-key:
+    description: "Caveman project API key (CAVEMAN_API_KEY)"
+    required: false
+  api-url:
+    description: "Caveman API base URL"
+    required: false
+    default: "https://api.caveman.so"
+  fail-under:
+    description: "Minimum required mean score across scorers (0–1)"
+    required: false
+runs:
+  using: "composite"
+  steps:
+    - name: Run Caveman evals
+      shell: bash
+      env:
+        CAVEMAN_API_KEY: ${{ inputs.api-key }}
+        CAVEMAN_API_URL: ${{ inputs.api-url }}
+      run: |
+        ARGS=""
+        if [ -n "${{ inputs.fail-under }}" ]; then
+          ARGS="--fail-under ${{ inputs.fail-under }}"
+        fi
+        npx --yes @caveman/evals ${{ inputs.files }} $ARGS

@@ -1,0 +1,13 @@
+{
+  "extends": "compact-v0-plain",
+  "name": "compact-v0-plain-d2",
+  "depth": {
+    "escalate": {
+      "effort": "xhigh",
+      "on": [
+        "first_write",
+        "after_red"
+      ]
+    }
+  }
+}

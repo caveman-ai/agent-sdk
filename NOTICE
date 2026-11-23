@@ -1,0 +1,14 @@
+Caveman Agents (caveman-ai/agents)
+Copyright 2026 Caveman AI, Inc.
+
+Packages licensed under the Apache License, Version 2.0 (see LICENSE):
+  - @caveman-ai/agent
+  - @caveman-ai/harness
+  - @caveman-ai/react
+  - @caveman-ai/adapter-kit
+  - @caveman-ai/create-agent
+
+Packages licensed under the MIT License (see each package's LICENSE / package.json):
+  - @caveman-ai/protocol
+  - @caveman-ai/evals
+  - caveman-evals (python/caveman-evals)

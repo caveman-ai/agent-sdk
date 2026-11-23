@@ -1,0 +1,75 @@
+{
+  "name": "exec-v0",
+  "surface": "exec",
+  "prompt": {
+    "sections": [
+      "core.identity",
+      "exec.tools",
+      "core.verify",
+      "core.finish"
+    ]
+  },
+  "tools": {
+    "exec": {
+      "exposure": "eager",
+      "limits": {
+        "default_yield_ms": 30000,
+        "max_output_tokens": 10000,
+        "cell_timeout_s": 3600,
+        "mcp_types": true
+      }
+    },
+    "wait": {
+      "exposure": "eager",
+      "limits": {
+        "default_yield_ms": 10000,
+        "default_max_tokens": 10000
+      }
+    },
+    "exec_command": {
+      "exposure": "eager",
+      "limits": {
+        "default_yield_ms": 10000,
+        "max_yield_ms": 30000,
+        "hard_timeout_s": 3600
+      }
+    },
+    "write_stdin": {
+      "exposure": "eager",
+      "limits": {
+        "min_poll_ms": 5000,
+        "max_poll_ms": 300000
+      }
+    },
+    "apply_patch": {
+      "exposure": "eager"
+    },
+    "view_image": {
+      "exposure": "eager"
+    }
+  },
+  "limits": {
+    "output_cap_bytes": 51200,
+    "output_cap_lines": 2000,
+    "spill": true
+  },
+  "policy": {
+    "loop": {
+      "nudge_at": 3,
+      "stop_at": 6
+    },
+    "empty_turns_stop": 3,
+    "length_continuations": 3,
+    "tool_execution": "sequential"
+  },
+  "wire": {
+    "cache_retention": "short",
+    "max_retries": 3,
+    "mid_convo_effort": false,
+    "reasoning_context": "all_turns",
+    "reasoning_summary": "none"
+  },
+  "context": {
+    "env": "user"
+  }
+}

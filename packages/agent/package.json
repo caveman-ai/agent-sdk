@@ -1,0 +1,26 @@
+{
+  "name": "@caveman-ai/agent",
+  "version": "1.0.0",
+  "description": "Build, evaluate, and run efficient AI agents locally (in-process on Harness v4) or on Caveman Cloud.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/caveman-ai/agents.git",
+    "directory": "packages/agent"
+  },
+  "dependencies": {
+    "@caveman-ai/harness": "workspace:*",
+    "@caveman-ai/protocol": "workspace:*",
+    "@caveman-ai/sdk": "file:../../../cloud-sdk/packages/sdk-ts"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --no-warnings --test tests/*.test.ts"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "caveman-agent",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Open-source Caveman Agent SDK, Harness v4, Session Protocol, Evals, and React hooks.",
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@10.14.0",
+  "scripts": {
+    "build": "pnpm --filter @caveman-ai/protocol build && pnpm --filter @caveman-ai/harness build && pnpm --filter @caveman-ai/evals build",
+    "test": "pnpm --filter @caveman-ai/protocol test && pnpm --filter @caveman-ai/harness test && pnpm --filter @caveman-ai/agent test && pnpm --filter @caveman-ai/evals test"
+  }
+}

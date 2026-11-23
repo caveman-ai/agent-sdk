@@ -1,0 +1,75 @@
+{
+  "extends": "exec-v0",
+  "name": "v4-sol",
+  "tools": {
+    "exec": {
+      "exposure": "eager",
+      "limits": {
+        "default_yield_ms": 30000,
+        "max_output_tokens": 10000,
+        "cell_timeout_s": 3600,
+        "mcp_types": true,
+        "aliases": true,
+        "min_yield_ms": 30000
+      }
+    },
+    "wait": {
+      "exposure": "eager",
+      "limits": {
+        "default_yield_ms": 10000,
+        "default_max_tokens": 10000,
+        "until": true,
+        "min_yield_ms": 30000
+      }
+    },
+    "exec_command": {
+      "exposure": "eager",
+      "limits": {
+        "default_yield_ms": 10000,
+        "max_yield_ms": 30000,
+        "hard_timeout_s": 3600,
+        "min_yield_ms": 30000
+      }
+    },
+    "write_stdin": {
+      "exposure": "eager",
+      "limits": {
+        "min_poll_ms": 30000,
+        "max_poll_ms": 300000
+      }
+    },
+    "apply_patch": {
+      "exposure": "eager"
+    },
+    "view_image": {
+      "exposure": "eager"
+    }
+  },
+  "wire": {
+    "cache_retention": "short",
+    "max_retries": 3,
+    "mid_convo_effort": false,
+    "reasoning_context": "all_turns",
+    "reasoning_summary": "none",
+    "transport": "ws"
+  },
+  "policy": {
+    "loop": {
+      "nudge_at": 3,
+      "stop_at": 6
+    },
+    "empty_turns_stop": 3,
+    "length_continuations": 3,
+    "tool_execution": "sequential",
+    "travel_jit": true,
+    "unmet_target": true,
+    "discovery": {
+      "command": "{ echo 'environment:'; ( . /etc/os-release 2>/dev/null; printf 'os: %s\\n' \"${PRETTY_NAME:-unknown}\" ); printf 'cpus: %s; memory: %s; gpu: %s\\n' \"$(nproc 2>/dev/null || echo unknown)\" \"$(awk '/MemTotal/ { printf \"%.0f GiB\", $2 / 1048576 }' /proc/meminfo 2>/dev/null)\" \"$(nvidia-smi -L 2>/dev/null | head -n 2 | tr '\\n' ' ' | grep . || echo none)\"; printf 'on PATH:'; for t in python3 pip uv conda node npm pnpm bun deno go cargo rustc java javac mvn gradle gcc g++ clang make cmake ninja R Rscript julia ruby php dotnet perl sqlite3 psql docker git curl wget jq freecadcmd blender ffmpeg; do command -v \"$t\" >/dev/null 2>&1 && printf ' %s' \"$t\"; done; echo; python3 -c 'import importlib.metadata as m, sys; n = sorted({(d.metadata[\"Name\"] or \"\").lower() for d in m.distributions()} - {\"\"}); print(\"python %s, %d packages: %s\" % (sys.version.split()[0], len(n), \" \".join(n[:200]) + (\" ...\" if len(n) > 200 else \"\")))' 2>/dev/null; printf 'outside the workdir:'; ls -d /root/* /data /data/* /workspace /workspace/* /mnt/* /srv/* /home/* /opt/* 2>/dev/null | grep -v -E '^/opt/(conda|miniconda3|venv|pip|tb4)$|^/home/user$' | LC_ALL=C sort | head -n 30 | tr '\\n' ' '; echo; printf 'internet: %s\\n' \"$(curl -sS -m 4 -o /dev/null -w '%{http_code}' https://pypi.org/simple/ 2>/dev/null | grep -q '^[23]' && echo reachable || echo 'not reachable')\"; echo; echo 'files in the workdir that may show how this task is checked (tests, validators, examples, expected outputs, docs, task scripts):'; } 2>/dev/null; { find . -maxdepth 3 \\( -name .git -o -name node_modules -o -name .venv -o -name venv -o -name __pycache__ -o -name .tox -o -name .mypy_cache -o -name .pytest_cache -o -name site-packages -o -name target -o -name .cache \\) -prune -o -type d \\( -iname 'test' -o -iname 'tests' -o -iname 'testing' -o -iname 'spec' -o -iname 'specs' -o -iname '__tests__' -o -iname 'example*' -o -iname 'sample*' -o -iname 'expected*' -o -iname 'fixtures' -o -iname 'valid*' -o -iname 'verif*' -o -iname 'grade*' -o -iname 'grading' -o -iname 'check*' -o -iname 'eval*' -o -iname 'scripts' \\) -exec printf '%s/\\n' {} + ; find . -maxdepth 3 \\( -name .git -o -name node_modules -o -name .venv -o -name venv -o -name __pycache__ -o -name .tox -o -name .mypy_cache -o -name .pytest_cache -o -name site-packages -o -name target -o -name .cache \\) -prune -o -type f \\( -iname 'test_*' -o -iname '*_test.*' -o -iname '*.test.*' -o -iname '*_spec.*' -o -iname '*.spec.*' -o -iname 'verif*' -o -iname 'valid*' -o -iname 'grade*' -o -iname 'check*' -o -iname 'example*' -o -iname 'sample*' -o -iname 'expected*' -o -iname 'README*' -o -iname 'AGENTS.md' -o -iname 'CLAUDE.md' -o -iname 'CONTRIBUTING*' -o -name 'Makefile' -o -name 'justfile' -o -name 'tox.ini' -o -name 'pytest.ini' -o -name 'noxfile.py' -o -name 'pyproject.toml' -o -name 'package.json' -o -name 'Cargo.toml' -o -name 'go.mod' -o -name '*.sh' -o -ipath '*/test/*' -o -ipath '*/tests/*' -o -ipath '*/example*/*' -o -ipath '*/sample*/*' -o -ipath '*/expected*/*' -o -ipath '*/spec/*' -o -ipath '*/__tests__/*' -o -ipath '*/scripts/*' \\) -print ; } 2>/dev/null | sed 's|^\\./||' | awk -F/ '{ d = NF; if ($0 ~ /\\/$/) d--; print d \"\\t\" $0 }' | LC_ALL=C sort -t \"$(printf '\\t')\" -k1,1n -k2,2 -u | cut -f2- | head -n 1000",
+      "max_bytes": 5000,
+      "text": "<orientation>\nProbed by the harness before your first turn.\n{listing}\n</orientation>"
+    }
+  },
+  "mcp": {
+    "exposure": "program"
+  }
+}

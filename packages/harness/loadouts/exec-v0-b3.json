@@ -1,0 +1,19 @@
+{
+  "extends": "exec-v0",
+  "name": "exec-v0-b3",
+  "policy": {
+    "loop": {
+      "nudge_at": 3,
+      "stop_at": 6
+    },
+    "empty_turns_stop": 3,
+    "length_continuations": 3,
+    "tool_execution": "sequential",
+    "shell_hygiene": true,
+    "watch_stop": true,
+    "self_kill_guard": true
+  },
+  "env": {
+    "toolbox_path": true
+  }
+}

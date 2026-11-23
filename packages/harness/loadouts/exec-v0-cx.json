@@ -1,0 +1,11 @@
+{
+  "extends": "exec-v0",
+  "name": "exec-v0-cx",
+  "prompt": {
+    "sections": [
+      "codex.base",
+      "codex.permissions",
+      "exec.tools"
+    ]
+  }
+}

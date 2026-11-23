@@ -1,0 +1,7 @@
+{
+  "extends": "compact-v0-plain",
+  "name": "compact-v0-plain-cm",
+  "trace": {
+    "cache_monitor": true
+  }
+}

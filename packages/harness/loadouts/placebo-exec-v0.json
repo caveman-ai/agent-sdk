@@ -1,0 +1,19 @@
+{
+  "extends": "exec-v0",
+  "name": "placebo-exec-v0",
+  "prompt": {
+    "sections": [
+      "core.identity",
+      "exec.tools",
+      "core.verify",
+      "core.finish"
+    ],
+    "addenda": [
+      {
+        "id": "evidence_gate",
+        "text": "Before you finish: nothing has run since your last change to the files (no test, build or run of the result). Run the check that proves the task's stated requirement is met, the requirement itself rather than a proxy such as \"it compiles\" or \"the script runs\". Fix what fails, then finish."
+      }
+    ],
+    "placebo": true
+  }
+}

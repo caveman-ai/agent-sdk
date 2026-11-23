@@ -1,0 +1,13 @@
+{
+  "extends": "exec-v0",
+  "name": "exec-v0-d2",
+  "depth": {
+    "escalate": {
+      "effort": "xhigh",
+      "on": [
+        "first_write",
+        "after_red"
+      ]
+    }
+  }
+}

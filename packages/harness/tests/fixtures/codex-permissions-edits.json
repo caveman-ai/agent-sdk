@@ -1,0 +1,10 @@
+{
+ "source": {
+  "cli_version": "0.163.0",
+  "model": "gpt-6.1-sol",
+  "field": "first developer message: the input_text item that starts <permissions instructions> (content_item_kinds permissions.instructions)",
+  "chars": 362,
+  "sha256": "681b5ba580483b28751dbafd95e30f80ebb6ab9cc2d3ca4462f0f187d0784070"
+ },
+ "edits": []
+}

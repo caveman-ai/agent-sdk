@@ -1,0 +1,71 @@
+{
+  "product": "agents",
+  "label": "Caveman Agents",
+  "repo": "caveman-ai/agents",
+  "visibility": "public-ready",
+  "groups": [
+    {
+      "title": "Getting Started",
+      "items": [
+        {
+          "slug": "agent/overview",
+          "title": "Overview",
+          "file": "index.mdx",
+          "blurb": "Build efficient AI agents locally on Harness v4 or run them on Caveman Cloud."
+        },
+        {
+          "slug": "agent/quickstart",
+          "title": "Quickstart",
+          "file": "quickstart.mdx",
+          "blurb": "Install @caveman-ai/agent and run a tool-using agent in-process in five minutes."
+        }
+      ]
+    },
+    {
+      "title": "Core Concepts",
+      "items": [
+        {
+          "slug": "agent/harness",
+          "title": "Harness v4",
+          "file": "harness.mdx",
+          "blurb": "Loadouts, cache-stable prefixes, tools, compaction, and environments."
+        },
+        {
+          "slug": "agent/agent-md",
+          "title": "AGENT.md & Builds",
+          "file": "agent-md.mdx",
+          "blurb": "Author agents in Markdown or TypeScript and compile deterministic agent.json builds."
+        },
+        {
+          "slug": "agent/sessions",
+          "title": "Sessions & Approvals",
+          "file": "sessions.mdx",
+          "blurb": "Multi-turn conversations, streaming events, custom tools, and durable parking."
+        },
+        {
+          "slug": "agent/sandboxes",
+          "title": "Sandboxes",
+          "file": "sandboxes.mdx",
+          "blurb": "Run agent commands in LocalEnv, DockerEnv, or Caveman Cloud SandboxEnv."
+        }
+      ]
+    },
+    {
+      "title": "Quality & Contracts",
+      "items": [
+        {
+          "slug": "agent/evals",
+          "title": "Evals & Graders",
+          "file": "evals.mdx",
+          "blurb": "30 fail-closed graders for deterministic checks, tool assertions, and LLM judges."
+        },
+        {
+          "slug": "agent/protocol",
+          "title": "Session Protocol",
+          "file": "protocol.mdx",
+          "blurb": "NDJSON wire contract for SessionEvent, UserEvent, and exit codes 0 through 6."
+        }
+      ]
+    }
+  ]
+}

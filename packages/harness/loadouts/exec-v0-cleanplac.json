@@ -1,0 +1,14 @@
+{
+  "extends": "exec-v0",
+  "name": "exec-v0-cleanplac",
+  "prompt": {
+    "sections": [
+      "core.identity",
+      "exec.tools",
+      "core.verify",
+      "core.finish"
+    ],
+    "clean_env": true,
+    "clean_env_placebo": true
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "name": "@caveman-ai/react",
+  "version": "0.1.0",
+  "description": "React hook for streaming Caveman agent runs over Server-Sent Events.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JuliusBrussee/agent-sdk.git",
+    "directory": "packages/react"
+  },
+  "homepage": "https://caveman.so/products/caveman-agent",
+  "bugs": {
+    "url": "https://github.com/JuliusBrussee/agent-sdk/issues"
+  },
+  "type": "module",
+  "keywords": [
+    "agents",
+    "ai",
+    "react",
+    "hooks",
+    "streaming",
+    "sse"
+  ],
+  "main": "src/index.js",
+  "types": "src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "import": "./src/index.js"
+    }
+  },
+  "files": [
+    "LICENSE",
+    "README.md",
+    "src"
+  ],
+  "scripts": {
+    "test": "node --test tests/*.test.mjs"
+  },
+  "peerDependencies": {
+    "react": ">=18.0.0"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

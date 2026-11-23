@@ -1,0 +1,14 @@
+{
+  "extends": "exec-v0",
+  "name": "exec-v0-p6plac",
+  "prompt": {
+    "sections": [
+      "core.identity",
+      "exec.tools",
+      "core.verify",
+      "core.finish"
+    ],
+    "time_budget": true,
+    "time_budget_placebo": true
+  }
+}

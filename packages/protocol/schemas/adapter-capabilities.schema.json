@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://caveman.so/schemas/adapter-capabilities.schema.json",
+  "title": "Caveman Compiler Adapter Capability Manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "target",
+    "adapter_contract_sha256",
+    "supported_semantics",
+    "required_semantics"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "target": {
+      "$ref": "#/$defs/target"
+    },
+    "adapter_contract_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "supported_semantics": {
+      "$ref": "#/$defs/semanticArray"
+    },
+    "required_semantics": {
+      "$ref": "#/$defs/semanticArray"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "adapter_contract_sha256": {
+            "const": "b980643d116ce73805bbe0b4256a2918514efe5ccfe83a21abb99b88bbcc2313"
+          }
+        },
+        "required": ["adapter_contract_sha256"]
+      },
+      "then": {
+        "properties": {
+          "target": {
+            "const": "pi"
+          },
+          "supported_semantics": {
+            "const": [
+              "abort_signal",
+              "context_ir_binding",
+              "model_binding",
+              "output_budget_binding",
+              "reasoning_binding",
+              "recovery_evidence",
+              "single_agent",
+              "transform_evidence"
+            ]
+          },
+          "required_semantics": {
+            "allOf": [
+              { "$ref": "#/$defs/semanticArray" },
+              { "type": "array", "contains": { "const": "abort_signal" }, "minContains": 1, "maxContains": 1 },
+              { "type": "array", "contains": { "const": "single_agent" }, "minContains": 1, "maxContains": 1 }
+            ]
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "supported_semantics": {
+            "const": []
+          },
+          "required_semantics": {
+            "const": []
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "target": {
+      "enum": ["pi", "claude", "vercel-ai-sdk", "eve", "mastra"]
+    },
+    "semanticArray": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "abort_signal",
+          "context_ir_binding",
+          "model_binding",
+          "output_budget_binding",
+          "reasoning_binding",
+          "recovery_evidence",
+          "single_agent",
+          "transform_evidence"
+        ]
+      }
+    }
+  }
+}

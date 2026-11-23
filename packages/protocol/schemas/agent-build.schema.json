@@ -1,0 +1,396 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://caveman.so/schemas/agent-build.schema.json",
+  "title": "Caveman agent build v1",
+  "description": "agent.json, the manifest at the root of an agent build: the folder a tool writes and Caveman Cloud stores as one agent version. A build always holds agent.json and AGENT.md (the agent file: YAML frontmatter and instructions). agent.json lists every other file with its SHA-256 and size, so the build's digest is the SHA-256 of agent.json. Files are UTF-8 text. A secret's value is never in a build: the build names it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "name", "loop", "sandbox", "files"],
+  "properties": {
+    "schema": { "const": "caveman.agent.build.v1" },
+    "name": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$",
+      "description": "The agent's name. AGENT.md's frontmatter name, when it has one, is the same."
+    },
+    "description": { "type": "string", "maxLength": 500 },
+    "loop": { "$ref": "#/$defs/loop" },
+    "model": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "A model id or a class (fast, base, frontier, auto). Absent: the deployment or the session names it."
+    },
+    "sandbox": { "$ref": "#/$defs/sandbox" },
+    "tools": { "type": "array", "maxItems": 256, "items": { "$ref": "#/$defs/tool" } },
+    "skills": { "type": "array", "maxItems": 128, "items": { "$ref": "#/$defs/skill" } },
+    "subagents": { "type": "array", "maxItems": 64, "items": { "$ref": "#/$defs/subagent" } },
+    "evals": { "type": "array", "maxItems": 256, "items": { "$ref": "#/$defs/evalFile" } },
+    "secrets": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,63}$" },
+      "description": "Names of the secrets the agent's tools read. Values come from the deployment's vault, never from the build."
+    },
+    "files": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": { "$ref": "#/$defs/file" },
+      "description": "Every file of the build except agent.json itself, AGENT.md included, sorted by path. A build with a file this list lacks, or lacking a file it names, is refused."
+    },
+    "built_by": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "version": { "type": "string", "minLength": 1, "maxLength": 50 }
+      },
+      "description": "The tool that wrote the build, for example cvm."
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "framework": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" }
+      },
+      "description": "Where the build came from: the authoring framework and the repository commit, when known."
+    },
+    "connectors": {
+      "type": "object",
+      "maxProperties": 32,
+      "propertyNames": { "$ref": "#/$defs/connectorName" },
+      "additionalProperties": { "$ref": "#/$defs/connector" },
+      "description": "The organization's connectors the agent uses, by the name agents write. An empty object for a connector is every accepted tool of it that reads or writes. A build names connectors: it holds no address and no secret. A deploy resolves each name among the organization's connectors and refuses what this Caveman Cloud does not serve yet."
+    },
+    "drives": {
+      "type": "object",
+      "maxProperties": 8,
+      "propertyNames": { "$ref": "#/$defs/mountPath" },
+      "additionalProperties": {
+        "oneOf": [
+          { "$ref": "#/$defs/driveName" },
+          { "$ref": "#/$defs/mount" }
+        ]
+      },
+      "description": "Folders of the organization's drives the agent works in, by the path it sees them at: a drive's name for the whole drive read-only, or what to mount and how. A deploy creates a drive the organization does not have, and needs its deployer to hold every right the mounts ask for."
+    },
+    "budgets": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tools": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 100000,
+          "description": "The most tokens the tool card of the agent's connectors may take; a deploy whose card is larger fails. Absent: 6000."
+        }
+      }
+    },
+    "output_schema": {
+      "type": "object",
+      "description": "Optional JSON Schema object that the agent's final response must conform to, turning the agent into a typed composable unit."
+    },
+    "schedules": {
+      "type": "object",
+      "maxProperties": 32,
+      "propertyNames": { "$ref": "#/$defs/driveName" },
+      "additionalProperties": { "$ref": "#/$defs/schedule" },
+      "description": "Cron schedules that fire sessions on this deployment."
+    },
+    "channels": {
+      "type": "object",
+      "maxProperties": 16,
+      "propertyNames": { "$ref": "#/$defs/channelProvider" },
+      "additionalProperties": { "$ref": "#/$defs/channel" },
+      "description": "Inbound and outbound communication channels (Slack, GitHub, Linear, Jira, webhook, web, Discord, Teams) bound to this deployment."
+    }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^(?!/)(?!.*//)(?!.*/$)(?!(?:.*/)?\\.{1,2}(?:/|$))[^\\\\\\u0000-\\u001f\\u007f]+$",
+      "description": "Relative to the build's root, with / between segments: no leading or trailing /, no empty, . or .. segment, no backslash and no control character."
+    },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "bytes"],
+      "properties": {
+        "path": { "$ref": "#/$defs/path" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "bytes": { "type": "integer", "minimum": 0, "maximum": 2097152 }
+      }
+    },
+    "loop": {
+      "description": "Who runs the agent's loop. managed: Caveman's harness runs the build. container: the build's own image runs its loop and answers POST /invocations and GET /ping.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": {
+            "kind": { "const": "managed" },
+            "engine": { "enum": ["caveman", "claude-agent", "codex"] }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "image"],
+          "properties": {
+            "kind": { "const": "container" },
+            "image": {
+              "type": "string",
+              "maxLength": 500,
+              "pattern": "^[a-z0-9][a-z0-9._/:-]*@sha256:[0-9a-f]{64}$",
+              "description": "An OCI image pinned by digest."
+            },
+            "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+            "protocol": { "const": "invocations.v1" }
+          }
+        }
+      ]
+    },
+    "sandbox": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tier"],
+      "properties": {
+        "tier": {
+          "enum": ["none", "code", "linux"],
+          "description": "The most the agent may use. none: no local execution, only remote and caller-answered tools. code: an interpreter for bundled tools and model-written snippets, with no filesystem. linux: a sandbox with a shell. It is provisioned on the first tool call that needs it."
+        },
+        "size": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]?cpu-[1-9][0-9]{0,3}gb$",
+          "description": "linux only: the size of the session's computer, <cores>cpu-<gigabytes>gb, within what the installation offers. Absent: the installation's default size."
+        },
+        "network": {
+          "enum": ["none", "internet"],
+          "description": "linux only: none gives the session's computer no network device (commands and files still reach it from outside); internet gives it the installation's egress. Absent: the installation's default."
+        },
+        "keep": {
+          "enum": ["session", "subject"],
+          "description": "linux only: whose the computer is past one session. session (or absent): the session's own, made on its first tool call and deleted when it ends. subject: a session started through a deployment uses the one computer the deployment keeps for its subject (the agent's laptop), reused by that subject's sessions one at a time and kept between them, its files with it; it is made by the subject's first session, whose service account or person is its maker (only they enter it from outside), and billed to the deployment's organization's wallet while kept, whoever made it. Archiving the deployment deletes it (one a running session holds, at that session's end). A session started outside a deployment has its own."
+        }
+      }
+    },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "kind"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$" },
+        "kind": {
+          "enum": ["builtin", "caller", "code"],
+          "description": "builtin: one of the harness's own tools, by name. caller: declared here and answered by whoever drives the session (user.tool_result). code: a module of this build."
+        },
+        "description": { "type": "string", "minLength": 1, "maxLength": 4000 },
+        "input_schema": { "type": "object", "description": "A JSON Schema for the tool's input." },
+        "effect": {
+          "enum": ["read", "write", "idempotent", "external"],
+          "description": "What repeating the call does, which decides what a resumed or forked session may do with a call that has no recorded result. read and idempotent run again. write runs again only in a sandbox restored to the checkpoint. external is never repeated."
+        },
+        "entry": { "$ref": "#/$defs/path" },
+        "runtime": { "enum": ["js", "python"] },
+        "approve": {
+          "description": "Whether calls to this code tool wait for human approval: true always waits, false never waits, after_untrusted waits only when the session is tainted.",
+          "oneOf": [
+            { "type": "boolean" },
+            { "const": "after_untrusted" }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "code" } }, "required": ["kind"] },
+          "then": {
+            "properties": { "description": {}, "input_schema": {}, "effect": {}, "entry": {}, "runtime": {} },
+            "required": ["description", "input_schema", "effect", "entry", "runtime"]
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "caller" } }, "required": ["kind"] },
+          "then": {
+            "properties": { "description": {}, "input_schema": {} },
+            "required": ["description", "input_schema"]
+          }
+        }
+      ]
+    },
+    "skill": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "path"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,63}$" },
+        "path": { "$ref": "#/$defs/path", "description": "The skill's SKILL.md." }
+      }
+    },
+    "subagent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$" },
+        "path": { "$ref": "#/$defs/path", "description": "The subagent's AGENT.md, under agents/<name>/." },
+        "deployment": { "$ref": "#/$defs/driveName", "description": "Another live deployment in the same organization to delegate to." },
+        "output_schema": { "type": "object", "description": "Optional JSON Schema for structured subagent return values." }
+      },
+      "oneOf": [
+        { "properties": { "path": {} }, "required": ["path"] },
+        { "properties": { "deployment": {} }, "required": ["deployment"] }
+      ]
+    },
+    "evalFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "path"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "path": { "$ref": "#/$defs/path", "description": "An eval file (eval-file.schema.json)." }
+      }
+    },
+    "mountPath": {
+      "type": "string",
+      "pattern": "^/[a-z0-9][a-z0-9_-]{0,62}$",
+      "description": "Where the agent sees a mount: / and one name of lower-case letters, digits, '_' or '-', such as /kb."
+    },
+    "driveName": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+      "description": "A drive's name: lower-case letters, digits and '-', a letter or digit first."
+    },
+    "mount": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["drive"],
+      "properties": {
+        "drive": { "$ref": "#/$defs/driveName" },
+        "folder": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^(?:[^{}\\u0000-\\u001f\\u007f]|\\{[a-z][a-z0-9_]{0,31}\\})+$",
+          "description": "A folder inside the drive, from its root (a leading / is optional). It may hold {name} placeholders, each filled from the session's subject when it starts. Absent: the whole drive."
+        },
+        "write": { "type": "boolean", "description": "The agent may write here. Absent or false: read-only." },
+        "review": { "type": "boolean", "description": "A person approves what a session writes here before others see it." },
+        "trusted": { "type": "boolean", "description": "Serve only content no untrusted session wrote: for each file, its newest version written by a person, or by an agent that had read nothing from outside." },
+        "description": { "type": "string", "maxLength": 200, "description": "One line the agent is shown about this mount, in place of the one Cloud writes." }
+      }
+    },
+    "connectorName": {
+      "type": "string",
+      "maxLength": 32,
+      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
+      "description": "A connector's name: lower-case letters, digits and single hyphens, a letter first."
+    },
+    "connectorTool": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[^\\u0000-\\u001f\\u007f]*$",
+      "description": "A tool's name as the connector's server gives it."
+    },
+    "actsAs": { "enum": ["shared", "user", "end_user"] },
+    "connector": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tools": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 200,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/connectorTool" },
+          "description": "The tools the agent uses, in the order its card lists them. Absent: every accepted tool that reads or writes; a tool with outside effects is used only when named."
+        },
+        "as": {
+          "description": "Whose sign-in acts: shared (the connector's own), user (the person who starts the session) or end_user (the customer's user it serves), or a split by effect.",
+          "oneOf": [
+            { "$ref": "#/$defs/actsAs" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["read", "write"],
+              "properties": { "read": { "$ref": "#/$defs/actsAs" }, "write": { "$ref": "#/$defs/actsAs" } }
+            }
+          ]
+        },
+        "args": {
+          "type": "object",
+          "maxProperties": 16,
+          "propertyNames": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[^\\u0000-\\u001f\\u007f]*$" },
+          "additionalProperties": {
+            "oneOf": [{ "type": "string", "maxLength": 500 }, { "type": "number" }, { "type": "boolean" }]
+          },
+          "description": "Arguments the gate sets on every call of the listed tools, which the model cannot change. A listed tool that does not take one of them is refused at deploy unless it is under unpinned."
+        },
+        "approve": {
+          "type": "array",
+          "maxItems": 200,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/connectorTool" },
+          "description": "Tools, of tools, whose every call waits for a person."
+        },
+        "unpinned": {
+          "type": "array",
+          "maxItems": 200,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/connectorTool" },
+          "description": "Tools, of tools, that args does not apply to."
+        },
+        "after_untrusted": {
+          "description": "What happens when a tainted session calls write/external tools on this connector: approve (default for external), allow, or deny.",
+          "enum": ["allow", "approve", "deny"]
+        }
+      }
+    },
+    "schedule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cron", "task"],
+      "properties": {
+        "cron": { "type": "string", "minLength": 5, "maxLength": 120 },
+        "timezone": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "task": { "type": "string", "minLength": 1, "maxLength": 16000 },
+        "concurrency": { "enum": ["skip", "queue", "supersede"] },
+        "budget_usd": { "type": "number", "exclusiveMinimum": 0, "maximum": 10000 },
+        "enabled": { "type": "boolean" }
+      }
+    },
+    "channelProvider": {
+      "enum": ["slack", "github", "linear", "jira", "webhook", "web", "discord", "teams"]
+    },
+    "channel": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "events": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 80 }
+        },
+        "channels": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 120 }
+        },
+        "mention": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "thread_mode": { "enum": ["session", "stateless"] },
+        "approvals": { "enum": ["interactive", "manual"] },
+        "budget_usd": { "type": "number", "exclusiveMinimum": 0, "maximum": 10000 }
+      }
+    }
+  }
+}

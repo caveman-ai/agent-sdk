@@ -1,0 +1,14 @@
+{
+  "extends": "exec-v0",
+  "name": "exec-v0-reqplac",
+  "prompt": {
+    "sections": [
+      "core.identity",
+      "exec.tools",
+      "core.verify",
+      "core.finish"
+    ],
+    "requirements": true,
+    "requirements_placebo": true
+  }
+}

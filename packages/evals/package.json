@@ -1,0 +1,54 @@
+{
+  "name": "@caveman-ai/evals",
+  "version": "1.0.0",
+  "description": "Fail-closed eval graders for LLM outputs: deterministic checks, tool-call assertions, text metrics and LLM judges, with one grade() call.",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "caveman-eval": "./bin/caveman-eval.mjs"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/caveman-ai/agents.git",
+    "directory": "packages/evals"
+  },
+  "homepage": "https://caveman.so",
+  "keywords": [
+    "ai",
+    "evals",
+    "graders",
+    "llm",
+    "llm-judge"
+  ],
+  "engines": {
+    "node": ">=22.13"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepack": "npm run build",
+    "lint": "tsc --noEmit",
+    "test": "tsc && tsc --project tsconfig.test.json && node --test tests/grade.runtime.mjs tests/sdk.runtime.mjs tests/localization_f1.parity.runtime.mjs tests/metric-builtins.parity.runtime.mjs tests/judge-builtins.parity.runtime.mjs tests/grader-registry.parity.runtime.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "25.9.8",
+    "typescript": "5.9.3"
+  }
+}

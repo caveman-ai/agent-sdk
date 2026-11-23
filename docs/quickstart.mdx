@@ -1,0 +1,75 @@
+Install `@caveman-ai/agent` and `@caveman-ai/harness` to run a tool-calling agent in-process with no external binary.
+
+## 1. Install
+
+```bash
+npm install @caveman-ai/agent @caveman-ai/harness
+```
+
+## 2. Define a tool and an agent
+
+`tool()` accepts a plain JSON Schema object or any Standard Schema library (Zod, Valibot, ArkType). Validation errors and thrown exceptions return to the model as tool errors so the agent can recover.
+
+```ts
+import { defineAgent, tool, runInProcess } from "@caveman-ai/agent";
+
+const lookupInvoice = tool(
+  "lookup_invoice",
+  "Look up an invoice by ID",
+  {
+    type: "object",
+    properties: { id: { type: "string" } },
+    required: ["id"],
+  },
+  async ({ id }: { id: string }) => ({ id, duplicateCharge: true, refundUsd: 29 }),
+);
+
+const billing = defineAgent({
+  name: "billing",
+  instructions: "Check the invoice and report whether a refund is owed.",
+  computer: "none",
+  tools: [lookupInvoice],
+});
+```
+
+## 3. Run in-process on Harness v4
+
+```ts
+const result = await runInProcess({
+  agent: billing,
+  task: "Customer 4411 says they were charged twice.",
+  model,
+  stream,
+  onEvent: (event) => console.log(event.seq, event.type),
+});
+
+console.log(result.text);
+console.log(result.stop_reason, result.usage);
+```
+
+## 4. Switch to Caveman Cloud
+
+Pass a `code:run` API key to run the same agent definition on Caveman Cloud:
+
+```ts
+import { Caveman } from "@caveman-ai/agent";
+
+const cave = new Caveman({ apiKey: process.env.CAVEMAN_API_KEY });
+const { text, usage } = await cave.run({
+  agent: billing,
+  task: "Customer 4411 says they were charged twice.",
+  model: "fast",
+  budget: { usd: 1 },
+});
+```
+
+## Verify
+
+Compile your agent definition to check its deterministic manifest and SHA-256 digest before deploying:
+
+```ts
+import { compileAgentDefinition } from "@caveman-ai/agent";
+
+const build = compileAgentDefinition(billing);
+console.log(build.digest, build.manifest.computer, build.manifest.files);
+```

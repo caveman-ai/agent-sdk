@@ -1,0 +1,327 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://caveman.so/schemas/workload-profile.schema.json",
+  "title": "Caveman Workload Profile v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "profile_sha256", "partitions", "tool_effects"],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "profile_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "partitions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "development", "holdout"],
+      "properties": {
+        "profile": {
+          "$ref": "#/$defs/profilePartition"
+        },
+        "development": {
+          "$ref": "#/$defs/developmentPartition"
+        },
+        "holdout": {
+          "$ref": "#/$defs/holdoutPartition"
+        }
+      }
+    },
+    "tool_effects": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/toolEffect"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "partitions": {
+            "type": "object",
+            "properties": {
+              "development": {
+                "type": "object",
+                "properties": {
+                  "trajectory_count": { "const": 0 }
+                },
+                "required": ["trajectory_count"]
+              }
+            },
+            "required": ["development"]
+          }
+        },
+        "required": ["partitions"]
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "partitions": {
+            "type": "object",
+            "properties": {
+              "development": { "$ref": "#/$defs/pendingPartition" },
+              "holdout": { "$ref": "#/$defs/pendingPartition" }
+            }
+          }
+        }
+      },
+      "else": {
+        "type": "object",
+        "properties": {
+          "partitions": {
+            "type": "object",
+            "properties": {
+              "development": { "$ref": "#/$defs/materializedPartition" },
+              "holdout": { "$ref": "#/$defs/materializedPartition" }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "nonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "toolEffect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tool_sha256", "effect", "calls", "errors"],
+      "properties": {
+        "tool_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "effect": {
+          "enum": ["read", "idempotent", "write", "external"]
+        },
+        "calls": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "errors": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        }
+      }
+    },
+    "partition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "split",
+        "split_sha256",
+        "trajectory_count",
+        "case_count",
+        "model_calls",
+        "provider_visible_tokens",
+        "catalog_cost_usd",
+        "provider_reported_count",
+        "usage_incomplete_count",
+        "priced_count",
+        "unpriced_count",
+        "error_count",
+        "tool_effects",
+        "trajectories"
+      ],
+      "properties": {
+        "split": {
+          "enum": ["profile", "development", "holdout"]
+        },
+        "split_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "trajectory_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "case_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "model_calls": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "provider_visible_tokens": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "catalog_cost_usd": {
+          "type": "number",
+          "minimum": 0
+        },
+        "provider_reported_count": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "usage_incomplete_count": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "priced_count": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "unpriced_count": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "error_count": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "tool_effects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/toolEffect"
+          }
+        },
+        "trajectories": {
+          "type": "array",
+          "minItems": 0,
+          "items": {
+            "$ref": "https://caveman.so/schemas/agent-trajectory.schema.json"
+          }
+        }
+      }
+    },
+    "pendingPartition": {
+      "type": "object",
+      "properties": {
+        "trajectory_count": { "const": 0 },
+        "case_count": { "const": 0 },
+        "model_calls": { "const": 0 },
+        "provider_visible_tokens": { "const": 0 },
+        "catalog_cost_usd": { "const": 0 },
+        "provider_reported_count": { "const": 0 },
+        "usage_incomplete_count": { "const": 0 },
+        "priced_count": { "const": 0 },
+        "unpriced_count": { "const": 0 },
+        "error_count": { "const": 0 },
+        "tool_effects": { "type": "array", "maxItems": 0 },
+        "trajectories": { "type": "array", "maxItems": 0 }
+      },
+      "required": [
+        "trajectory_count", "case_count", "model_calls", "provider_visible_tokens",
+        "catalog_cost_usd", "provider_reported_count", "usage_incomplete_count",
+        "priced_count", "unpriced_count", "error_count", "tool_effects", "trajectories"
+      ]
+    },
+    "materializedPartition": {
+      "type": "object",
+      "properties": {
+        "trajectory_count": { "type": "integer", "minimum": 1 },
+        "case_count": { "type": "integer", "minimum": 1 },
+        "trajectories": { "type": "array", "minItems": 1 }
+      },
+      "required": ["trajectory_count", "case_count", "trajectories"]
+    },
+    "profilePartition": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/partition"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "split": {
+              "const": "profile"
+            },
+            "trajectory_count": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "case_count": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "trajectories": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "allOf": [
+                  {
+                    "$ref": "https://caveman.so/schemas/agent-trajectory.schema.json"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "split": {
+                        "const": "profile"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "developmentPartition": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/partition"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "split": {
+              "const": "development"
+            },
+            "trajectories": {
+              "type": "array",
+              "items": {
+                "allOf": [
+                  {
+                    "$ref": "https://caveman.so/schemas/agent-trajectory.schema.json"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "split": {
+                        "const": "development"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "holdoutPartition": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/partition"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "split": {
+              "const": "holdout"
+            },
+            "trajectories": {
+              "type": "array",
+              "items": {
+                "allOf": [
+                  {
+                    "$ref": "https://caveman.so/schemas/agent-trajectory.schema.json"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "split": {
+                        "const": "holdout"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

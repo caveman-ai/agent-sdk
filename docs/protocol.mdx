@@ -1,0 +1,33 @@
+`@caveman-ai/protocol` defines the public wire contract shared by `@caveman-ai/agent`, `@caveman-ai/harness`, Caveman Code, and Caveman Cloud.
+
+## Session events (output)
+
+Events stream as newline-delimited JSON objects with monotonically increasing `seq` numbers:
+
+| `type` | Meaning |
+|---|---|
+| `session.status` | Lifecycle transition (`starting`, `running`, `requires_action`, `idle`, `terminated`) plus `stop_reason` |
+| `user.message` | Input message accepted by the session |
+| `agent.message` | Assistant text output |
+| `agent.thinking` | Reasoning stream |
+| `agent.tool_use` | Tool invocation with `id`, `name`, `input` |
+| `agent.tool_result` | Tool result with `tool_use_id`, `is_error`, `output` |
+| `requires_action` | Pending `ToolAsk`, `ApprovalAsk`, or `QuestionAsk` |
+| `session.usage` | Cumulative `input_tokens`, `output_tokens`, `cache_read_tokens`, `cost_usd` |
+| `session.error` | Structured failure with stable `code` and `message` |
+
+## User events (input)
+
+Callers send `user.message`, `user.interrupt`, `user.approval`, `user.answer`, and `user.tool_result` into a live session.
+
+## Headless harness exit codes
+
+| Code | Constant | Meaning |
+|---|---|---|
+| `0` | `ENDED` | Turn or session finished cleanly |
+| `1` | `ERROR` | Unhandled execution error |
+| `2` | `USAGE` | Invalid CLI flags or agent file |
+| `3` | `BUDGET_REACHED` | Hard USD or token budget reached |
+| `4` | `TIME_LIMIT` | Wall-clock deadline reached |
+| `5` | `PARKED_WAITING` | Durable zero-compute park waiting on approval, tool, or sleep |
+| `6` | `PARKED_IDLE` | Durable zero-compute park idle between conversational turns |

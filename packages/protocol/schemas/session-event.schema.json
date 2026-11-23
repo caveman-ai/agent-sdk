@@ -1,0 +1,280 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://caveman.so/schemas/session-event.schema.json",
+  "title": "Caveman session event v1",
+  "description": "One event of a session's public log: what GET /api/v1/code/sessions/{id}/events returns and what the process running the session posts. seq orders a session's events and makes a post idempotent. New types may appear: a reader ignores a type it does not know, and data may carry fields this schema does not name.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["seq", "type", "created_at", "data"],
+  "properties": {
+    "seq": { "type": "integer", "minimum": 1 },
+    "type": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z_]*(\\.[a-z][a-z_]*)*$"
+    },
+    "created_at": { "type": "string", "format": "date-time" },
+    "data": { "type": "object" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "type": { "const": "session.status" } }, "required": ["type"] },
+      "then": { "properties": { "data": { "$ref": "#/$defs/sessionStatus" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "user.message" } }, "required": ["type"] },
+      "then": { "properties": { "data": { "$ref": "#/$defs/userMessage" } } }
+    },
+    {
+      "if": { "properties": { "type": { "enum": ["agent.message", "agent.thinking"] } }, "required": ["type"] },
+      "then": { "properties": { "data": { "$ref": "#/$defs/text" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "agent.tool_use" } }, "required": ["type"] },
+      "then": { "properties": { "data": { "$ref": "#/$defs/toolUse" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "agent.tool_result" } }, "required": ["type"] },
+      "then": { "properties": { "data": { "$ref": "#/$defs/toolResult" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "requires_action" } }, "required": ["type"] },
+      "then": { "properties": { "data": { "$ref": "#/$defs/ask" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "agent.subagent" } }, "required": ["type"] },
+      "then": { "properties": { "data": { "$ref": "#/$defs/subagent" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "session.usage" } }, "required": ["type"] },
+      "then": { "properties": { "data": { "$ref": "#/$defs/usage" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "session.output" } }, "required": ["type"] },
+      "then": { "properties": { "data": { "$ref": "#/$defs/output" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "session.error" } }, "required": ["type"] },
+      "then": { "properties": { "data": { "$ref": "#/$defs/error" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "pull_request" } }, "required": ["type"] },
+      "then": { "properties": { "data": { "$ref": "#/$defs/pullRequest" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "session.file" } }, "required": ["type"] },
+      "then": { "properties": { "data": { "$ref": "#/$defs/file" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "session.sandbox" } }, "required": ["type"] },
+      "then": { "properties": { "data": { "$ref": "#/$defs/sandbox" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "session.wait" } }, "required": ["type"] },
+      "then": { "properties": { "data": { "$ref": "#/$defs/wait" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "session.resumed" } }, "required": ["type"] },
+      "then": { "properties": { "data": { "$ref": "#/$defs/resumed" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "session.checkpoint" } }, "required": ["type"] },
+      "then": { "properties": { "data": { "$ref": "#/$defs/checkpoint" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "session.tainted" } }, "required": ["type"] },
+      "then": { "properties": { "data": { "$ref": "#/$defs/tainted" } } }
+    }
+  ],
+  "$defs": {
+    "sessionStatus": {
+      "type": "object",
+      "required": ["status", "stop_reason"],
+      "properties": {
+        "status": { "enum": ["starting", "running", "requires_action", "idle", "terminated"] },
+        "stop_reason": {
+          "description": "Why a session that is not running stopped; null while it runs.",
+          "oneOf": [
+            { "type": "null" },
+            { "enum": ["end_turn", "requires_action", "budget_reached", "error", "interrupted"] }
+          ]
+        },
+        "model": { "type": "string" }
+      }
+    },
+    "userMessage": {
+      "type": "object",
+      "required": ["text", "origin"],
+      "properties": {
+        "text": { "type": "string" },
+        "origin": { "type": "string", "description": "Who sent it: person, api or automation." },
+        "input_id": { "type": "string", "description": "The id the caller knows this message by." }
+      }
+    },
+    "text": {
+      "type": "object",
+      "required": ["text"],
+      "properties": { "text": { "type": "string" } }
+    },
+    "toolUse": {
+      "type": "object",
+      "required": ["id", "name", "input"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "input": { "description": "The tool's input; cut where it passed 64 KiB, with truncated true." },
+        "truncated": { "type": "boolean" }
+      }
+    },
+    "toolResult": {
+      "type": "object",
+      "required": ["tool_use_id", "is_error", "output"],
+      "properties": {
+        "tool_use_id": { "type": "string", "minLength": 1 },
+        "is_error": { "type": "boolean" },
+        "output": { "description": "The tool's output; cut where it passed 64 KiB, with truncated true." },
+        "truncated": { "type": "boolean" }
+      }
+    },
+    "ask": {
+      "description": "The session waits for its caller. tool: a tool the caller declared, answered with user.tool_result. approval: answered with user.approval. question: answered with user.answer.",
+      "type": "object",
+      "required": ["ask_id", "kind"],
+      "properties": {
+        "ask_id": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "kind": { "enum": ["tool", "approval", "question"] },
+        "name": { "type": "string" },
+        "input": {},
+        "question": { "type": "string" },
+        "options": { "type": "array", "items": { "type": "string" } },
+        "truncated": { "type": "boolean" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "tool" } }, "required": ["kind"] },
+          "then": { "properties": { "name": {} }, "required": ["name"] }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "question" } }, "required": ["kind"] },
+          "then": { "properties": { "question": {} }, "required": ["question"] }
+        }
+      ]
+    },
+    "subagent": {
+      "type": "object",
+      "required": ["workspace_id", "title", "status"],
+      "properties": {
+        "workspace_id": { "oneOf": [{ "type": "null" }, { "type": "string" }] },
+        "title": { "type": "string" },
+        "status": { "type": "string" }
+      }
+    },
+    "usage": {
+      "description": "Cumulative for the session. cost_usd is measured from the provider's own usage at list prices.",
+      "type": "object",
+      "required": ["input_tokens", "output_tokens", "cache_read_tokens", "cost_usd"],
+      "properties": {
+        "input_tokens": { "type": "integer", "minimum": 0 },
+        "output_tokens": { "type": "integer", "minimum": 0 },
+        "cache_read_tokens": { "type": "integer", "minimum": 0 },
+        "cost_usd": { "type": "number", "minimum": 0 }
+      }
+    },
+    "output": {
+      "type": "object",
+      "required": ["file_id", "path", "bytes"],
+      "properties": {
+        "file_id": { "type": "string" },
+        "path": { "type": "string" },
+        "bytes": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "error": {
+      "type": "object",
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "type": "string" },
+        "message": { "type": "string" },
+        "input_id": { "type": "string" }
+      }
+    },
+    "pullRequest": {
+      "type": "object",
+      "required": ["url", "state"],
+      "properties": {
+        "url": { "type": "string" },
+        "state": { "type": "string" }
+      }
+    },
+    "file": {
+      "description": "The session changed a file in one of its drives, and the change is committed. Written by Caveman Cloud, not by the process running the session.",
+      "type": "object",
+      "required": ["drive", "mount", "path", "op", "version", "origin"],
+      "properties": {
+        "drive": { "type": "string", "description": "The drive's name." },
+        "mount": { "type": "string", "pattern": "^/[a-z0-9][a-z0-9_-]{0,62}$", "description": "The mount the session wrote through, as its build declares it." },
+        "path": { "type": "string", "description": "The file as the agent names it: the mount, then the path inside it, such as /work/report.md." },
+        "op": { "enum": ["write", "edit", "append", "delete", "move"] },
+        "version": { "type": "integer", "minimum": 1, "description": "The file's version after the change." },
+        "origin": { "enum": ["person", "agent", "agent_untrusted"], "description": "Where the content came from: agent_untrusted when the session had read content from outside first." }
+      }
+    },
+    "sandbox": {
+      "description": "The session's computer changed hands: made, attached, woken, released, deleted or lost. Written by the process running a session whose agent has sandbox tier linux, which reaches the computer from outside it; deleted is written by Caveman Cloud when the session ends. The computer's own pauses and wakes are in its own record, not here.",
+      "type": "object",
+      "required": ["action", "computer_id"],
+      "properties": {
+        "action": { "enum": ["made", "attached", "woke", "released", "deleted", "lost"], "description": "made: the session made its computer; attached: the session began using a computer it was given (keep subject or rented); woke: a call found it asleep and waited for it; released: the session stopped using it (Caveman Cloud writes it when a session given its computer ends: the computer is kept); deleted: Cloud deleted it as the session ended (its own, or its deployment's kept computer once the deployment was archived); lost: it went away while the session used it." },
+        "keep": { "enum": ["session", "subject", "rented"], "description": "Whose the computer is past the session: session, the session's own (deleted when it ends); subject, kept by its deployment for its subject; rented, a sandbox the session's starter rented and gave it." },
+        "computer_id": { "type": "string", "description": "The computer's id, as the computers API names it." },
+        "size": { "type": "string", "description": "Its size, <cores>cpu-<gigabytes>gb." },
+        "network": { "enum": ["none", "internet"] },
+        "ready_ms": { "type": "integer", "minimum": 0, "description": "made or woke: how long the call waited for the computer to run commands." },
+        "slept_without_memory": { "type": "boolean", "description": "woke: the computer slept with its disk alone, so the processes it ran before are gone." }
+      }
+    },
+    "wait": {
+      "description": "The session parked at zero compute waiting on a durable awakeable (approval, question, caller tool, subagent, timer, drive changeset, uncertain effect, or channel reply).",
+      "type": "object",
+      "required": ["wait_id", "kind"],
+      "properties": {
+        "wait_id": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["approval", "question", "caller_tool", "subagent", "timer", "drive_changeset", "uncertain_effect", "channel_reply"] },
+        "ask_id": { "type": "string" },
+        "target_id": { "type": "string" },
+        "barrier_id": { "type": "string" },
+        "wake_at": { "type": "string", "format": "date-time" },
+        "reason": { "type": "string" }
+      }
+    },
+    "resumed": {
+      "description": "A parked or idle session woke up and resumed execution from its durable checkpoint.",
+      "type": "object",
+      "required": ["resume_count"],
+      "properties": {
+        "resume_count": { "type": "integer", "minimum": 1 },
+        "resolved_waits": { "type": "integer", "minimum": 0 },
+        "pinned_revision": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "checkpoint": {
+      "description": "A turn checkpoint binding the session event seq with its Drive commit seqs and Firecracker snapshot id for time-travel fork and replay.",
+      "type": "object",
+      "required": ["checkpoint_seq"],
+      "properties": {
+        "checkpoint_seq": { "type": "integer", "minimum": 1 },
+        "drive_seqs": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 } },
+        "computer_snapshot_id": { "type": "string" }
+      }
+    },
+    "tainted": {
+      "description": "The session read untrusted external content; tools configured with after_untrusted: approve now escalate to human approval.",
+      "type": "object",
+      "required": ["source"],
+      "properties": {
+        "source": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "detail": { "type": "string", "maxLength": 500 }
+      }
+    }
+  }
+}

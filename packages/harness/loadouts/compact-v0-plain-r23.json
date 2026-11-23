@@ -1,0 +1,38 @@
+{
+  "extends": "compact-v0-plain",
+  "name": "compact-v0-plain-r23",
+  "tools": {
+    "read": {
+      "exposure": "eager",
+      "limits": {
+        "line_numbers": false,
+        "many": true
+      }
+    },
+    "bash": {
+      "exposure": "eager",
+      "limits": {
+        "default_yield_s": 120,
+        "max_yield_s": 600,
+        "hard_timeout_s": 3600
+      }
+    },
+    "wait": {
+      "exposure": "eager",
+      "limits": {
+        "default_s": 120,
+        "max_s": 600,
+        "until": true
+      }
+    },
+    "edit": {
+      "exposure": "eager",
+      "limits": {
+        "fuzzy": true
+      }
+    },
+    "write": {
+      "exposure": "eager"
+    }
+  }
+}

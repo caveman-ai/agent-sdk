@@ -1,0 +1,12 @@
+{
+  "extends": "exec-v0",
+  "name": "exec-v0-ws",
+  "wire": {
+    "cache_retention": "short",
+    "max_retries": 3,
+    "mid_convo_effort": false,
+    "reasoning_context": "all_turns",
+    "reasoning_summary": "none",
+    "transport": "ws"
+  }
+}

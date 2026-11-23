@@ -1,0 +1,13 @@
+{
+  "extends": "exec-v0",
+  "name": "exec-v0-req",
+  "prompt": {
+    "sections": [
+      "core.identity",
+      "exec.tools",
+      "core.verify",
+      "core.finish"
+    ],
+    "requirements": true
+  }
+}

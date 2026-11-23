@@ -1,0 +1,14 @@
+{
+  "extends": "exec-v0",
+  "name": "exec-v0-cxplac",
+  "prompt": {
+    "sections": [
+      "placebo:codex.base",
+      "placebo:codex.permissions",
+      "core.identity",
+      "exec.tools",
+      "core.verify",
+      "core.finish"
+    ]
+  }
+}

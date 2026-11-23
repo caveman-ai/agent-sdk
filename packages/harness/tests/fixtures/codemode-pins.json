@@ -1,0 +1,148 @@
+{
+  "note": "b5 and c9 (loadouts-r2, the candidate loadouts on 2026-10-31) and exec-v0/exec-v0-batch as they rendered at v3 156559b, before exec-v1: loadout and behavior hashes, and sha256(description + \"\\n\" + JSON.stringify(parameters)) of exec and wait.",
+  "loadouts": {
+    "b5": {
+      "extends": "exec-v0",
+      "name": "b5",
+      "tools": {
+        "exec": {
+          "exposure": "eager",
+          "limits": {
+            "default_yield_ms": 30000,
+            "max_output_tokens": 10000,
+            "cell_timeout_s": 3600,
+            "mcp_types": true,
+            "aliases": true
+          }
+        },
+        "wait": {
+          "exposure": "eager",
+          "limits": {
+            "default_yield_ms": 10000,
+            "default_max_tokens": 10000,
+            "until": true
+          }
+        },
+        "exec_command": {
+          "exposure": "eager",
+          "limits": {
+            "default_yield_ms": 10000,
+            "max_yield_ms": 30000,
+            "hard_timeout_s": 3600
+          }
+        },
+        "write_stdin": {
+          "exposure": "eager",
+          "limits": {
+            "min_poll_ms": 5000,
+            "max_poll_ms": 300000
+          }
+        },
+        "apply_patch": {
+          "exposure": "eager"
+        },
+        "view_image": {
+          "exposure": "eager"
+        }
+      },
+      "wire": {
+        "cache_retention": "short",
+        "max_retries": 3,
+        "mid_convo_effort": false,
+        "reasoning_context": "all_turns",
+        "reasoning_summary": "none",
+        "transport": "ws"
+      }
+    },
+    "c9": {
+      "extends": "exec-v0",
+      "name": "c9",
+      "tools": {
+        "exec": {
+          "exposure": "eager",
+          "limits": {
+            "default_yield_ms": 30000,
+            "max_output_tokens": 10000,
+            "cell_timeout_s": 3600,
+            "mcp_types": true,
+            "aliases": true
+          }
+        },
+        "wait": {
+          "exposure": "eager",
+          "limits": {
+            "default_yield_ms": 10000,
+            "default_max_tokens": 10000,
+            "until": true
+          }
+        },
+        "exec_command": {
+          "exposure": "eager",
+          "limits": {
+            "default_yield_ms": 10000,
+            "max_yield_ms": 30000,
+            "hard_timeout_s": 3600
+          }
+        },
+        "write_stdin": {
+          "exposure": "eager",
+          "limits": {
+            "min_poll_ms": 5000,
+            "max_poll_ms": 300000
+          }
+        },
+        "apply_patch": {
+          "exposure": "eager"
+        },
+        "view_image": {
+          "exposure": "eager"
+        }
+      },
+      "wire": {
+        "cache_retention": "short",
+        "max_retries": 3,
+        "mid_convo_effort": false,
+        "reasoning_context": "all_turns",
+        "reasoning_summary": "none",
+        "transport": "ws"
+      },
+      "policy": {
+        "loop": {
+          "nudge_at": 3,
+          "stop_at": 6
+        },
+        "empty_turns_stop": 3,
+        "length_continuations": 3,
+        "tool_execution": "sequential",
+        "travel_jit": true,
+        "unmet_target": true
+      }
+    }
+  },
+  "pins": {
+    "b5": {
+      "loadout_hash": "239499b535904c6c2360d4c2c7385ee14359fb3baa4a0b57233f380e7d56db5a",
+      "behavior_hash": "82d542a5de5c1cf77dd511a127889a04005db15dd3e50920908a93e6afd40001",
+      "exec": "f71f0d2b31b8005bd639f8e487d70885c0c97c2683a404a0fb272bfbb5849c28",
+      "wait": "36f65d36188dec4e2f37d5632e5fe9c29fbf6bed595f56b6bc81a94b9147c29b"
+    },
+    "c9": {
+      "loadout_hash": "4bc7a85f8cc2d012ef2b42dcd4fef493bf972efc7e131019d6c3be1ed9515b7f",
+      "behavior_hash": "8f0ed2888fe8407232358c49f503f322f81c6b872237a277698bc439f975918b",
+      "exec": "f71f0d2b31b8005bd639f8e487d70885c0c97c2683a404a0fb272bfbb5849c28",
+      "wait": "36f65d36188dec4e2f37d5632e5fe9c29fbf6bed595f56b6bc81a94b9147c29b"
+    },
+    "exec-v0-batch": {
+      "loadout_hash": "abbb9d0def8ba2c4d11c2b74aacf8ef03df08a94be23474c19d5bdcd926e1898",
+      "behavior_hash": "17cdc7ea83ff7cd593ca208b252bab24defaae4b99bcb030e7563878efa898a9",
+      "exec": "2c9772e43cab98409cdd189709ef50109a8f9510fbd783d33f78237c7ad9abff",
+      "wait": "dbbf251f36057bc7833e02ba2b6842b986504a0c152649180ea36575caea8545"
+    },
+    "exec-v0": {
+      "loadout_hash": "6e1aa5b36f1b3d15d725394276415eaa946635d8ddc0b093ceb3dacb91708baa",
+      "behavior_hash": "22a50493036fb9faf9d706b05b146f86ba60820995310d6a30d2ed11864a8c02",
+      "exec": "ed464d8e4f7cfe69b2ce082a154c41754c57092fe1969913e4a8b9d151713da0",
+      "wait": "dbbf251f36057bc7833e02ba2b6842b986504a0c152649180ea36575caea8545"
+    }
+  }
+}

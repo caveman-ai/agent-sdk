@@ -1,0 +1,44 @@
+{
+  "name": "@caveman-ai/adapter-kit",
+  "version": "0.1.0",
+  "description": "Fail-closed adapter manifests and registry for Caveman agent integrations.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JuliusBrussee/agent-sdk.git",
+    "directory": "packages/adapter-kit"
+  },
+  "homepage": "https://caveman.so/products/caveman-agent",
+  "bugs": {
+    "url": "https://github.com/JuliusBrussee/agent-sdk/issues"
+  },
+  "type": "module",
+  "keywords": [
+    "agents",
+    "ai",
+    "adapters",
+    "registry",
+    "conformance"
+  ],
+  "main": "src/index.js",
+  "types": "src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "import": "./src/index.js"
+    }
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test tests/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
