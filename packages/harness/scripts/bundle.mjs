@@ -5,7 +5,7 @@
  * the bundle's path, bytes and sha256. `--no-minify` for a readable bundle.
  */
 import { createHash } from "node:crypto";
-import { copyFileSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -86,6 +86,8 @@ await build({
   banner: { js: "import { createRequire as __harnessCreateRequire } from \"node:module\";\nconst require = __harnessCreateRequire(import.meta.url);" },
 });
 copyFileSync(join(root, "types", "lib.d.ts"), join(root, "dist", "lib.d.ts"));
+copyFileSync(join(root, "types", "lib.d.ts"), join(root, "dist", "lib.d.mts"));
+chmodSync(outfile, 0o755);
 
 // A host's tests (`@caveman-ai/harness/testing`): the fake Caveman Cloud SandboxEnv's suites run against, so a host
 // checks its wiring on the same semantics, never a copy. Not part of the library.

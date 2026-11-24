@@ -1,8 +1,14 @@
-# @caveman-ai/harness (harness v3 core)
+# `@caveman-ai/harness` (Caveman Harness v4)
 
-Private while it climbs. A small coding-agent harness: Pi's loop plus a
-loadout (prompt sections, tools, limits, policy, wire options as hashable
-JSON). A version is `bundle_sha256 + loadout_hash`. Apache-2.0.
+Open-source (Apache-2.0) loadout-driven agent harness built on Pi, and the
+execution engine behind `@caveman-ai/agent` (`@caveman-ai/agent/harness`) and
+Caveman Code. Pi owns the model loop; a loadout declares the prompt sections,
+model-native tool surface (`compact` or Codex-style `exec` QuickJS cells),
+limits, policy, and wire options as hashable JSON. Every version is
+`bundle_sha256 + loadout_hash`.
+
+Import it directly via `@caveman-ai/agent/harness` or `@caveman-ai/harness`, or
+run the bundled CLI (`caveman-harness`).
 
 ## Run
 

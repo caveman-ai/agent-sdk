@@ -1,9 +1,9 @@
-Install `@caveman-ai/agent` and `@caveman-ai/harness` to run a tool-calling agent in-process with no external binary.
+Install `@caveman-ai/agent` to run a tool-calling agent in-process on Harness v4 with no external binary.
 
 ## 1. Install
 
 ```bash
-npm install @caveman-ai/agent @caveman-ai/harness
+npm install @caveman-ai/agent
 ```
 
 ## 2. Define a tool and an agent
@@ -34,12 +34,13 @@ const billing = defineAgent({
 
 ## 3. Run in-process on Harness v4
 
+Pass a `"provider/model"` string (reads `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` automatically), or pass custom `{ model, stream }` objects:
+
 ```ts
 const result = await runInProcess({
   agent: billing,
   task: "Customer 4411 says they were charged twice.",
-  model,
-  stream,
+  model: "anthropic/claude-sonnet-4-6",
   onEvent: (event) => console.log(event.seq, event.type),
 });
 
