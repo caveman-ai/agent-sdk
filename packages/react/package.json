@@ -5,12 +5,12 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/JuliusBrussee/agent-sdk.git",
+    "url": "git+https://github.com/caveman-ai/agents.git",
     "directory": "packages/react"
   },
   "homepage": "https://caveman.so/products/caveman-agent",
   "bugs": {
-    "url": "https://github.com/JuliusBrussee/agent-sdk/issues"
+    "url": "https://github.com/caveman-ai/agents/issues"
   },
   "type": "module",
   "keywords": [

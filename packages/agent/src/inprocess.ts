@@ -17,7 +17,7 @@ export interface InProcessRunOptions {
   readonly cwd?: string;
   readonly model: HarnessModel;
   readonly stream: HarnessStreamFn;
-  readonly loadout?: "general" | "claude" | "gpt";
+  readonly loadout?: "general" | "code" | "claude" | "gpt";
   readonly onEvent?: (event: SessionEvent) => void;
 }
 
@@ -38,9 +38,11 @@ export async function runInProcess(options: InProcessRunOptions): Promise<InProc
       ? presets.claude
       : options.loadout === "gpt"
         ? presets.gpt
-        : options.agent.computer && options.agent.computer !== "none"
-          ? presets.claude
-          : presets.general;
+        : options.loadout === "code"
+          ? presets.code
+          : options.agent.computer && options.agent.computer !== "none"
+            ? presets.claude
+            : presets.general;
 
   const env = new LocalEnv({ cwd });
   const events: Array<SessionEvent> = [];
@@ -51,16 +53,18 @@ export async function runInProcess(options: InProcessRunOptions): Promise<InProc
     options.onEvent?.(ev);
   };
 
-  const tools = (options.agent.tools ?? []).map((t) => ({
-    name: t.name,
-    label: t.name,
-    description: t.description,
-    parameters: t.inputSchema as any,
-    execute: async (_id: string, params: any) => {
-      const res = await t.call(params);
-      return { content: [{ type: "text" as const, text: res.content }], details: { isError: res.isError } };
-    },
-  }));
+  const tools = (options.agent.tools ?? [])
+    .filter((t): t is Exclude<typeof t, string> => typeof t !== "string")
+    .map((t) => ({
+      name: t.name,
+      label: t.name,
+      description: t.description,
+      parameters: t.inputSchema as any,
+      execute: async (_id: string, params: any) => {
+        const res = await t.call(params);
+        return { content: [{ type: "text" as const, text: res.content }], details: { isError: res.isError } };
+      },
+    }));
 
   const session = new HarnessSession({
     env,

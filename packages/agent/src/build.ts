@@ -36,7 +36,7 @@ export function compileAgentDefinition(def: AgentDefinition): AgentBuildResult {
   const computer = def.computer === "full" ? "linux" : (def.computer ?? "none");
   const manifest: AgentBuildManifest = {
     schema_version: 1,
-    name: def.name,
+    name: def.name ?? "agent",
     ...(def.description ? { description: def.description } : {}),
     engine: "caveman",
     ...(def.model ? { model: def.model } : {}),

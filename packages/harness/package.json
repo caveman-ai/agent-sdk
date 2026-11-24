@@ -13,19 +13,31 @@
   },
   "scripts": {
     "build": "node scripts/bundle.mjs",
+    "prepack": "node scripts/bundle.mjs",
     "typecheck": "tsc -p tsconfig.json",
     "test": "node scripts/bundle.mjs && node --experimental-strip-types --no-warnings --test tests/*.test.ts"
   },
-  "dependencies": {
+  "files": [
+    "dist/harness.mjs",
+    "dist/harness.mjs.sha256",
+    "dist/lib.mjs",
+    "dist/lib.d.ts",
+    "dist/testing.mjs",
+    "dist/testing.d.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
     "@caveman-ai/sdk": "file:../../../cloud-sdk/packages/sdk-ts",
     "@earendil-works/pi-agent-core": "1.4.0",
     "@earendil-works/pi-ai": "1.4.0",
     "@earendil-works/pi-codemode": "1.4.0",
     "typebox": "1.3.27",
     "@earendil-works/pi-mcp": "1.4.0",
-    "quickjs-wasi": "3.6.2"
-  },
-  "devDependencies": {
+    "quickjs-wasi": "3.6.2",
     "esbuild": "0.28.2"
   },
   "libVersion": "1.0.0",
@@ -43,5 +55,9 @@
     "type": "git",
     "url": "git+https://github.com/caveman-ai/agents.git",
     "directory": "packages/harness"
+  },
+  "homepage": "https://docs.caveman.so",
+  "bugs": {
+    "url": "https://github.com/caveman-ai/agents/issues"
   }
 }

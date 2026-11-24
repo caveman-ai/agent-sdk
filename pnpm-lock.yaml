@@ -21,6 +21,13 @@ importers:
       '@caveman-ai/sdk':
         specifier: file:../../../cloud-sdk/packages/sdk-ts
         version: file:../cloud-sdk/packages/sdk-ts
+    devDependencies:
+      '@types/node':
+        specifier: 25.9.8
+        version: 25.9.8
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
 
   packages/create-agent:
     devDependencies:
@@ -41,7 +48,7 @@ importers:
         version: 5.9.3
 
   packages/harness:
-    dependencies:
+    devDependencies:
       '@caveman-ai/sdk':
         specifier: file:../../../cloud-sdk/packages/sdk-ts
         version: file:../cloud-sdk/packages/sdk-ts
@@ -57,16 +64,15 @@ importers:
       '@earendil-works/pi-mcp':
         specifier: 1.4.0
         version: 1.4.0
+      esbuild:
+        specifier: 0.28.2
+        version: 0.28.2
       quickjs-wasi:
         specifier: 3.6.2
         version: 3.6.2
       typebox:
         specifier: 1.3.27
         version: 1.3.27
-    devDependencies:
-      esbuild:
-        specifier: 0.28.2
-        version: 0.28.2
 
   packages/protocol:
     devDependencies:
