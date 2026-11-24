@@ -13,14 +13,14 @@ importers:
   packages/agent:
     dependencies:
       '@caveman-ai/harness':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../harness
       '@caveman-ai/protocol':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../protocol
       '@caveman-ai/sdk':
-        specifier: file:../../../cloud-sdk/packages/sdk-ts
-        version: file:../cloud-sdk/packages/sdk-ts
+        specifier: ^2.0.0
+        version: 2.0.0
     devDependencies:
       '@types/node':
         specifier: 25.9.8
@@ -50,8 +50,8 @@ importers:
   packages/harness:
     devDependencies:
       '@caveman-ai/sdk':
-        specifier: file:../../../cloud-sdk/packages/sdk-ts
-        version: file:../cloud-sdk/packages/sdk-ts
+        specifier: ^2.0.0
+        version: 2.0.0
       '@earendil-works/pi-agent-core':
         specifier: 1.4.0
         version: 1.4.0(@aws-sdk/credential-provider-node@3.972.98)(@smithy/signature-v4@5.7.5)(ws@8.23.0)
@@ -181,8 +181,8 @@ packages:
     resolution: {integrity: sha512-304gsbbGVmQc+cNGHzwHBlqepYdWLKj3VXCQBGt/EGcV7PUPfKI7kAUNW1FZEOCwlQiLvQjg1JEaAlRQ616h+Q==}
     engines: {node: '>=6.9.0'}
 
-  '@caveman-ai/sdk@file:../cloud-sdk/packages/sdk-ts':
-    resolution: {directory: ../cloud-sdk/packages/sdk-ts, type: directory}
+  '@caveman-ai/sdk@2.0.0':
+    resolution: {integrity: sha512-wQ1DbspqeF5AN7T2bNtZ91tW21tMfxhq1QlafyYqJkIIJpZJBrm5R1YuMsCp6rsm9rMKq1VRCP692Ar8cEKj+w==}
     engines: {node: '>=22.13'}
 
   '@earendil-works/pi-agent-core@1.4.0':
@@ -861,7 +861,7 @@ snapshots:
 
   '@babel/runtime@7.29.15': {}
 
-  '@caveman-ai/sdk@file:../cloud-sdk/packages/sdk-ts': {}
+  '@caveman-ai/sdk@2.0.0': {}
 
   '@earendil-works/pi-agent-core@1.4.0(@aws-sdk/credential-provider-node@3.972.98)(@smithy/signature-v4@5.7.5)(ws@8.23.0)':
     dependencies:
