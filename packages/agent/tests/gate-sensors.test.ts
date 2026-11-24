@@ -272,6 +272,90 @@ test("per-run gate rules override agent/tool rules, agentFileText serializes def
   assert.equal(sentReplies[0]?.type, "user.tool_result");
   assert.equal((sentReplies[0] as Extract<UserEvent, { type: "user.tool_result" }>).is_error, true);
   assert.match((sentReplies[0] as Extract<UserEvent, { type: "user.tool_result" }>).content, /gate_provider_missing/);
+
+  // 4. Session interrupt during pending Gate approval aborts & NEVER runs the tool even if approval arrives later.
+  let interruptedToolRan = false;
+  let releaseLateApproval!: (v: "approved") => void;
+  let providerSawAbort = false;
+  let gateEntered!: () => void;
+  const gateEnteredReady = new Promise<void>((r) => { gateEntered = r; });
+  const slowRefundTool = tool(
+    "issue_refund",
+    "Issue refund",
+    { type: "object", properties: {} },
+    async () => {
+      interruptedToolRan = true;
+      return { refunded: true };
+    },
+    { gate: { action: "refund.issue", risk: "critical" } },
+  );
+  let endInterruptedStream!: () => void;
+  const interruptedStreamDone = new Promise<void>((r) => { endInterruptedStream = r; });
+  const interruptTransport: Transport = {
+    id: "sess_interrupt_gate",
+    events: (async function* (): AsyncIterable<SessionEvent> {
+      yield { seq: 1, type: "session.status", created_at: "2026-11-24T00:00:00Z", data: { status: "running", stop_reason: null } };
+      yield { seq: 2, type: "requires_action", created_at: "2026-11-24T00:00:00Z", data: { ask_id: "ask_int", kind: "tool", name: "issue_refund", input: {} } };
+      await interruptedStreamDone;
+      yield { seq: 3, type: "session.status", created_at: "2026-11-24T00:00:00Z", data: { status: "terminated", stop_reason: "interrupted" } };
+    })(),
+    async message() { return "m1"; },
+    async send() {},
+    async close() {},
+    kill() {},
+  };
+  const intSess = new Session(
+    interruptTransport,
+    {
+      tools: [slowRefundTool],
+      gateProvider: createMemoryGateProvider((_req, signal) => {
+        gateEntered();
+        signal?.addEventListener("abort", () => { providerSawAbort = true; });
+        return new Promise<"approved">((resolve) => { releaseLateApproval = resolve; });
+      }),
+    },
+  );
+  await gateEnteredReady;
+  await intSess.interrupt();
+  assert.equal(providerSawAbort, true, "interrupt() must abort pending Gate approval signal");
+  releaseLateApproval("approved");
+  await new Promise((r) => setTimeout(r, 20));
+  endInterruptedStream();
+  await intSess.result();
+  assert.equal(interruptedToolRan, false, "late Gate approval after interrupt() must NEVER run tool handler");
+
+  // 5. Session rule precedence matches runInProcess: override -> tool -> agent default.
+  const sessionActions: string[] = [];
+  const makePrecedenceSession = async (useOverride: boolean) => {
+    let finish!: () => void;
+    const done = new Promise<void>((r) => { finish = r; });
+    const t: Transport = {
+      id: useOverride ? "sess_prec_override" : "sess_prec_tool",
+      events: (async function* (): AsyncIterable<SessionEvent> {
+        yield { seq: 1, type: "session.status", created_at: "2026-11-24T00:00:00Z", data: { status: "running", stop_reason: null } };
+        yield { seq: 2, type: "requires_action", created_at: "2026-11-24T00:00:00Z", data: { ask_id: "ask_p", kind: "tool", name: "issue_refund", input: {} } };
+        await done;
+        yield { seq: 3, type: "session.status", created_at: "2026-11-24T00:00:00Z", data: { status: "terminated", stop_reason: "end_turn" } };
+      })(),
+      async message() { return "m1"; },
+      async send() { finish(); },
+      async close() {},
+      kill() {},
+    };
+    const s = new Session(t, {
+      tools: [slowRefundTool],
+      agentGate: { rules: [{ tool: "issue_refund", action: "billing.default", risk: "medium" }] },
+      ...(useOverride ? { gate: { rules: [{ tool: "issue_refund", action: "refund.session_override", risk: "critical" }] } } : {}),
+      gateProvider: createMemoryGateProvider((req) => {
+        sessionActions.push(req.action);
+        return "denied";
+      }),
+    });
+    await s.result();
+  };
+  await makePrecedenceSession(false);
+  await makePrecedenceSession(true);
+  assert.deepEqual(sessionActions, ["refund.issue", "refund.session_override"]);
 });
 
 test("defineAgent + defineSensor compiles deterministically and rejects duplicate sensor names", () => {

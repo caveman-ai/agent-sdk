@@ -48,8 +48,10 @@ export type Decision = "allow" | "deny" | { readonly decision: "allow" | "deny";
 export interface AskHandlers {
   /** Custom tools' handlers, by name. */
   readonly tools?: ReadonlyArray<Tool<unknown>>;
-  /** Caveman Gate policy enforced fail-closed before running custom tool handlers. */
+  /** Per-session Caveman Gate overrides enforced fail-closed before running custom tool handlers (highest rule precedence). */
   readonly gate?: GateConfig;
+  /** Agent-level default Caveman Gate policy (evaluated after per-session `gate` overrides and per-tool `gate` policies). */
+  readonly agentGate?: GateConfig;
   /** Shorthand to supply a GateProvider for gated custom tools in this session. */
   readonly gateProvider?: GateProvider;
   /** Answers an approval. Without it, or when it throws, the approval is denied, and the agent is told why. */
@@ -107,6 +109,8 @@ export class Session {
   private ended = false;
   /** Asks the agent still waits on: a Stop, the end of their turn and the session's end refuse them. */
   private readonly openAsks = new Set<string>();
+  /** Per-ask abort controllers so pending Gate approvals cancel immediately when a turn is interrupted or ended. */
+  private readonly askAborts = new Map<string, AbortController>();
   private lastText = "";
   /** The agent's last message in the turn going now: a turn that says nothing has no text, not the last turn's. */
   private turnText = "";
@@ -162,10 +166,18 @@ export class Session {
     }
   }
 
+  private clearOpenAsks(reason = "Session ask cancelled"): void {
+    this.openAsks.clear();
+    for (const controller of this.askAborts.values()) {
+      controller.abort(new Error(reason));
+    }
+    this.askAborts.clear();
+  }
+
   /** Stops the running turn; the session stays open for the next message. */
   async interrupt(): Promise<void> {
     if (this.ended) return;
-    this.openAsks.clear();
+    this.clearOpenAsks("Session interrupted");
     await this.transport.send({ type: "user.interrupt" });
   }
 
@@ -183,7 +195,7 @@ export class Session {
   /** Ends the session now. */
   kill(): void {
     // A Stop (Cloud) or the runtime's end (here) refuses the asks still open.
-    this.openAsks.clear();
+    this.clearOpenAsks("Session killed");
     this.transport.kill();
   }
 
@@ -228,7 +240,7 @@ export class Session {
   private endTurn(): void {
     this.turns.push({ text: this.turnText, stopReason: this.stopReason, usage: this.usage });
     this.turnText = "";
-    this.openAsks.clear();
+    this.clearOpenAsks("Turn ended");
     this.wakeTurnWaiters();
   }
 
@@ -313,20 +325,28 @@ export class Session {
         }
         break;
       }
-      case "requires_action":
+      case "requires_action": {
         this.openAsks.add(event.data.ask_id);
-        void this.answer(event.data);
+        const controller = new AbortController();
+        this.askAborts.set(event.data.ask_id, controller);
+        void this.answer(event.data, controller.signal);
         break;
+      }
       default:
         break;
     }
   }
 
   /** Answers an ask whatever its handler does, so the agent never waits on one that will not come. */
-  private async answer(ask: Ask): Promise<void> {
-    const reply = await this.replyTo(ask).catch((failure: unknown) => failedReply(ask, messageOf(failure)));
+  private async answer(ask: Ask, signal: AbortSignal): Promise<void> {
+    let reply: Reply;
+    try {
+      reply = await this.replyTo(ask, signal).catch((failure: unknown) => failedReply(ask, messageOf(failure)));
+    } finally {
+      this.askAborts.delete(ask.ask_id);
+    }
     // Refused while the handler decided: the host would refuse the answer.
-    if (!this.openAsks.delete(ask.ask_id)) return;
+    if (signal.aborted || !this.openAsks.delete(ask.ask_id)) return;
     try {
       await this.transport.send(reply);
     } catch (failure) {
@@ -337,7 +357,7 @@ export class Session {
     }
   }
 
-  private async replyTo(ask: Ask): Promise<Reply> {
+  private async replyTo(ask: Ask, signal: AbortSignal): Promise<Reply> {
     if (ask.kind === "tool") {
       const handler = this.handlers.tools?.find((item) => item.name === ask.name);
       if (ask.truncated === true) {
@@ -358,7 +378,10 @@ export class Session {
       }
       // Enforce fail-closed Caveman Gate on SDK-executed tool handlers whenever either
       // the tool declares a `gate` policy or session/agent gate rules apply.
-      if (handler.gate !== undefined || this.handlers.gate !== undefined) {
+      // Precedence matches runInProcess: per-session override -> per-tool -> agent default.
+      const override = this.handlers.gate;
+      const agentDefault = this.handlers.agentGate;
+      if (handler.gate !== undefined || override !== undefined || agentDefault !== undefined) {
         const toolRule: GateRule | undefined = handler.gate === undefined
           ? undefined
           : {
@@ -374,18 +397,29 @@ export class Session {
                   }),
               ...(handler.gate.when === undefined ? {} : { when: (call) => handler.gate!.when!(call.args) }),
             };
-        const base = this.handlers.gate;
-        const provider = this.handlers.gateProvider ?? base?.provider;
+        const provider = this.handlers.gateProvider ?? override?.provider ?? agentDefault?.provider;
+        const requireAll = override?.requireAll ?? agentDefault?.requireAll ?? false;
         const gateHook = createGateHook({
-          ...(base ?? {}),
+          ...(agentDefault ?? {}),
+          ...(override ?? {}),
           ...(provider === undefined ? {} : { provider }),
-          sessionId: base?.sessionId ?? this.id,
-          rules: [...(base?.rules ?? []), ...(toolRule === undefined ? [] : [toolRule])],
+          requireAll,
+          sessionId: override?.sessionId ?? agentDefault?.sessionId ?? this.id,
+          rules: [
+            ...(override?.rules ?? []),
+            ...(toolRule === undefined ? [] : [toolRule]),
+            ...(agentDefault?.rules ?? []),
+          ],
         });
-        const refused = await gateHook({ id: ask.ask_id, name: ask.name, args: ask.input }, undefined);
+        const refused = await gateHook({ id: ask.ask_id, name: ask.name, args: ask.input }, signal);
         if (refused !== undefined) {
           return { type: "user.tool_result", ask_id: ask.ask_id, content: refused, is_error: true };
         }
+      }
+      // Recheck ask liveness immediately before running side-effecting tool code so a
+      // late approval after interrupt()/kill()/turn-end can never execute the tool.
+      if (signal.aborted || !this.openAsks.has(ask.ask_id)) {
+        return { type: "user.tool_result", ask_id: ask.ask_id, content: "Tool call cancelled before execution.", is_error: true };
       }
       const { content, isError } = await handler.call(ask.input);
       return { type: "user.tool_result", ask_id: ask.ask_id, content, is_error: isError };

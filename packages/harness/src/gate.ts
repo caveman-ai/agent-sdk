@@ -487,8 +487,10 @@ export function createCloudGateProvider(options: CloudGateProviderOptions): Gate
   };
 }
 
+const MAX_MEMORY_GATE_CACHE = 1024;
+
 /**
- * In-memory / local interactive GateProvider with idempotency deduplication.
+ * In-memory / local interactive GateProvider with bounded idempotency deduplication.
  * Useful for interactive apps, CLI prompts, and deterministic tests.
  */
 export function createMemoryGateProvider(
@@ -499,6 +501,10 @@ export function createMemoryGateProvider(
     requestApproval(request: GateRequest, signal?: AbortSignal): Promise<GateDecision> {
       const existing = seen.get(request.idempotencyKey);
       if (existing !== undefined) return existing;
+      if (seen.size >= MAX_MEMORY_GATE_CACHE) {
+        const oldestKey = seen.keys().next().value;
+        if (oldestKey !== undefined) seen.delete(oldestKey);
+      }
       const pending = (async (): Promise<GateDecision> => {
         const res = await decide(request, signal);
         if (typeof res === "string") {
