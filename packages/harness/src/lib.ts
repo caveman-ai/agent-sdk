@@ -5,7 +5,7 @@
  */
 export { HarnessSession, isCompactionSummary, portableMessages } from "./session.ts";
 export type { CallInfo, HarnessSessionOptions, NestedCall, SessionEvent, SessionHooks, TurnOptions, TurnOutcome, TurnUsage } from "./session.ts";
-export { APP_CLAUDE_LOADOUT, APP_GENERAL_LOADOUT, APP_GPT_LOADOUT, appLoadoutFor, appLoadouts, usesExecSurface } from "./app-loadouts.ts";
+export { APP_CLAUDE_LOADOUT, APP_CODE_LOADOUT, APP_GENERAL_LOADOUT, APP_GPT_LOADOUT, appLoadoutFor, appLoadouts, usesExecSurface } from "./app-loadouts.ts";
 export { normalizeLoadout, loadoutHash, type Loadout } from "./loadout.ts";
 export { LocalEnv, type LocalEnvOptions } from "./env/local.ts";
 /** A running container through `docker exec` (benchmarks: the connector suite's no-network task containers). */

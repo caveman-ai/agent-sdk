@@ -57,7 +57,12 @@ export declare const APP_GPT_LOADOUT: Record<string, unknown>;
  * prompt is the host's `instructions`; the env block (cwd, os) still opens the first message. app-claude's policy and wire.
  */
 export declare const APP_GENERAL_LOADOUT: Record<string, unknown>;
-export declare function appLoadouts(): { claude: Loadout; gpt: Loadout; general: Loadout };
+/**
+ * `app-code`: app-general plus the program tool without a sandbox (`computer: code`, Cloud's code tier).
+ * MCP tools stay callable both inside `program` and directly (`mcp.exposure: "both"`).
+ */
+export declare const APP_CODE_LOADOUT: Record<string, unknown>;
+export declare function appLoadouts(): { claude: Loadout; gpt: Loadout; general: Loadout; code: Loadout };
 /** Codex's exec surface for a GPT model on a Responses API; the compact surface (plus programs) for every other model. */
 export declare function appLoadoutFor(model: { api: string; id: string }): Loadout;
 export declare function usesExecSurface(model: { api: string; id: string }): boolean;
