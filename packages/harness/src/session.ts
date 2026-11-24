@@ -28,6 +28,7 @@ import {
   createInitialSystemMessage, isRetryableAssistantError, toToolDeclaration, type Api, type AssistantMessage, type ImageContent, type Model, type TextContent,
 } from "@earendil-works/pi-ai";
 import type { ExecEnv } from "./env/types.ts";
+import { createGateHook, type GateConfig, type GateDecision, type GateRequest } from "./gate.ts";
 import { CacheKeepAlive, type KeepAliveUsage } from "./keepalive.ts";
 import { LeverState } from "./levers.ts";
 import { shellSettingsOf, type Loadout } from "./loadout.ts";
@@ -65,7 +66,9 @@ export type SessionEvent =
   /** A request outside the conversation: a cache keep-alive ping, or the summary call of a compaction. */
   | { type: "side_usage"; kind: "cache_keepalive" | "compaction"; usage: TurnUsage }
   | { type: "compacted"; summaryTokens: number; before: number }
-  | { type: "retry"; attempt: number; of: number; delayMs: number; error: string | undefined };
+  | { type: "retry"; attempt: number; of: number; delayMs: number; error: string | undefined }
+  | { type: "gate_requested"; request: GateRequest }
+  | { type: "gate_decided"; request: GateRequest; decision: GateDecision };
 
 export interface TurnUsage {
   requests: number;
@@ -113,6 +116,8 @@ export interface HarnessSessionOptions {
   /** A restored conversation (as `messages` gave it), without the system message. */
   messages?: AgentMessage[];
   hooks?: SessionHooks;
+  /** Caveman Gate: fail-closed human approval enforcement on direct and nested tool calls. */
+  gate?: GateConfig;
   /** The fetch the cache keep-alive re-sends through (default the global one). */
   fetch?: typeof fetch;
   /** Share of the context window past which the conversation is compacted (default 0.8; 0 turns it off). */
@@ -186,6 +191,7 @@ export class HarnessSession {
   #sideSink: ((kind: string, message: AssistantMessage, latencyMs: number) => void) | undefined;
   /** The running turn's event sink (nested calls reach the host through it). */
   #emit: ((event: SessionEvent) => void) | undefined;
+  readonly #gateBeforeCall: ((call: CallInfo, signal: AbortSignal | undefined) => Promise<string | undefined>) | undefined;
 
   constructor(options: HarnessSessionOptions) {
     this.#options = options;
@@ -193,13 +199,21 @@ export class HarnessSession {
     this.#model = options.model;
     this.#loadout = options.loadout;
     this.#effort = options.effort;
+    this.#gateBeforeCall = options.gate === undefined
+      ? undefined
+      : createGateHook({ ...options.gate, sessionId: options.gate.sessionId ?? this.#sessionId }, (ev) => this.#emit?.(ev));
     const shell = shellSettingsOf(options.loadout);
     if (Object.keys(shell).length > 0) {
       if (options.env.configureShell === undefined) throw new Error(`env ${options.env.id}: this env does not apply the loadout's shell flags`);
       options.env.configureShell(shell);
     }
     const nested: NestedHooks = {
-      before: async (call, signal) => options.hooks?.beforeCall?.({ id: call.id, name: call.name, args: call.args, parentId: call.parentId, ...(call.mcp === undefined ? {} : { mcp: call.mcp }) }, signal),
+      before: async (call, signal) => {
+        const info: CallInfo = { id: call.id, name: call.name, args: call.args, parentId: call.parentId, ...(call.mcp === undefined ? {} : { mcp: call.mcp }) };
+        const gated = await this.#gateBeforeCall?.(info, signal);
+        if (gated !== undefined) return gated;
+        return options.hooks?.beforeCall?.(info, signal);
+      },
       start: (call) => this.#emit?.({ type: "nested_start", call }),
       end: (call, outcome) => this.#emit?.({ type: "nested_end", call, result: outcome.result, isError: outcome.isError }),
     };
@@ -346,7 +360,10 @@ export class HarnessSession {
         beforeToolCall: async (context, signal) => {
           const stopped = await policy!.beforeToolCall(context);
           if (stopped !== undefined) return stopped;
-          const refused = await hooks?.beforeCall?.({ id: context.toolCall.id, name: context.toolCall.name, args: context.args }, signal);
+          const info: CallInfo = { id: context.toolCall.id, name: context.toolCall.name, args: context.args };
+          const gated = await this.#gateBeforeCall?.(info, signal);
+          if (gated !== undefined) return { block: true, reason: gated };
+          const refused = await hooks?.beforeCall?.(info, signal);
           return refused === undefined ? undefined : { block: true, reason: refused };
         },
         afterToolCall: async (context, signal) => {

@@ -324,13 +324,76 @@ export interface TurnUsage {
   reasoning: number;
   costUsd: number | null;
 }
+export type GateRisk = "low" | "medium" | "high" | "critical";
+export type GateStatus = "pending" | "approved" | "denied" | "expired" | "cancelled";
+export type GateTerminalStatus = Exclude<GateStatus, "pending">;
+export interface GateRequest {
+  readonly gateId: string;
+  readonly tool: string;
+  readonly action: string;
+  readonly summary: string;
+  readonly risk: GateRisk;
+  readonly input: unknown;
+  readonly callId: string;
+  readonly parentId?: string;
+  readonly mcp?: { readonly server: string; readonly tool: string };
+  readonly idempotencyKey: string;
+  readonly metadata?: Readonly<Record<string, unknown>>;
+}
+export interface GateDecision {
+  readonly gateId: string;
+  readonly status: GateTerminalStatus;
+  readonly reason?: string;
+  readonly decidedBy?: string;
+  readonly decidedAt?: string;
+}
+export interface GateProvider {
+  requestApproval(request: GateRequest, signal?: AbortSignal): Promise<GateDecision>;
+}
+export interface GateRule {
+  readonly tool: string | RegExp;
+  readonly action?: string;
+  readonly risk?: GateRisk;
+  readonly summary?: string | ((call: CallInfo) => string);
+  readonly when?: (call: CallInfo) => boolean;
+}
+export interface GateConfig {
+  readonly provider?: GateProvider;
+  readonly rules?: ReadonlyArray<GateRule>;
+  readonly requireAll?: boolean;
+  readonly defaultRisk?: GateRisk;
+  readonly timeoutMs?: number;
+  readonly sessionId?: string;
+  readonly onRequest?: (request: GateRequest) => void;
+  readonly onDecision?: (request: GateRequest, decision: GateDecision) => void;
+}
+export interface CloudGateProviderOptions {
+  readonly baseUrl: string;
+  readonly apiKey: string;
+  readonly pollIntervalMs?: number;
+  readonly fetch?: typeof globalThis.fetch;
+  readonly extraHeaders?: Readonly<Record<string, string>>;
+}
+export declare function createGateHook(
+  config: GateConfig,
+  emitEvent?: (event:
+    | { type: "gate_requested"; request: GateRequest }
+    | { type: "gate_decided"; request: GateRequest; decision: GateDecision }) => void,
+): (call: CallInfo, signal: AbortSignal | undefined) => Promise<string | undefined>;
+export declare function createCloudGateProvider(options: CloudGateProviderOptions): GateProvider;
+export declare function createMemoryGateProvider(
+  decide: (request: GateRequest, signal?: AbortSignal) => Promise<Omit<GateDecision, "gateId"> | GateTerminalStatus> | Omit<GateDecision, "gateId"> | GateTerminalStatus,
+): GateProvider;
+
 export type SessionEvent =
   | { type: "pi"; event: { type: string; [key: string]: unknown } }
   | { type: "nested_start"; call: NestedCall }
   | { type: "nested_end"; call: NestedCall; result: unknown; isError: boolean }
   | { type: "side_usage"; kind: "cache_keepalive" | "compaction"; usage: TurnUsage }
   | { type: "compacted"; summaryTokens: number; before: number }
-  | { type: "retry"; attempt: number; of: number; delayMs: number; error: string | undefined };
+  | { type: "retry"; attempt: number; of: number; delayMs: number; error: string | undefined }
+  | { type: "gate_requested"; request: GateRequest }
+  | { type: "gate_decided"; request: GateRequest; decision: GateDecision };
 export interface TurnOutcome {
   status: "finished" | "stopped" | "error";
   stopReason: string;
@@ -354,6 +417,7 @@ export interface HarnessSessionOptions {
   instructions?: string;
   messages?: HarnessMessage[];
   hooks?: SessionHooks;
+  gate?: GateConfig;
   fetch?: typeof fetch;
   compactAt?: number;
 }
