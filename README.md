@@ -90,6 +90,8 @@ pnpm build
 pnpm test
 ```
 
-## License
+## Contributing, Security & License
 
-Apache-2.0 for `@caveman-ai/agent`, `@caveman-ai/harness`, `@caveman-ai/react`, `@caveman-ai/adapter-kit`, and `@caveman-ai/create-agent`. MIT for `@caveman-ai/protocol`, `@caveman-ai/evals`, and `caveman-evals`.
+- Contributor guide & agent map: [`CONTRIBUTING.md`](./CONTRIBUTING.md), [`AGENTS.md`](./AGENTS.md) (`CLAUDE.md` symlinks to `AGENTS.md`).
+- Security reporting: [`SECURITY.md`](./SECURITY.md).
+- Apache-2.0 for `@caveman-ai/agent`, `@caveman-ai/harness`, `@caveman-ai/react`, `@caveman-ai/adapter-kit`, and `@caveman-ai/create-agent`. MIT for `@caveman-ai/protocol`, `@caveman-ai/evals`, and `caveman-evals`. See [`LICENSE`](./LICENSE) and [`NOTICE`](./NOTICE).
