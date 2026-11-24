@@ -1,9 +1,11 @@
 // Direct in-process Harness v4 runner: runs @caveman-ai/harness HarnessSession
 // directly in-process with zero external binary or daemon.
 import {
+  appLoadoutFor,
   appLoadouts,
   HarnessSession,
   LocalEnv,
+  resolveHarnessModel,
   type GateConfig,
   type GateProvider,
   type GateRule,
@@ -12,14 +14,20 @@ import {
   type SessionEvent as HarnessSessionEvent,
 } from "@caveman-ai/harness";
 import type { AgentDefinition } from "./agent.ts";
-import { ZERO_USAGE, type SessionEvent, type StopReason, type Usage } from "./types.ts";
+import { CavemanError, ZERO_USAGE, type SessionEvent, type StopReason, type Usage } from "./types.ts";
 
 export interface InProcessRunOptions {
   readonly agent: AgentDefinition;
   readonly task: string;
   readonly cwd?: string;
-  readonly model: HarnessModel;
-  readonly stream: HarnessStreamFn;
+  /** Either a `"provider/model"` spec (e.g. `"anthropic/claude-sonnet-4-6"`) or a custom `HarnessModel`. */
+  readonly model: string | HarnessModel;
+  /** Required when passing a custom `HarnessModel`; resolved automatically for `"provider/model"` strings. */
+  readonly stream?: HarnessStreamFn;
+  /** Explicit API key override when `model` is a `"provider/model"` string. */
+  readonly apiKey?: string;
+  /** Optional provider base URL override when `model` is a `"provider/model"` string. */
+  readonly baseUrl?: string;
   readonly loadout?: "general" | "code" | "claude" | "gpt";
   /** Caveman Gate configuration or provider overriding `agent.gate`. */
   readonly gate?: GateConfig;
@@ -39,6 +47,26 @@ export interface InProcessRunResult {
 /** Runs an AgentDefinition directly in-process on Harness v4 (zero external binary). */
 export async function runInProcess(options: InProcessRunOptions): Promise<InProcessRunResult> {
   const cwd = options.cwd ?? process.cwd();
+  let model: HarnessModel;
+  let stream: HarnessStreamFn;
+  if (typeof options.model === "string") {
+    const resolved = resolveHarnessModel(options.model, {
+      ...(options.apiKey === undefined ? {} : { apiKey: options.apiKey }),
+      ...(options.baseUrl === undefined ? {} : { baseUrl: options.baseUrl }),
+    });
+    model = resolved.model;
+    stream = options.stream ?? resolved.stream;
+  } else {
+    if (options.stream === undefined) {
+      throw new CavemanError(
+        "stream_required",
+        "runInProcess requires `stream` when `model` is an object; pass a \"provider/model\" string to resolve one automatically.",
+      );
+    }
+    model = options.model;
+    stream = options.stream;
+  }
+
   const presets = appLoadouts();
   const loadout =
     options.loadout === "claude"
@@ -48,7 +76,7 @@ export async function runInProcess(options: InProcessRunOptions): Promise<InProc
         : options.loadout === "code"
           ? presets.code
           : options.agent.computer && options.agent.computer !== "none"
-            ? presets.claude
+            ? appLoadoutFor(model)
             : presets.general;
 
   const env = new LocalEnv({ cwd });
@@ -115,14 +143,14 @@ export async function runInProcess(options: InProcessRunOptions): Promise<InProc
   const session = new HarnessSession({
     env,
     loadout,
-    model: options.model,
-    stream: options.stream,
+    model,
+    stream,
     instructions: options.agent.instructions,
     tools,
     ...(gate === undefined ? {} : { gate }),
   });
 
-  emit("session.status", { status: "running", stop_reason: null, model: options.model.id });
+  emit("session.status", { status: "running", stop_reason: null, model: model.id });
   emit("user.message", { text: options.task, origin: "sdk" });
 
   try {
@@ -165,7 +193,7 @@ export async function runInProcess(options: InProcessRunOptions): Promise<InProc
     };
     emit("session.usage", usage);
     const stopReason: StopReason = outcome.status === "error" ? "error" : outcome.status === "stopped" ? "interrupted" : "end_turn";
-    emit("session.status", { status: "terminated", stop_reason: stopReason, model: options.model.id });
+    emit("session.status", { status: "terminated", stop_reason: stopReason, model: model.id });
     return { text: finalText, stop_reason: stopReason, usage, events, loadout: loadout.name };
   } finally {
     await session.close();

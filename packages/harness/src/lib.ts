@@ -17,3 +17,51 @@ export { SandboxEnv, type SandboxEnvOptions, type SandboxEvent } from "./env/san
 export type { DirEntry, ExecEnv, ExecOptions, ExecResult, FileStat, ReadRange } from "./env/types.ts";
 export { connectMcp, mcpContent, mcpDirectTools, type ConnectMcpOptions, type McpServerConfig, type McpSession, type McpToolHandle } from "./mcp.ts";
 export { EFFORTS, type Effort } from "./models.ts";
+import { resolveModel, type ModelOptions } from "./models.ts";
+
+export interface ResolveHarnessModelOptions {
+  apiKey?: string;
+  apiKeyEnv?: string;
+  baseUrl?: string;
+}
+
+/**
+ * Resolve a `"provider/model"` spec (`anthropic/...` or `openai/...`) from the
+ * bundled Pi catalog into `{ model, stream }` ready for `new HarnessSession(...)`
+ * or `runInProcess(...)`. Fails closed when the model is unknown or the key is empty.
+ */
+export function resolveHarnessModel(spec: string, options: ResolveHarnessModelOptions = {}) {
+  const slash = spec.indexOf("/");
+  const provider = slash > 0 ? spec.slice(0, slash) : "";
+  const modelOpts: ModelOptions = {
+    ...(options.apiKeyEnv === undefined ? {} : { apiKeyEnv: options.apiKeyEnv }),
+    ...(options.baseUrl === undefined
+      ? {}
+      : provider === "openai"
+        ? { openaiBaseUrl: options.baseUrl }
+        : { anthropicBaseUrl: options.baseUrl }),
+  };
+  if (options.apiKey !== undefined) {
+    const trimmed = options.apiKey.trim();
+    if (trimmed === "") throw new Error(`model: apiKey for ${spec} must not be empty`);
+    const probeKey = `__CAVEMAN_HARNESS_KEY_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    process.env[probeKey] = trimmed;
+    let resolved;
+    try {
+      resolved = resolveModel(spec, { ...modelOpts, apiKeyEnv: probeKey });
+    } finally {
+      delete process.env[probeKey];
+    }
+    return {
+      model: resolved.model,
+      stream: (model: any, context: any, opts?: any) =>
+        resolved.models.streamSimple(model, context, { ...opts, apiKey: trimmed }),
+    };
+  }
+  const resolved = resolveModel(spec, modelOpts);
+  return {
+    model: resolved.model,
+    stream: (model: any, context: any, opts?: any) =>
+      resolved.models.streamSimple(model, context, { ...opts, apiKey: resolved.apiKey() }),
+  };
+}

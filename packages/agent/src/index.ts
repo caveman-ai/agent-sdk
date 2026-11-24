@@ -7,9 +7,12 @@ export type { ModelEndpoint } from "./local.ts";
 export { compileAgentDefinition, compileAgentFolder, type AgentBuildFile, type AgentBuildManifest, type AgentBuildResult } from "./build.ts";
 export { runInProcess, type InProcessRunOptions, type InProcessRunResult } from "./inprocess.ts";
 export {
+  appLoadoutFor,
+  appLoadouts,
   createCloudGateProvider,
   createGateHook,
   createMemoryGateProvider,
+  resolveHarnessModel,
   type CloudGateProviderOptions,
   type GateConfig,
   type GateDecision,
@@ -17,7 +20,9 @@ export {
   type GateRequest,
   type GateRule,
   type GateTerminalStatus,
+  type ResolveHarnessModelOptions,
 } from "@caveman-ai/harness";
+export { toHarnessTool, type ToHarnessToolOptions } from "./harness.ts";
 export {
   CavemanError,
   ZERO_USAGE,

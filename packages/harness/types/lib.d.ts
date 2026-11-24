@@ -15,7 +15,6 @@ export interface HarnessModel {
   contextWindow: number;
   maxTokens: number;
   cost?: { input: number; output: number; cacheRead: number; cacheWrite: number };
-  [key: string]: unknown;
 }
 
 /** pi-agent-core's StreamFn: `(model, context, options) => AssistantMessageEventStream` (pi-ai's `streamSimple`). */
@@ -28,7 +27,6 @@ export interface HarnessTool {
   description: string;
   parameters: unknown;
   execute(toolCallId: string, params: any, signal?: AbortSignal, onUpdate?: (partial: unknown) => void): Promise<{ content: Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }>; details?: unknown }>;
-  [key: string]: unknown;
 }
 
 /** A pi-agent-core AgentMessage: user, assistant, toolResult (or a host's own role, which never reaches the model). */
@@ -436,3 +434,21 @@ export declare class HarnessSession {
 export declare function isCompactionSummary(text: string): boolean;
 /** Messages another surface or engine left, with calls of tools not in `declared` (and their results) as text. */
 export declare function portableMessages(messages: readonly unknown[], declared: ReadonlySet<string>): HarnessMessage[];
+
+export interface ResolveHarnessModelOptions {
+  /** Explicit API key; takes precedence over `apiKeyEnv` / default env var. */
+  apiKey?: string;
+  /** Environment variable holding the provider key (default `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`). */
+  apiKeyEnv?: string;
+  /** Optional provider base URL override. */
+  baseUrl?: string;
+}
+/**
+ * Resolve a `"provider/model"` spec (`anthropic/...` or `openai/...`) from the
+ * bundled catalog into `{ model, stream }` ready for `new HarnessSession(...)`
+ * or `runInProcess(...)`.
+ */
+export declare function resolveHarnessModel(
+  spec: string,
+  options?: ResolveHarnessModelOptions,
+): { model: HarnessModel; stream: HarnessStreamFn };

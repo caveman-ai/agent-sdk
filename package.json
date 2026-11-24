@@ -7,6 +7,7 @@
   "packageManager": "pnpm@10.14.0",
   "scripts": {
     "build": "pnpm --filter @caveman-ai/protocol build && pnpm --filter @caveman-ai/harness build && pnpm --filter @caveman-ai/agent build && pnpm --filter @caveman-ai/evals build",
-    "test": "pnpm --filter @caveman-ai/protocol test && pnpm --filter @caveman-ai/harness test && pnpm --filter @caveman-ai/agent test && pnpm --filter @caveman-ai/evals test && pnpm --filter @caveman-ai/react test"
+    "test:examples": "node --experimental-strip-types --no-warnings --test examples/basics/tests/*.test.ts",
+    "test": "pnpm --filter @caveman-ai/protocol test && pnpm --filter @caveman-ai/harness test && pnpm --filter @caveman-ai/agent test && pnpm --filter @caveman-ai/evals test && pnpm --filter @caveman-ai/react test && pnpm test:examples"
   }
 }
