@@ -1,4 +1,4 @@
-# Caveman Agents (`caveman-ai/agents`)
+# Caveman Agents (`caveman-ai/agent-sdk`)
 
 Build, evaluate, and run AI agents locally in-process on the open-source Caveman Harness (v4), or run the same definition on Caveman Cloud.
 

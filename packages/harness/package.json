@@ -53,11 +53,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/caveman-ai/agents.git",
+    "url": "git+https://github.com/caveman-ai/agent-sdk.git",
     "directory": "packages/harness"
   },
   "homepage": "https://docs.caveman.so",
   "bugs": {
-    "url": "https://github.com/caveman-ai/agents/issues"
+    "url": "https://github.com/caveman-ai/agent-sdk/issues"
   }
 }

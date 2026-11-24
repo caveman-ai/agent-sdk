@@ -24,7 +24,7 @@
   "sideEffects": false,
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/caveman-ai/agents.git",
+    "url": "git+https://github.com/caveman-ai/agent-sdk.git",
     "directory": "packages/evals"
   },
   "homepage": "https://caveman.so",
