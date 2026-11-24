@@ -34,6 +34,7 @@ export function resolveHarnessModel(spec: string, options: ResolveHarnessModelOp
   const slash = spec.indexOf("/");
   const provider = slash > 0 ? spec.slice(0, slash) : "";
   const modelOpts: ModelOptions = {
+    ...(options.apiKey === undefined ? {} : { apiKey: options.apiKey }),
     ...(options.apiKeyEnv === undefined ? {} : { apiKeyEnv: options.apiKeyEnv }),
     ...(options.baseUrl === undefined
       ? {}
@@ -41,23 +42,6 @@ export function resolveHarnessModel(spec: string, options: ResolveHarnessModelOp
         ? { openaiBaseUrl: options.baseUrl }
         : { anthropicBaseUrl: options.baseUrl }),
   };
-  if (options.apiKey !== undefined) {
-    const trimmed = options.apiKey.trim();
-    if (trimmed === "") throw new Error(`model: apiKey for ${spec} must not be empty`);
-    const probeKey = `__CAVEMAN_HARNESS_KEY_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-    process.env[probeKey] = trimmed;
-    let resolved;
-    try {
-      resolved = resolveModel(spec, { ...modelOpts, apiKeyEnv: probeKey });
-    } finally {
-      delete process.env[probeKey];
-    }
-    return {
-      model: resolved.model,
-      stream: (model: any, context: any, opts?: any) =>
-        resolved.models.streamSimple(model, context, { ...opts, apiKey: trimmed }),
-    };
-  }
   const resolved = resolveModel(spec, modelOpts);
   return {
     model: resolved.model,

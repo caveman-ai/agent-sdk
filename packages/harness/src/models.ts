@@ -25,6 +25,8 @@ export type Effort = (typeof EFFORTS)[number];
 export interface ModelOptions {
   openaiBaseUrl?: string;
   anthropicBaseUrl?: string;
+  /** Explicit API key; takes precedence over `apiKeyEnv` and default provider env vars. */
+  apiKey?: string;
   /** Env var holding the key; default OPENAI_API_KEY / ANTHROPIC_API_KEY by provider. */
   apiKeyEnv?: string;
   /** Scripted responses for `faux/<id>` models (tests). */
@@ -83,6 +85,11 @@ export function resolveModel(spec: string, options: ModelOptions = {}, steps?: F
   if (found === undefined) throw new Error(`model: ${spec} is not in the pi-ai catalog`);
   const baseUrl = provider === "openai" ? options.openaiBaseUrl : options.anthropicBaseUrl;
   const model = baseUrl === undefined ? found : { ...found, baseUrl };
+  if (options.apiKey !== undefined) {
+    const explicitKey = options.apiKey.trim();
+    if (explicitKey === "") throw new Error(`model: apiKey for ${spec} must not be empty`);
+    return { models, model, apiKey: () => explicitKey };
+  }
   const keyEnv = options.apiKeyEnv ?? (provider === "openai" ? "OPENAI_API_KEY" : "ANTHROPIC_API_KEY");
   const key = process.env[keyEnv]?.trim() ?? "";
   if (key === "") throw new Error(`model: ${keyEnv} is unset or empty; ${spec} needs its key there${options.apiKeyEnv === undefined ? " (or name another variable with --api-key-env)" : ""}`);
