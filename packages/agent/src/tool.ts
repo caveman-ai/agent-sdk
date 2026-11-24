@@ -2,9 +2,23 @@
 // (one `client` MCP server per session) and pauses on `requires_action {kind: "tool"}` until the caller answers with
 // `user.tool_result` (CONTRACT §3.5). A handler's errors go back to the agent as an error result, so it can recover.
 
-import { CavemanError } from "./types.ts";
+import { CavemanError, type GateRisk } from "./types.ts";
 
 export type JsonSchemaObject = Readonly<Record<string, unknown>>;
+
+/** Caveman Gate approval policy attached directly to a tool declaration. */
+export interface ToolGatePolicy {
+  readonly action?: string;
+  readonly risk?: GateRisk;
+  readonly summary?: string | ((input: unknown) => string);
+  /** Optional predicate; when false, this call runs without a gate. */
+  readonly when?: (input: unknown) => boolean;
+}
+
+export interface ToolOptions {
+  /** Require Caveman Gate human approval before executing this tool (fail-closed). */
+  readonly gate?: boolean | ToolGatePolicy;
+}
 
 /**
  * A schema library's object that can render itself as JSON Schema (Standard JSON Schema) and validate input
@@ -22,6 +36,8 @@ export interface Tool<I = unknown> {
   readonly name: string;
   readonly description: string;
   readonly inputSchema: JsonSchemaObject;
+  /** Optional Caveman Gate policy enforced before the tool handler runs. */
+  readonly gate?: ToolGatePolicy;
   /** Validates and runs a call; what it returns is the text the agent reads. */
   readonly call: (input: unknown) => Promise<{ readonly content: string; readonly isError: boolean }>;
   /** The handler's own input type, for inference only. */
@@ -50,6 +66,7 @@ export function tool<I>(
   description: string,
   schema: JsonSchemaObject | StandardSchema<I>,
   handler: (input: I) => unknown | Promise<unknown>,
+  options?: ToolOptions,
 ): Tool<I> {
   if (!TOOL_NAME.test(name) || name.startsWith("mcp__")) {
     throw new CavemanError("tool_name_invalid", `Tool name "${name}" must be letters, digits, _ and - (at most 64), start with a letter, and not start with mcp__.`);
@@ -70,10 +87,17 @@ export function tool<I>(
   if ((inputSchema.type ?? "object") !== "object") {
     throw new CavemanError("tool_schema_invalid", `Tool "${name}" needs an object schema (type: object, with properties).`);
   }
+  const gate: ToolGatePolicy | undefined =
+    options?.gate === true
+      ? { action: `tool.${name}`, risk: "high" }
+      : options?.gate && typeof options.gate === "object"
+        ? options.gate
+        : undefined;
   return {
     name,
     description,
     inputSchema,
+    ...(gate === undefined ? {} : { gate }),
     call: async (input) => {
       try {
         let value = input as I;

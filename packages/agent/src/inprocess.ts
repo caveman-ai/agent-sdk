@@ -4,6 +4,9 @@ import {
   appLoadouts,
   HarnessSession,
   LocalEnv,
+  type GateConfig,
+  type GateProvider,
+  type GateRule,
   type HarnessModel,
   type HarnessStreamFn,
   type SessionEvent as HarnessSessionEvent,
@@ -18,6 +21,10 @@ export interface InProcessRunOptions {
   readonly model: HarnessModel;
   readonly stream: HarnessStreamFn;
   readonly loadout?: "general" | "code" | "claude" | "gpt";
+  /** Caveman Gate configuration or provider overriding `agent.gate`. */
+  readonly gate?: GateConfig;
+  /** Shorthand to supply a GateProvider for gated tools declared on `agent`. */
+  readonly gateProvider?: GateProvider;
   readonly onEvent?: (event: SessionEvent) => void;
 }
 
@@ -53,18 +60,57 @@ export async function runInProcess(options: InProcessRunOptions): Promise<InProc
     options.onEvent?.(ev);
   };
 
-  const tools = (options.agent.tools ?? [])
-    .filter((t): t is Exclude<typeof t, string> => typeof t !== "string")
+  const customTools = (options.agent.tools ?? [])
+    .filter((t): t is Exclude<typeof t, string> => typeof t !== "string");
+
+  const tools = customTools.map((t) => ({
+    name: t.name,
+    label: t.name,
+    description: t.description,
+    parameters: t.inputSchema as any,
+    execute: async (_id: string, params: any) => {
+      const res = await t.call(params);
+      return { content: [{ type: "text" as const, text: res.content }], details: { isError: res.isError } };
+    },
+  }));
+
+  const toolGateRules: GateRule[] = customTools
+    .filter((t) => t.gate !== undefined)
     .map((t) => ({
-      name: t.name,
-      label: t.name,
-      description: t.description,
-      parameters: t.inputSchema as any,
-      execute: async (_id: string, params: any) => {
-        const res = await t.call(params);
-        return { content: [{ type: "text" as const, text: res.content }], details: { isError: res.isError } };
-      },
+      tool: t.name,
+      ...(t.gate!.action === undefined ? {} : { action: t.gate!.action }),
+      ...(t.gate!.risk === undefined ? {} : { risk: t.gate!.risk }),
+      ...(t.gate!.summary === undefined
+        ? {}
+        : {
+            summary: typeof t.gate!.summary === "function"
+              ? (call) => (t.gate!.summary as (input: unknown) => string)(call.args)
+              : t.gate!.summary,
+          }),
+      ...(t.gate!.when === undefined
+        ? {}
+        : { when: (call) => t.gate!.when!(call.args) }),
     }));
+
+  const baseGate = options.agent.gate;
+  const overrideGate = options.gate;
+  const mergedRules: GateRule[] = [
+    ...toolGateRules,
+    ...(baseGate?.rules ?? []),
+    ...(overrideGate?.rules ?? []),
+  ];
+  const mergedProvider = options.gateProvider ?? overrideGate?.provider ?? baseGate?.provider;
+  const requireAll = overrideGate?.requireAll ?? baseGate?.requireAll ?? false;
+  const gate: GateConfig | undefined =
+    mergedRules.length > 0 || requireAll || mergedProvider !== undefined
+      ? {
+          ...(baseGate ?? {}),
+          ...(overrideGate ?? {}),
+          ...(mergedProvider === undefined ? {} : { provider: mergedProvider }),
+          rules: mergedRules,
+          requireAll,
+        }
+      : undefined;
 
   const session = new HarnessSession({
     env,
@@ -73,6 +119,7 @@ export async function runInProcess(options: InProcessRunOptions): Promise<InProc
     stream: options.stream,
     instructions: options.agent.instructions,
     tools,
+    ...(gate === undefined ? {} : { gate }),
   });
 
   emit("session.status", { status: "running", stop_reason: null, model: options.model.id });
@@ -88,6 +135,23 @@ export async function runInProcess(options: InProcessRunOptions): Promise<InProc
           } else if (pe.type === "tool_execution_end") {
             emit("agent.tool_result", { tool_use_id: String(pe.toolCallId ?? ""), is_error: Boolean(pe.isError), output: pe.result ?? "" });
           }
+        } else if (ev.type === "gate_requested") {
+          emit("gate.requested", {
+            gate_id: ev.request.gateId,
+            tool: ev.request.tool,
+            action: ev.request.action,
+            risk: ev.request.risk,
+            summary: ev.request.summary,
+            input: ev.request.input,
+          });
+        } else if (ev.type === "gate_decided") {
+          emit("gate.decided", {
+            gate_id: ev.decision.gateId,
+            tool: ev.request.tool,
+            status: ev.decision.status,
+            ...(ev.decision.reason === undefined ? {} : { reason: ev.decision.reason }),
+            ...(ev.decision.decidedBy === undefined ? {} : { decided_by: ev.decision.decidedBy }),
+          });
         }
       },
     });

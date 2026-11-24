@@ -2,8 +2,9 @@
 // (`.caveman/agents/<name>.md`: frontmatter, then instructions). So there is one validator, and an inline agent can
 // be saved to a repository or published to Cloud unchanged.
 
+import type { GateConfig } from "@caveman-ai/harness";
 import type { Tool } from "./tool.ts";
-import { CavemanError } from "./types.ts";
+import { CavemanError, type SensorSpec } from "./types.ts";
 
 export type Computer = "none" | "readonly" | "full";
 
@@ -25,6 +26,10 @@ export interface AgentDefinition {
   /** Tools it may call: tools made with `tool()` run in this process; names allow built-in tools. */
   readonly tools?: ReadonlyArray<Tool<never> | Tool<unknown> | string>;
   readonly disallowedTools?: ReadonlyArray<string>;
+  /** Agent-level Caveman Gate configuration merged with any per-tool `gate` policies. */
+  readonly gate?: GateConfig;
+  /** Declarative Caveman Sensors that can wake or park this agent at zero compute. */
+  readonly sensors?: ReadonlyArray<SensorSpec>;
 }
 
 const AGENT_NAME = /^[a-z][a-z0-9-]{0,39}$/;
@@ -39,12 +44,24 @@ export function agentFileText(definition: AgentDefinition): string {
     throw new CavemanError("agent_name_invalid", `Agent name "${name}" must be lowercase letters, digits and -, start with a letter, at most 40.`);
   }
   if (definition.instructions.trim() === "") throw new CavemanError("agent_instructions_missing", `Agent "${name}" needs instructions.`);
-  const tools = (definition.tools ?? []).map((entry) =>
-    typeof entry === "string" ? entry : { type: "custom", name: entry.name, description: entry.description, input_schema: entry.inputSchema },
-  );
-  const names = tools.map((entry) => (typeof entry === "string" ? entry : entry.name));
+  const tools = (definition.tools ?? []).map((entry) => {
+    if (typeof entry === "string") return entry;
+    const base: Record<string, unknown> = { type: "custom", name: entry.name, description: entry.description, input_schema: entry.inputSchema };
+    if (entry.gate !== undefined) {
+      base.gate = {
+        ...(entry.gate.action === undefined ? {} : { action: entry.gate.action }),
+        ...(entry.gate.risk === undefined ? {} : { risk: entry.gate.risk }),
+        ...(typeof entry.gate.summary === "string" ? { summary: entry.gate.summary } : {}),
+      };
+    }
+    return base;
+  });
+  const names = tools.map((entry) => (typeof entry === "string" ? entry : String(entry.name)));
   const twice = names.find((item, i) => names.indexOf(item) !== i);
   if (twice !== undefined) throw new CavemanError("tool_declared_twice", `Agent "${name}" declares the tool "${twice}" twice.`);
+  const sensors = definition.sensors ?? [];
+  const sensorTwice = sensors.find((s, i) => sensors.findIndex((other) => other.name === s.name) !== i);
+  if (sensorTwice !== undefined) throw new CavemanError("sensor_declared_twice", `Agent "${name}" declares the sensor "${sensorTwice.name}" twice.`);
   const front = [
     line("name", name),
     line("description", definition.description ?? name),
@@ -54,6 +71,7 @@ export function agentFileText(definition: AgentDefinition): string {
     line("computer", definition.computer ?? "none"),
     ...(tools.length === 0 ? [] : [line("tools", tools)]),
     ...(definition.disallowedTools === undefined ? [] : [line("disallowedTools", definition.disallowedTools)]),
+    ...(sensors.length === 0 ? [] : [line("sensors", sensors)]),
   ];
   return `---\n${front.join("\n")}\n---\n\n${definition.instructions.trim()}\n`;
 }

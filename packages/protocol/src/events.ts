@@ -52,6 +52,31 @@ interface Event<T extends string, D> {
   readonly data: D;
 }
 
+export type GateRisk = "low" | "medium" | "high" | "critical";
+export type GateStatus = "pending" | "approved" | "denied" | "expired" | "cancelled";
+
+export type SensorSourceKind =
+  | "http_poll"
+  | "webhook"
+  | "rss"
+  | "github"
+  | "slack"
+  | "linear"
+  | "gmail"
+  | "drive"
+  | "room";
+
+/** Declarative Caveman Sensor specification attached to an agent or durable park. */
+export interface SensorSpec {
+  readonly id?: string;
+  readonly name: string;
+  readonly kind: SensorSourceKind;
+  readonly url?: string;
+  readonly interval?: string;
+  readonly filter?: string;
+  readonly match?: Readonly<Record<string, unknown>>;
+}
+
 /** A public session event. New types may appear; code that switches on `type` should ignore ones it doesn't know. */
 export type SessionEvent =
   | Event<"session.status", { readonly status: SessionStatus; readonly stop_reason: StopReason | null; readonly model?: string }>
@@ -62,6 +87,10 @@ export type SessionEvent =
   | Event<"agent.tool_use", { readonly id: string; readonly name: string; readonly input: unknown; readonly truncated?: boolean }>
   | Event<"agent.tool_result", { readonly tool_use_id: string; readonly is_error: boolean; readonly output: unknown; readonly truncated?: boolean }>
   | Event<"requires_action", Ask>
+  | Event<"gate.requested", { readonly gate_id: string; readonly tool: string; readonly action: string; readonly risk?: GateRisk; readonly summary?: string; readonly input?: unknown }>
+  | Event<"gate.decided", { readonly gate_id: string; readonly tool: string; readonly status: Exclude<GateStatus, "pending">; readonly reason?: string; readonly decided_by?: string }>
+  | Event<"sensor.parked", { readonly sensor_ids: ReadonlyArray<string>; readonly reason?: string; readonly exit_code: 5 }>
+  | Event<"sensor.triggered", { readonly sensor_id: string; readonly event_id?: string; readonly payload?: unknown }>
   | Event<"agent.subagent", { readonly workspace_id: string | null; readonly title: string; readonly status: string }>
   | Event<"session.usage", Usage>
   | Event<"session.output", { readonly file_id: string; readonly path: string; readonly bytes: number }>
