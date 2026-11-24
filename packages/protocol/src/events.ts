@@ -88,7 +88,7 @@ export type SessionEvent =
   | Event<"agent.tool_result", { readonly tool_use_id: string; readonly is_error: boolean; readonly output: unknown; readonly truncated?: boolean }>
   | Event<"requires_action", Ask>
   | Event<"gate.requested", { readonly gate_id: string; readonly tool: string; readonly action: string; readonly risk?: GateRisk; readonly summary?: string; readonly input?: unknown }>
-  | Event<"gate.decided", { readonly gate_id: string; readonly tool: string; readonly status: Exclude<GateStatus, "pending">; readonly reason?: string; readonly decided_by?: string }>
+  | Event<"gate.decided", { readonly gate_id: string; readonly provider_gate_id?: string; readonly tool: string; readonly status: Exclude<GateStatus, "pending">; readonly reason?: string; readonly decided_by?: string }>
   | Event<"sensor.parked", { readonly sensor_ids: ReadonlyArray<string>; readonly reason?: string; readonly exit_code: 5 }>
   | Event<"sensor.triggered", { readonly sensor_id: string; readonly event_id?: string; readonly payload?: unknown }>
   | Event<"agent.subagent", { readonly workspace_id: string | null; readonly title: string; readonly status: string }>

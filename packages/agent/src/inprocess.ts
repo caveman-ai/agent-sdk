@@ -122,10 +122,11 @@ export async function runInProcess(options: InProcessRunOptions): Promise<InProc
 
   const baseGate = options.agent.gate;
   const overrideGate = options.gate;
+  // Per-run gate rules take precedence over per-tool and agent-level rules (first match wins).
   const mergedRules: GateRule[] = [
+    ...(overrideGate?.rules ?? []),
     ...toolGateRules,
     ...(baseGate?.rules ?? []),
-    ...(overrideGate?.rules ?? []),
   ];
   const mergedProvider = options.gateProvider ?? overrideGate?.provider ?? baseGate?.provider;
   const requireAll = overrideGate?.requireAll ?? baseGate?.requireAll ?? false;
@@ -174,7 +175,8 @@ export async function runInProcess(options: InProcessRunOptions): Promise<InProc
           });
         } else if (ev.type === "gate_decided") {
           emit("gate.decided", {
-            gate_id: ev.decision.gateId,
+            gate_id: ev.request.gateId,
+            ...(ev.decision.providerGateId === undefined ? {} : { provider_gate_id: ev.decision.providerGateId }),
             tool: ev.request.tool,
             status: ev.decision.status,
             ...(ev.decision.reason === undefined ? {} : { reason: ev.decision.reason }),

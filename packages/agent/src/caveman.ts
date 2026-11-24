@@ -185,8 +185,25 @@ export class Caveman {
 
   private async start(options: SessionOptions, once: boolean): Promise<Session> {
     const inline = typeof options.agent === "string" ? undefined : options.agent;
+    const baseGate = inline?.gate;
+    const overrideGate = options.gate;
+    const mergedProvider = options.gateProvider ?? overrideGate?.provider ?? baseGate?.provider;
+    const mergedRules = [...(overrideGate?.rules ?? []), ...(baseGate?.rules ?? [])];
+    const requireAll = overrideGate?.requireAll ?? baseGate?.requireAll ?? false;
+    const mergedGate =
+      mergedRules.length > 0 || requireAll || mergedProvider !== undefined || baseGate !== undefined || overrideGate !== undefined
+        ? {
+            ...(baseGate ?? {}),
+            ...(overrideGate ?? {}),
+            ...(mergedProvider === undefined ? {} : { provider: mergedProvider }),
+            rules: mergedRules,
+            requireAll,
+          }
+        : undefined;
     const handlers: AskHandlers = {
       tools: [...(inline === undefined ? [] : handlersOf(inline)), ...(options.tools ?? [])],
+      ...(mergedGate === undefined ? {} : { gate: mergedGate }),
+      ...(mergedProvider === undefined ? {} : { gateProvider: mergedProvider }),
       ...(options.canUseTool === undefined ? {} : { canUseTool: options.canUseTool }),
       ...(options.onQuestion === undefined ? {} : { onQuestion: options.onQuestion }),
     };

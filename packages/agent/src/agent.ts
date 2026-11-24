@@ -62,6 +62,24 @@ export function agentFileText(definition: AgentDefinition): string {
   const sensors = definition.sensors ?? [];
   const sensorTwice = sensors.find((s, i) => sensors.findIndex((other) => other.name === s.name) !== i);
   if (sensorTwice !== undefined) throw new CavemanError("sensor_declared_twice", `Agent "${name}" declares the sensor "${sensorTwice.name}" twice.`);
+  const gateSpec = (() => {
+    const g = definition.gate;
+    if (g === undefined) return undefined;
+    const out: Record<string, unknown> = {};
+    if (g.requireAll !== undefined) out.requireAll = Boolean(g.requireAll);
+    if (g.defaultRisk !== undefined) out.defaultRisk = g.defaultRisk;
+    if (g.timeoutMs !== undefined) out.timeoutMs = g.timeoutMs;
+    if (g.rules !== undefined && g.rules.length > 0) {
+      out.rules = g.rules.map((r) => ({
+        tool: typeof r.tool === "string" ? r.tool : { regex: r.tool.source, flags: r.tool.flags },
+        ...(r.action === undefined ? {} : { action: r.action }),
+        ...(r.risk === undefined ? {} : { risk: r.risk }),
+        ...(typeof r.summary === "string" ? { summary: r.summary } : r.summary !== undefined ? { dynamicSummary: true } : {}),
+        ...(r.when === undefined ? {} : { hasWhen: true }),
+      }));
+    }
+    return Object.keys(out).length > 0 ? out : undefined;
+  })();
   const front = [
     line("name", name),
     line("description", definition.description ?? name),
@@ -71,6 +89,7 @@ export function agentFileText(definition: AgentDefinition): string {
     line("computer", definition.computer ?? "none"),
     ...(tools.length === 0 ? [] : [line("tools", tools)]),
     ...(definition.disallowedTools === undefined ? [] : [line("disallowedTools", definition.disallowedTools)]),
+    ...(gateSpec === undefined ? [] : [line("gate", gateSpec)]),
     ...(sensors.length === 0 ? [] : [line("sensors", sensors)]),
   ];
   return `---\n${front.join("\n")}\n---\n\n${definition.instructions.trim()}\n`;

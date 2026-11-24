@@ -2,6 +2,7 @@
 // the session reads every event once, answers the agent's asks with the caller's handlers, and tells callers when
 // a turn ends and when the session ends.
 
+import { createGateHook, type GateConfig, type GateProvider, type GateRule } from "@caveman-ai/harness";
 import type { Tool } from "./tool.ts";
 import {
   CavemanError,
@@ -47,6 +48,10 @@ export type Decision = "allow" | "deny" | { readonly decision: "allow" | "deny";
 export interface AskHandlers {
   /** Custom tools' handlers, by name. */
   readonly tools?: ReadonlyArray<Tool<unknown>>;
+  /** Caveman Gate policy enforced fail-closed before running custom tool handlers. */
+  readonly gate?: GateConfig;
+  /** Shorthand to supply a GateProvider for gated custom tools in this session. */
+  readonly gateProvider?: GateProvider;
   /** Answers an approval. Without it, or when it throws, the approval is denied, and the agent is told why. */
   readonly canUseTool?: (ask: ApprovalAsk) => Decision | Promise<Decision>;
   /** Answers a question. Without it, or when it throws, the agent is told to decide for itself and say what it assumed. */
@@ -335,11 +340,54 @@ export class Session {
   private async replyTo(ask: Ask): Promise<Reply> {
     if (ask.kind === "tool") {
       const handler = this.handlers.tools?.find((item) => item.name === ask.name);
-      const { content, isError } = ask.truncated === true
-        ? { content: `${ask.name} did not run: its input was too large to reach the program that started this session, and arrived cut. Send less in one call.`, isError: true }
-        : handler === undefined
-        ? { content: `No handler for the tool ${ask.name} in the program that started this session.`, isError: true }
-        : await handler.call(ask.input);
+      if (ask.truncated === true) {
+        return {
+          type: "user.tool_result",
+          ask_id: ask.ask_id,
+          content: `${ask.name} did not run: its input was too large to reach the program that started this session, and arrived cut. Send less in one call.`,
+          is_error: true,
+        };
+      }
+      if (handler === undefined) {
+        return {
+          type: "user.tool_result",
+          ask_id: ask.ask_id,
+          content: `No handler for the tool ${ask.name} in the program that started this session.`,
+          is_error: true,
+        };
+      }
+      // Enforce fail-closed Caveman Gate on SDK-executed tool handlers whenever either
+      // the tool declares a `gate` policy or session/agent gate rules apply.
+      if (handler.gate !== undefined || this.handlers.gate !== undefined) {
+        const toolRule: GateRule | undefined = handler.gate === undefined
+          ? undefined
+          : {
+              tool: handler.name,
+              ...(handler.gate.action === undefined ? {} : { action: handler.gate.action }),
+              ...(handler.gate.risk === undefined ? {} : { risk: handler.gate.risk }),
+              ...(handler.gate.summary === undefined
+                ? {}
+                : {
+                    summary: typeof handler.gate.summary === "function"
+                      ? (call) => (handler.gate!.summary as (input: unknown) => string)(call.args)
+                      : handler.gate.summary,
+                  }),
+              ...(handler.gate.when === undefined ? {} : { when: (call) => handler.gate!.when!(call.args) }),
+            };
+        const base = this.handlers.gate;
+        const provider = this.handlers.gateProvider ?? base?.provider;
+        const gateHook = createGateHook({
+          ...(base ?? {}),
+          ...(provider === undefined ? {} : { provider }),
+          sessionId: base?.sessionId ?? this.id,
+          rules: [...(base?.rules ?? []), ...(toolRule === undefined ? [] : [toolRule])],
+        });
+        const refused = await gateHook({ id: ask.ask_id, name: ask.name, args: ask.input }, undefined);
+        if (refused !== undefined) {
+          return { type: "user.tool_result", ask_id: ask.ask_id, content: refused, is_error: true };
+        }
+      }
+      const { content, isError } = await handler.call(ask.input);
       return { type: "user.tool_result", ask_id: ask.ask_id, content, is_error: isError };
     }
     if (ask.kind === "approval") {

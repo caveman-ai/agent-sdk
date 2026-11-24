@@ -10,6 +10,7 @@
  * - No credential leakage on Cloud transport: refuses non-HTTPS remote URLs
  *   (loopback allowed for local dev/tests) and uses `redirect: "error"`.
  */
+import { randomUUID } from "node:crypto";
 import { canonicalJson, sha256 } from "./loadout.ts";
 import type { CallInfo } from "./session.ts";
 
@@ -33,6 +34,8 @@ export interface GateRequest {
 
 export interface GateDecision {
   readonly gateId: string;
+  /** Provider-assigned remote gate identifier (e.g., Caveman Cloud Inbox item ID), when distinct from `gateId`. */
+  readonly providerGateId?: string;
   readonly status: GateTerminalStatus;
   readonly reason?: string;
   readonly decidedBy?: string;
@@ -83,12 +86,29 @@ const MAX_RETRY_AFTER_S = 60;
 const DEFAULT_GATE_TIMEOUT_MS = 300_000;
 const DEFAULT_POLL_INTERVAL_MS = 1_500;
 
+const MAX_GATE_RESPONSE_BYTES = 1024 * 1024;
+
+function normalizeMcpSegment(s: string): string {
+  return s.replace(/[^a-zA-Z0-9_]/g, "_");
+}
+
 function matchesRule(rule: GateRule, call: CallInfo): boolean {
-  const candidates = [call.name];
-  if (call.mcp) candidates.push(`${call.mcp.server}__${call.mcp.tool}`);
+  const candidates = new Set<string>([call.name]);
+  if (call.name.startsWith("mcp__") && call.name.length > 5) {
+    candidates.add(call.name.slice(5));
+  }
+  if (call.mcp) {
+    const rawQualified = `${call.mcp.server}__${call.mcp.tool}`;
+    const normQualified = `${normalizeMcpSegment(call.mcp.server)}__${normalizeMcpSegment(call.mcp.tool)}`;
+    candidates.add(rawQualified);
+    candidates.add(`mcp__${rawQualified}`);
+    candidates.add(normQualified);
+    candidates.add(`mcp__${normQualified}`);
+  }
+  const list = [...candidates];
   const nameMatches = typeof rule.tool === "string"
-    ? candidates.includes(rule.tool)
-    : candidates.some((c) => {
+    ? candidates.has(rule.tool)
+    : list.some((c) => {
       rule.tool instanceof RegExp && (rule.tool.lastIndex = 0);
       return (rule.tool as RegExp).test(c);
     });
@@ -97,6 +117,28 @@ function matchesRule(rule: GateRule, call: CallInfo): boolean {
     return Boolean(rule.when(call));
   }
   return true;
+}
+
+function raceWithAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  // Suppress unhandled rejection if promise settles after abort wins the race.
+  promise.catch(() => {});
+  if (signal.aborted) {
+    return Promise.reject(signal.reason ?? new Error("Aborted"));
+  }
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason ?? new Error("Aborted"));
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (val) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(val);
+      },
+      (err) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(err);
+      },
+    );
+  });
 }
 
 function isLoopbackHost(hostname: string): boolean {
@@ -193,8 +235,13 @@ export function createGateHook(
       return `Blocked by Caveman Gate (summary error, fail-closed): ${msg}`;
     }
 
+    // Bind each gate request to this specific tool invocation (call.id or random nonce) so
+    // an approval for one execution can NEVER be replayed to auto-approve a second invocation
+    // with identical arguments, while network retries of the SAME invocation stay idempotent.
+    const invocationId = call.id && call.id.trim() !== "" ? call.id.trim() : randomUUID();
     const digest = sha256(canonicalJson({
       sessionId: config.sessionId ?? "",
+      callId: invocationId,
       tool: call.name,
       action,
       args: call.args ?? null,
@@ -209,7 +256,7 @@ export function createGateHook(
       summary,
       risk,
       input: call.args ?? {},
-      callId: call.id,
+      callId: invocationId,
       ...(call.parentId === undefined ? {} : { parentId: call.parentId }),
       ...(call.mcp === undefined ? {} : { mcp: call.mcp }),
       idempotencyKey,
@@ -231,10 +278,13 @@ export function createGateHook(
 
     const guard = combineSignals(timeoutMs, signal);
     try {
-      const raw = await config.provider.requestApproval(request, guard.signal);
+      const raw = await raceWithAbort(config.provider.requestApproval(request, guard.signal), guard.signal);
+      if (guard.signal.aborted) {
+        throw guard.signal.reason ?? new Error("Aborted");
+      }
       if (!raw || typeof raw !== "object" || !VALID_TERMINAL_STATUSES.has(raw.status)) {
         const decision: GateDecision = {
-          gateId: raw?.gateId ?? gateId,
+          gateId,
           status: "denied",
           reason: `Blocked by Caveman Gate (invalid provider status "${String((raw as { status?: unknown })?.status)}", fail-closed).`,
         };
@@ -242,8 +292,10 @@ export function createGateHook(
         config.onDecision?.(request, decision);
         return decision.reason;
       }
+      const providerGateId = raw.providerGateId ?? (raw.gateId && raw.gateId !== gateId ? raw.gateId : undefined);
       const decision: GateDecision = {
-        gateId: raw.gateId || gateId,
+        gateId,
+        ...(providerGateId === undefined ? {} : { providerGateId }),
         status: raw.status,
         ...(raw.reason === undefined ? {} : { reason: raw.reason }),
         ...(raw.decidedBy === undefined ? {} : { decidedBy: raw.decidedBy }),
@@ -293,8 +345,78 @@ export function createCloudGateProvider(options: CloudGateProviderOptions): Gate
     ...(options.extraHeaders ?? {}),
   });
 
+  const readBoundedJson = async (res: Response): Promise<Record<string, unknown>> => {
+    const text = await res.text();
+    if (Buffer.byteLength(text, "utf8") > MAX_GATE_RESPONSE_BYTES) {
+      throw new Error(`Caveman Gate response exceeded ${MAX_GATE_RESPONSE_BYTES} bytes.`);
+    }
+    return text ? (JSON.parse(text) as Record<string, unknown>) : {};
+  };
+
+  const extractDecision = (
+    request: GateRequest,
+    serverGateId: string,
+    wire: Record<string, unknown>,
+  ): GateDecision | undefined => {
+    const refId = typeof wire.ref_id === "string" ? wire.ref_id : undefined;
+    if (refId !== undefined && refId !== "" && refId !== request.action) {
+      throw new Error(`Caveman Gate action mismatch: expected "${request.action}", server returned "${refId}".`);
+    }
+    const status = typeof wire.status === "string" ? wire.status : undefined;
+    const data = typeof wire.data === "object" && wire.data !== null ? (wire.data as Record<string, unknown>) : undefined;
+    const gateDecision = typeof data?.gate_decision === "string" ? data.gate_decision : undefined;
+    const decidedBy = typeof data?.gate_decided_by === "string"
+      ? data.gate_decided_by
+      : typeof wire.decided_by === "string"
+        ? wire.decided_by
+        : undefined;
+    const decidedAt = typeof wire.resolved_at === "string"
+      ? wire.resolved_at
+      : typeof wire.decided_at === "string"
+        ? wire.decided_at
+        : undefined;
+    const reason = typeof wire.decision_reason === "string"
+      ? wire.decision_reason
+      : typeof wire.reason === "string"
+        ? wire.reason
+        : undefined;
+
+    if (gateDecision && VALID_TERMINAL_STATUSES.has(gateDecision)) {
+      return {
+        gateId: request.gateId,
+        providerGateId: serverGateId,
+        status: gateDecision as GateTerminalStatus,
+        ...(reason === undefined ? {} : { reason }),
+        ...(decidedBy === undefined ? {} : { decidedBy }),
+        ...(decidedAt === undefined ? {} : { decidedAt }),
+      };
+    }
+    if (status && VALID_TERMINAL_STATUSES.has(status)) {
+      return {
+        gateId: request.gateId,
+        providerGateId: serverGateId,
+        status: status as GateTerminalStatus,
+        ...(reason === undefined ? {} : { reason }),
+        ...(decidedBy === undefined ? {} : { decidedBy }),
+        ...(decidedAt === undefined ? {} : { decidedAt }),
+      };
+    }
+    if (status === "resolved" || status === "archived") {
+      return {
+        gateId: request.gateId,
+        providerGateId: serverGateId,
+        status: "denied",
+        reason: reason ?? `Gate item was ${status} without an explicit approval.`,
+        ...(decidedBy === undefined ? {} : { decidedBy }),
+        ...(decidedAt === undefined ? {} : { decidedAt }),
+      };
+    }
+    return undefined;
+  };
+
   return {
     async requestApproval(request: GateRequest, signal?: AbortSignal): Promise<GateDecision> {
+      const priority = request.risk === "critical" || request.risk === "high" ? 1 : request.risk === "low" ? 3 : 2;
       const createRes = await fetchFn(`${baseUrl}/api/v1/code/gates`, {
         method: "POST",
         redirect: "error",
@@ -305,8 +427,16 @@ export function createCloudGateProvider(options: CloudGateProviderOptions): Gate
           "Idempotency-Key": request.idempotencyKey,
         },
         body: JSON.stringify({
-          action: request.action,
+          kind: "needs_you",
+          priority,
+          source: "agents",
+          scope: `gate:${request.action}`,
+          title: `Approve ${request.action}`.slice(0, 200),
           summary: request.summary,
+          ref_type: "agent_gate",
+          ref_id: request.action,
+          dedupe_key: request.idempotencyKey,
+          action: request.action,
           risk: request.risk,
           payload: { tool: request.tool, call_id: request.callId, input: request.input },
           idempotency_key: request.idempotencyKey,
@@ -317,25 +447,12 @@ export function createCloudGateProvider(options: CloudGateProviderOptions): Gate
         const body = await createRes.text().catch(() => "");
         throw new Error(`POST /api/v1/code/gates failed (${createRes.status}): ${body.slice(0, 240)}`);
       }
-      const created = (await createRes.json()) as {
-        id?: string;
-        gate_id?: string;
-        status?: string;
-        reason?: string;
-        decision_reason?: string;
-        decided_by?: string;
-        decided_at?: string;
-      };
-      const serverGateId = created.id ?? created.gate_id ?? request.gateId;
-      if (created.status && VALID_TERMINAL_STATUSES.has(created.status)) {
-        return {
-          gateId: serverGateId,
-          status: created.status as GateTerminalStatus,
-          reason: created.decision_reason ?? created.reason,
-          decidedBy: created.decided_by,
-          decidedAt: created.decided_at,
-        };
-      }
+      const created = await readBoundedJson(createRes);
+      const serverGateId = (typeof created.id === "string" && created.id)
+        || (typeof created.gate_id === "string" && created.gate_id)
+        || request.gateId;
+      const immediate = extractDecision(request, serverGateId, created);
+      if (immediate !== undefined) return immediate;
 
       while (true) {
         if (signal?.aborted) throw signal.reason ?? new Error("Aborted");
@@ -358,23 +475,13 @@ export function createCloudGateProvider(options: CloudGateProviderOptions): Gate
           const body = await pollRes.text().catch(() => "");
           throw new Error(`GET /api/v1/code/gates/${serverGateId} failed (${pollRes.status}): ${body.slice(0, 240)}`);
         }
-        const current = (await pollRes.json()) as {
-          id?: string;
-          status?: string;
-          reason?: string;
-          decision_reason?: string;
-          decided_by?: string;
-          decided_at?: string;
-        };
-        if (current.status && VALID_TERMINAL_STATUSES.has(current.status)) {
-          return {
-            gateId: current.id ?? serverGateId,
-            status: current.status as GateTerminalStatus,
-            reason: current.decision_reason ?? current.reason,
-            decidedBy: current.decided_by,
-            decidedAt: current.decided_at,
-          };
+        const current = await readBoundedJson(pollRes);
+        const currentId = typeof current.id === "string" && current.id ? current.id : serverGateId;
+        if (currentId !== serverGateId) {
+          throw new Error(`Caveman Gate ID mismatch: expected "${serverGateId}", got "${currentId}".`);
         }
+        const decided = extractDecision(request, currentId, current);
+        if (decided !== undefined) return decided;
       }
     },
   };
