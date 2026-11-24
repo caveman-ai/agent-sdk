@@ -58,10 +58,15 @@ export async function runHarnessSession(
     tools: [toHarnessTool(recordFinding)],
     hooks: {
       async beforeCall(call) {
-        if (call.name === "bash" && typeof (call.args as { command?: unknown })?.command === "string") {
-          if (/\brm\s+-rf\b/.test((call.args as { command: string }).command)) {
-            return "Refused destructive command.";
-          }
+        const args = call.args as { command?: unknown; cmd?: unknown } | undefined;
+        const shellCmd =
+          call.name === "bash" && typeof args?.command === "string"
+            ? args.command
+            : call.name === "exec_command" && typeof args?.cmd === "string"
+              ? args.cmd
+              : undefined;
+        if (shellCmd !== undefined && /\brm\s+-rf\b/.test(shellCmd)) {
+          return "Refused destructive command.";
         }
         return undefined;
       },

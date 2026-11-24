@@ -22,7 +22,7 @@ export {
   type GateTerminalStatus,
   type ResolveHarnessModelOptions,
 } from "@caveman-ai/harness";
-export { toHarnessTool, type ToHarnessToolOptions } from "./harness.ts";
+export { gateRulesForTools, toHarnessTool, type ToHarnessToolOptions } from "./harness.ts";
 export {
   CavemanError,
   ZERO_USAGE,
