@@ -2,7 +2,7 @@
   "name": "caveman-agent",
   "version": "1.0.0",
   "private": true,
-  "description": "Open-source Caveman Agent SDK, Harness v4, Session Protocol, Evals, and React hooks.",
+  "description": "Open-source Caveman Agent SDK, Caveman Harness, Session Protocol, Evals, and React hooks.",
   "license": "Apache-2.0",
   "packageManager": "pnpm@10.14.0",
   "scripts": {

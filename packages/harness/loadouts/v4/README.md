@@ -1,4 +1,4 @@
-# Harness v4 loadouts
+# Caveman Harness loadouts
 
 The candidate v4 loadouts, each kept only after its step passed a pre-registered gate (`iters/v4-plan.md`):
 

@@ -1,15 +1,15 @@
 <div align="center">
 
-<a href="https://github.com/caveman-ai/agent-sdk"><img src="docs/assets/banner.png" alt="Caveman Agent SDK. Harness v4, built on Pi." width="880"></a>
+<a href="https://github.com/caveman-ai/agent-sdk"><img src="docs/assets/banner.png" alt="Caveman Agent SDK. Caveman Harness, built on Pi." width="880"></a>
 
 # Caveman Agent SDK
 
 **TypeScript agents built for small prompts.**<br>
-An open-source SDK built on Harness v4. Run agents in your own process with a model key, or run the same agent definition on Caveman Cloud.
+An open-source SDK built on Caveman Harness. Run agents in your own process with a model key, or run the same agent definition on Caveman Cloud.
 
 <a href="./LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-111?style=flat-square" alt="Apache-2.0"></a>
 <a href="#quick-start"><img src="https://img.shields.io/badge/checkout-Node_24%2B-111?style=flat-square" alt="Node.js 24+ for the checkout"></a>
-<a href="#built-to-spend-less"><img src="https://img.shields.io/badge/engine-Harness_v4-111?style=flat-square" alt="Harness v4"></a>
+<a href="#built-to-spend-less"><img src="https://img.shields.io/badge/engine-Caveman_Harness-111?style=flat-square" alt="Caveman Harness"></a>
 
 [Quick start](#quick-start) · [Built to spend less](#built-to-spend-less) · [Packages](#packages) · [Docs](#documentation)
 
@@ -74,7 +74,7 @@ console.log(compileAgentDefinition(triage).digest);
 
 ## Built to spend less
 
-Harness v4 keeps the prompt prefix stable and gives each model the tools it needs. With a check and a model ladder, `cave.run()` can start cheap and move up after a failed attempt.
+Caveman Harness keeps the prompt prefix stable and gives each model the tools it needs. With a check and a model ladder, `cave.run()` can start cheap and move up after a failed attempt.
 
 ### Tool surfaces by model
 
@@ -96,7 +96,7 @@ Connect to a server over stdio or streamable HTTP with `connectMcp()`. In code m
 - Compaction asks for its summary with the current conversation as the prefix.
 - On Anthropic, `app-claude` and `app-general` ping the prompt cache every 270 seconds during a long tool call, up to 12 times per gap (54 minutes at that interval). Pings count toward usage.
 
-The harness source notes that cache expiry accounted for 6% of spend across 196 Opus 5.5 trials on the v3 harness. A ping that hits the cache pays for a read and can spare the next turn a cache write.
+The harness source notes that cache expiry accounted for 6% of spend across 196 Opus 5.5 trials on an earlier harness. A ping that hits the cache pays for a read and can spare the next turn a cache write.
 
 ### Start cheap and step up after a failed attempt
 
@@ -177,4 +177,4 @@ The in-process runner needs a provider key and runs without a daemon. With an Op
 
 ## License
 
-Apache-2.0 and MIT licenses are listed by package above. Harness v4 builds on [Pi](https://github.com/earendil-works/pi). See [LICENSE](./LICENSE) and [NOTICE](./NOTICE). Report security issues through [SECURITY.md](./SECURITY.md); see [CONTRIBUTING.md](./CONTRIBUTING.md) for patches.
+Apache-2.0 and MIT licenses are listed by package above. Caveman Harness builds on [Pi](https://github.com/earendil-works/pi). See [LICENSE](./LICENSE) and [NOTICE](./NOTICE). Report security issues through [SECURITY.md](./SECURITY.md); see [CONTRIBUTING.md](./CONTRIBUTING.md) for patches.

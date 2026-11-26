@@ -1,4 +1,4 @@
-# `@caveman-ai/harness` (Caveman Harness v4)
+# `@caveman-ai/harness` (Caveman Harness)
 
 Open-source (Apache-2.0) loadout-driven agent harness built on Pi, and the
 execution engine behind `@caveman-ai/agent` (`@caveman-ai/agent/harness`) and

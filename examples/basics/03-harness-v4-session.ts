@@ -12,7 +12,7 @@ import {
 } from "../../packages/agent/dist/harness.js";
 
 /**
- * Direct Harness v4 session via `@caveman-ai/agent/harness`.
+ * Direct Caveman Harness session via `@caveman-ai/agent/harness`.
  *
  * - `appLoadoutFor(model)` picks the model-native surface automatically:
  *   `app-gpt` (Codex-style `exec` QuickJS cells) for GPT on Responses API, and

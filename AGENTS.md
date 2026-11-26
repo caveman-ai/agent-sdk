@@ -1,7 +1,7 @@
 # Caveman Agents (`caveman-ai/agent-sdk`)
 
 Public open-source repository for the Caveman Agent SDK (`@caveman-ai/agent`),
-Harness v4 (`@caveman-ai/harness`), Session Protocol (`@caveman-ai/protocol`),
+Caveman Harness (`@caveman-ai/harness`), Session Protocol (`@caveman-ai/protocol`),
 Eval graders (`@caveman-ai/evals`, `python/caveman-evals`), React hooks
 (`@caveman-ai/react`), adapter kit (`@caveman-ai/adapter-kit`), and project
 scaffolder (`@caveman-ai/create-agent`).
@@ -13,7 +13,7 @@ scaffolder (`@caveman-ai/create-agent`).
 | Path | Package | License | Role |
 |---|---|---|---|
 | `packages/agent/` | `@caveman-ai/agent` | Apache-2.0 | High-level SDK: `defineAgent`, `tool`, `runInProcess`, `Caveman`, `Session`, deterministic `AGENT.md` -> `agent.json` compiler |
-| `packages/harness/` | `@caveman-ai/harness` | Apache-2.0 | Harness v4 loadout-driven loop (`HarnessSession`, `LocalEnv`, `DockerEnv`, `SandboxEnv`, MCP allowlist, `compact`/`exec`/`program`) |
+| `packages/harness/` | `@caveman-ai/harness` | Apache-2.0 | Caveman Harness loadout-driven loop (`HarnessSession`, `LocalEnv`, `DockerEnv`, `SandboxEnv`, MCP allowlist, `compact`/`exec`/`program`) |
 | `packages/protocol/` | `@caveman-ai/protocol` | MIT | Canonical `SessionEvent`, `UserEvent`, exit codes `0..6`, JSON schemas (`agent-build`, `eval-file`, `grader-registry`) |
 | `packages/evals/` | `@caveman-ai/evals` | MIT | 30 fail-closed TypeScript graders (deterministic, BLEU/ROUGE, localization F1, SSRF-pinned webhooks, bias-guarded LLM judges) |
 | `packages/react/` | `@caveman-ai/react` | Apache-2.0 | React hooks for streaming agent sessions and approvals |

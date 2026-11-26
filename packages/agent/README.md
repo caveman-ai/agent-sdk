@@ -4,7 +4,7 @@
 
 # `@caveman-ai/agent`
 
-The open-source TypeScript Agent SDK built on **Caveman Harness v4** (Apache-2.0). Define agents with typed tools, fail-closed **Caveman Gates**, declarative **Sensors**, and deterministic `AGENT.md` builds — run them directly in-process with your own Anthropic or OpenAI key, or deploy the exact same definition to Caveman Cloud.
+The open-source TypeScript Agent SDK built on **Caveman Harness** (Apache-2.0). Define agents with typed tools, fail-closed **Caveman Gates**, declarative **Sensors**, and deterministic `AGENT.md` builds — run them directly in-process with your own Anthropic or OpenAI key, or deploy the exact same definition to Caveman Cloud.
 
 ## Install
 
@@ -40,7 +40,7 @@ const result = await runInProcess({
 console.log(result.text, result.usage);
 ```
 
-## Direct Harness v4 entrypoint (`@caveman-ai/agent/harness`)
+## Direct Caveman Harness entrypoint (`@caveman-ai/agent/harness`)
 
 Need full control over multi-turn sessions, model-native loadouts (`app-gpt`, `app-claude`, `app-general`), MCP code-mode cells, or `LocalEnv` / `DockerEnv` / `SandboxEnv`? Import directly from `@caveman-ai/agent/harness`:
 
@@ -99,7 +99,7 @@ await following;
 
 ## Efficient by construction
 
-- **Model-native Harness v4 loadouts.** `computer: "full"` or `"readonly"` selects `appLoadoutFor(model)` automatically (`app-gpt` Codex `exec` surface for GPT on Responses API; `app-claude` compact surface + 270 s cache keepalive for Claude).
+- **Model-native Caveman Harness loadouts.** `computer: "full"` or `"readonly"` selects `appLoadoutFor(model)` automatically (`app-gpt` Codex `exec` surface for GPT on Responses API; `app-claude` compact surface + 270 s cache keepalive for Claude).
 - **Lean non-coding agents.** `computer: "none"` (the default for code-defined agents) sends only your declared instructions and tools — no shell or file tools in every request.
 - **Byte-stable prefixes.** `compileAgentDefinition()` / `agentFileText()` emit identical bytes and a deterministic SHA-256 digest so prompt caches stay warm across turns.
 - **Fail-closed Gates & allowlisted env.** Mark any tool `{ gate: { risk: "high" } }` to require explicit approval before execution. Subprocesses and stdio MCP servers run with explicit allowlists (`inheritEnv: false`).
@@ -107,6 +107,6 @@ await following;
 ## Examples & docs
 
 - [5 runnable starter recipes](../../examples/basics/README.md)
-- [Full documentation](../../docs/index.mdx) · [Harness v4 Reference](../harness/README.md)
+- [Full documentation](../../docs/index.mdx) · [Caveman Harness Reference](../harness/README.md)
 
 Apache-2.0.

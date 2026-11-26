@@ -1,4 +1,4 @@
-`@caveman-ai/harness` (Harness v4) is the open-source agent loop underneath `@caveman-ai/agent` and Caveman Code. It keeps prompt prefixes byte-stable across turns, loads only the tools a loadout needs, isolates secrets from shell and MCP subprocesses, and exits cleanly when parked between turns.
+`@caveman-ai/harness` (Caveman Harness) is the open-source agent loop underneath `@caveman-ai/agent` and Caveman Code. It keeps prompt prefixes byte-stable across turns, loads only the tools a loadout needs, isolates secrets from shell and MCP subprocesses, and exits cleanly when parked between turns.
 
 ## Install
 
@@ -19,7 +19,7 @@ A loadout decides which built-in tools and execution environment an agent receiv
 
 ## Cache-stable prefix contract
 
-Provider prompt caching resets whenever earlier bytes change. Harness v4 preserves prefix stability across turns by construction:
+Provider prompt caching resets whenever earlier bytes change. Caveman Harness preserves prefix stability across turns by construction:
 
 - **Fixed tool ordering.** Built-in, custom, and MCP tools serialize in a deterministic order.
 - **Lazy skill activation.** Skill summaries are declared up front; full skill bodies load only when activated.
