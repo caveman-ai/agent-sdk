@@ -33,14 +33,14 @@ test("createGateHook fails closed on thrown error, timeout, abort, or invalid st
   const errReason = await errHook({ id: "c1", name: "deploy", args: {} }, undefined);
   assert.ok(errReason && errReason.includes("fail-closed") && errReason.includes("upstream unavailable"));
 
-  // 2. Timeout
+  // 2. Timeout — even when a provider completely ignores AbortSignal!
   const timeoutHook = createGateHook({
     rules: [{ tool: "deploy" }],
     timeoutMs: 25,
     provider: {
-      async requestApproval(_req, signal) {
-        return await new Promise<GateDecision>((_resolve, reject) => {
-          signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+      async requestApproval() {
+        return await new Promise<GateDecision>(() => {
+          // Intentionally never settles and ignores signal
         });
       },
     },
@@ -88,15 +88,38 @@ test("createGateHook supports regex, MCP server__tool, when predicate, and idemp
   assert.equal(calls, 0);
 
   // Above threshold -> approved via provider
-  const big1 = await hook({ id: "2", name: "refund", mcp: { server: "stripe", tool: "refund" }, args: { amount: 250, currency: "usd" } }, undefined);
+  const big1 = await hook({ id: "call_2", name: "refund", mcp: { server: "stripe", tool: "refund" }, args: { amount: 250, currency: "usd" } }, undefined);
   assert.equal(big1, undefined);
   assert.equal(calls, 1);
 
-  // Same canonical args (different key order) -> same idempotency key, deduplicated!
-  const big2 = await hook({ id: "3", name: "refund", mcp: { server: "stripe", tool: "refund" }, args: { currency: "usd", amount: 250 } }, undefined);
-  assert.equal(big2, undefined);
+  // Network retry of the SAME call id + canonical args -> deduplicated!
+  const retrySameCall = await hook({ id: "call_2", name: "refund", mcp: { server: "stripe", tool: "refund" }, args: { currency: "usd", amount: 250 } }, undefined);
+  assert.equal(retrySameCall, undefined);
   assert.equal(calls, 1);
-  assert.equal(seenKeys.length, 1);
+
+  // A SECOND distinct tool execution with identical args MUST require a fresh human approval!
+  const big2 = await hook({ id: "call_3", name: "refund", mcp: { server: "stripe", tool: "refund" }, args: { currency: "usd", amount: 250 } }, undefined);
+  assert.equal(big2, undefined);
+  assert.equal(calls, 2);
+  assert.equal(seenKeys.length, 2);
+  assert.notEqual(seenKeys[0], seenKeys[1]);
+
+  // Normalized MCP exec-cell tool name (mcp__my_server__create_issue) matches exact qualified rule!
+  let mcpGated = 0;
+  const mcpHook = createGateHook({
+    sessionId: "sess_mcp",
+    provider: createMemoryGateProvider(() => {
+      mcpGated++;
+      return { status: "denied", reason: "blocked" };
+    }),
+    rules: [{ tool: "my_server__create_issue", risk: "high" }],
+  });
+  const blockedExecMcp = await mcpHook(
+    { id: "c_exec_1", name: "mcp__my_server__create_issue", mcp: { server: "my-server", tool: "create-issue" }, args: {} },
+    undefined,
+  );
+  assert.ok(blockedExecMcp && blockedExecMcp.includes("denied"));
+  assert.equal(mcpGated, 1);
 });
 
 test("createCloudGateProvider enforces HTTPS on remote URLs and polls real loopback /api/v1/code/gates E2E", async () => {

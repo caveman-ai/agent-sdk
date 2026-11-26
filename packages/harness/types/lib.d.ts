@@ -340,6 +340,7 @@ export interface GateRequest {
 }
 export interface GateDecision {
   readonly gateId: string;
+  readonly providerGateId?: string;
   readonly status: GateTerminalStatus;
   readonly reason?: string;
   readonly decidedBy?: string;

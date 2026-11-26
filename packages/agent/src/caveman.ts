@@ -187,6 +187,9 @@ export class Caveman {
     const inline = typeof options.agent === "string" ? undefined : options.agent;
     const handlers: AskHandlers = {
       tools: [...(inline === undefined ? [] : handlersOf(inline)), ...(options.tools ?? [])],
+      ...(options.gate === undefined ? {} : { gate: options.gate }),
+      ...(inline?.gate === undefined ? {} : { agentGate: inline.gate }),
+      ...(options.gateProvider === undefined ? {} : { gateProvider: options.gateProvider }),
       ...(options.canUseTool === undefined ? {} : { canUseTool: options.canUseTool }),
       ...(options.onQuestion === undefined ? {} : { onQuestion: options.onQuestion }),
     };

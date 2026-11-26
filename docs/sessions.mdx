@@ -25,9 +25,11 @@ await session.close();
 
 When an agent calls a custom tool, requests approval, or asks a question, the session emits a `requires_action` event carrying an `Ask`:
 
-- **`kind: "tool"`**: answered automatically by the handler passed to `tool()`.
-- **`kind: "approval"`**: answered by `canUseTool`. Denied by default when no handler is provided.
+- **`kind: "tool"`**: answered automatically by the handler passed to `tool()`. If the tool declares a `gate` policy (or the session/agent passes `gate` / `gateProvider`), the SDK enforces Caveman Gate fail-closed before executing the custom tool handler.
+- **`kind: "approval"`**: answered by `canUseTool` for runtime-owned actions (such as shell or filesystem operations). Denied by default when no handler is provided.
 - **`kind: "question"`**: answered by `onQuestion`. When omitted, the agent decides and states its assumption.
+
+Pass `gate` and/or `gateProvider` (for example `createCloudGateProvider` or `createMemoryGateProvider`) on `cave.sessions.create()` to approve SDK-executed custom tools with per-session rule overrides taking precedence over per-tool and agent-level gate defaults.
 
 ## Cheap-first escalation with checks
 
