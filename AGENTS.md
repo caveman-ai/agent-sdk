@@ -38,3 +38,11 @@ pnpm test
 - **Fail-closed graders & pricing.** Unknown grader types fail closed; local/framework counts stay `inferred` and never emit Cloud-verified savings.
 - **Durable parking exit codes.** Preserve exit codes `0..6` (`5` waiting, `6` idle) across `@caveman-ai/protocol` and `@caveman-ai/harness`.
 - **Scoped conventional commits** (`feat(harness): ...`, `fix(agent): ...`, `docs(repo): ...`).
+
+## Workflow
+
+- Work in a clean branch or worktree off `origin/main`; never commit or push directly to `main`.
+- Stage explicit paths (`git commit --only -- <paths>`), never `git add -A`.
+- Run `node scripts/check-public-hygiene.mjs`, `pnpm build`, and `pnpm test` before pushing.
+- Open a pull request against `main` and squash-merge once `Build & Test` is green.
+- Releases run through `.github/workflows/release.yml` on `v*` tags (or manual dispatch on a green `main` commit).
