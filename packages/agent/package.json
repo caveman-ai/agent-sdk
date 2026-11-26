@@ -1,7 +1,7 @@
 {
   "name": "@caveman-ai/agent",
   "version": "1.0.0",
-  "description": "Build, evaluate, and run efficient AI agents locally (in-process on Harness v4) or on Caveman Cloud.",
+  "description": "Build, evaluate, and run efficient AI agents locally (in-process on Caveman Harness) or on Caveman Cloud.",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./dist/index.js",

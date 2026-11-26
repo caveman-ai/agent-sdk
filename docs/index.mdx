@@ -1,4 +1,4 @@
-`@caveman-ai/agent` is the TypeScript SDK and open-source Harness v4 for building, testing, and running AI agents. It runs in-process on your machine with any Anthropic, OpenAI, or external tools model, and runs the same definition on Caveman Cloud when you supply a Cloud API key.
+`@caveman-ai/agent` is the TypeScript SDK and open-source Caveman Harness for building, testing, and running AI agents. It runs in-process on your machine with any Anthropic, OpenAI, or external tools model, and runs the same definition on Caveman Cloud when you supply a Cloud API key.
 
 Want a desktop app and terminal coding agent instead? Use [Caveman Code](/docs/code/overview). Want to call Caveman Cloud APIs, manage Firecracker sandboxes, or run CI evals from the CLI? Use [Cloud & SDKs](/docs/sdk/overview).
 
@@ -13,7 +13,7 @@ npm install @caveman-ai/agent @caveman-ai/harness
 | Layer | Package | Responsibility |
 |---|---|---|
 | Hero SDK | `@caveman-ai/agent` | `defineAgent`, `tool`, `runInProcess`, `Caveman`, `Session`, and `AGENT.md` build compiler |
-| Harness v4 | `@caveman-ai/harness` | `HarnessSession`, loadouts (`app-claude`, `app-gpt`, `app-general`), tool surfaces, compaction, `LocalEnv`, `DockerEnv`, `SandboxEnv` |
+| Caveman Harness | `@caveman-ai/harness` | `HarnessSession`, loadouts (`app-claude`, `app-gpt`, `app-general`), tool surfaces, compaction, `LocalEnv`, `DockerEnv`, `SandboxEnv` |
 | Protocol | `@caveman-ai/protocol` | `SessionEvent`, `UserEvent`, exit codes `0..6`, and JSON schemas |
 | Evals | `@caveman-ai/evals` / `caveman-evals` | Deterministic graders, tool assertions, and judge rubrics |
 

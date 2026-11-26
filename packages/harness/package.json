@@ -2,7 +2,7 @@
   "name": "@caveman-ai/harness",
   "version": "1.0.0",
   "private": false,
-  "description": "The Caveman Harness (v4): open-source, loadout-driven, cache-stable agent loop with LocalEnv, DockerEnv, and SandboxEnv.",
+  "description": "Caveman Harness: open-source, loadout-driven, cache-stable agent loop with LocalEnv, DockerEnv, and SandboxEnv.",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
