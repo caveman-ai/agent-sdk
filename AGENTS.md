@@ -8,6 +8,14 @@ scaffolder (`@caveman-ai/create-agent`).
 
 `CLAUDE.md` is a symlink to this file.
 
+## Ecosystem ownership (where each piece of work lives)
+
+- **This repo (`caveman-ai/agent-sdk`):** Optional TypeScript agent authoring framework, Harness v4 engine (`@caveman-ai/agent`, `@caveman-ai/harness`), Session Protocol (`@caveman-ai/protocol`), and local graders (`@caveman-ai/evals`). Compiles to the open `AGENT.md` / `agent.json` Cloud build format. Never duplicate Cloud platform clients here.
+- **`caveman-ai/cloud-sdk`:** Unified Cloud Platform SDK (`@caveman-ai/sdk` + `./app-bridge`, `caveman-sdk`, `sdk-go`), `cvm` CLI, `caveman-drive-mount`, sanitized OpenAPI contracts, and public Cloud skills.
+- **`JuliusBrussee/caveman-docs`:** Public documentation site (`docs.caveman.so`).
+- **`JuliusBrussee/caveman`:** Accountless local CLI, Go engine/proxy, `cavemem`, and `caveman-shrink`.
+- **`caveman-ai/caveman-code`:** Desktop, web, mobile, and terminal coding agent.
+
 ## Layout
 
 | Path | Package | License | Role |
