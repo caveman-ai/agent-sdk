@@ -45,8 +45,7 @@
     "build": "tsc",
     "prepack": "npm run build",
     "lint": "tsc --noEmit",
-    "test:runtime": "node --test tests/grade.runtime.mjs tests/sdk.runtime.mjs tests/localization_f1.parity.runtime.mjs tests/metric-builtins.parity.runtime.mjs tests/judge-builtins.parity.runtime.mjs tests/grader-registry.parity.runtime.mjs",
-    "test": "tsc && tsc --project tsconfig.test.json && npm run test:runtime"
+    "test": "tsc && tsc --project tsconfig.test.json && node --test tests/grade.runtime.mjs tests/sdk.runtime.mjs tests/localization_f1.parity.runtime.mjs tests/metric-builtins.parity.runtime.mjs tests/judge-builtins.parity.runtime.mjs tests/grader-registry.parity.runtime.mjs"
   },
   "devDependencies": {
     "@types/node": "25.9.8",

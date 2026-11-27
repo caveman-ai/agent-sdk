@@ -164,6 +164,9 @@ test("the vigenere case: os.path.join(DATA_DIR, 'words.txt') with DATA_DIR from 
   assert.ok(candidates.includes("/app/data/words.txt"), JSON.stringify(candidates));
   assert.ok(candidates.includes("/app/data/sample_ciphertext.txt"));
   assert.ok(!candidates.some((path) => path.startsWith("/usr/") || path.startsWith("/tmp/")));
+  const inTmp = fileCandidates(cracker, "/tmp/work/cracker.py", "/tmp/work");
+  assert.ok(inTmp.includes("/tmp/work/data/words.txt"), JSON.stringify(inTmp));
+  assert.ok(!inTmp.includes("/tmp/x.txt") && !inTmp.includes("/usr/share/dict/words"));
 });
 
 test("python imports: top-level modules of import, from-import and importlib by literal; relative imports are not packages", () => {

@@ -544,7 +544,8 @@ test("cost: the side call's tokens and USD are in usage and cost_usd and in side
   assert.equal(run.result.usage.input_tokens, sum("input", loop) + sum("input", side));
   const loopCost = loop.reduce((total, event) => total + event.cost_usd, 0);
   assert.ok(side[0]!.cost_usd > 0);
-  assert.ok(Math.abs(run.result.cost_usd! - (loopCost + side[0]!.cost_usd)) < 1e-6);
+  // Each event rounds cost_usd to 6 decimals (±5e-7), while result.cost_usd rounds the unrounded sum.
+  assert.ok(Math.abs(run.result.cost_usd! - (loopCost + side[0]!.cost_usd)) <= (loop.length + side.length + 1) * 5e-7 + 1e-12);
   assert.equal(run.result.side_requests?.clause_check?.requests, 1);
   const call = run.events.find(isCall)!;
   assert.equal(call.output_tokens, side[0]!.usage.output);

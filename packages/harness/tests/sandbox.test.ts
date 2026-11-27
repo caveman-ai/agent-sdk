@@ -332,7 +332,7 @@ test("SandboxEnv: a session's repository is cloned from its git URL (the host's 
     files: async () => [{ path: "AGENT.md", data: "the build's\n" }, { path: ".caveman/skills/deploy.md", data: "deploy\n" }],
   });
   try {
-    const look = await env.exec("git rev-parse --abbrev-ref HEAD; cat BRANCH README.md AGENT.md; git config --get remote.origin.url; git config --get-regexp '^url\\.' ; git config --global --list 2>/dev/null | wc -l");
+    const look = await env.exec("git rev-parse --abbrev-ref HEAD; cat BRANCH README.md AGENT.md; git config --get remote.origin.url; git config --get-regexp '^url\\.' ; git config --global --list 2>/dev/null | wc -l | tr -d ' '");
     assert.equal(look.exitCode, 0, look.output);
     assert.equal(look.output, [
       "develop", "develop", "# shop", "the repository's own",
@@ -340,7 +340,7 @@ test("SandboxEnv: a session's repository is cloned from its git URL (the host's 
       // The host's lane (the fake's origin stands for http://172.16.0.1:47483 in what a command is given).
       `url.${lane.url}/git/v1/acme/shop.git.insteadof https://github.com/acme/shop.git`,
       "0", "",
-    ].join("\n").replace(/^0$/mu, (zero) => zero.padStart(8)), "the base branch, the repository's own AGENT.md, origin the GitHub URL, the clone's own config and no global one");
+    ].join("\n"), "the base branch, the repository's own AGENT.md, origin the GitHub URL, the clone's own config and no global one");
     // The build's file that is not the repository's is there, and git ignores every file of the build.
     assert.equal(Buffer.from(await env.readFile(".caveman/skills/deploy.md")).toString(), "deploy\n");
     assert.equal((await env.exec("git status --porcelain")).output, "");

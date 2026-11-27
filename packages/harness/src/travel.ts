@@ -118,6 +118,11 @@ export const codeExtension = (path: string) => CODE_EXT.test(path);
 /** System trees a deliverable may read anywhere: never data the task's files must carry. */
 const SYSTEM = /^\/(?:usr|etc|proc|dev|tmp|sys|bin|sbin|lib|lib32|lib64|run|var|boot|nix|snap)(?:\/|$)/u;
 export const inSystemTree = (path: string) => SYSTEM.test(path);
+/** Whether `path` lies inside `cwd` (ignoring trailing slashes; `/` is never treated as a workspace). */
+export function inWorkspace(path: string, cwd: string): boolean {
+  const root = posix.normalize(cwd).replace(/\/+$/u, "");
+  return root !== "" && path.startsWith(`${root}/`);
+}
 
 /** A literal right after these is a module specifier or an include, not a file the program opens. */
 const SPECIFIER = /(?:\bfrom|\bimport|\brequire\s*\(|\bimport\s*\(|#\s*include|\bmod|\buse|\bsource)\s*$/u;
@@ -155,7 +160,7 @@ function literalsOf(text: string): { paths: string[]; segments: string[] } {
   return { paths: [...paths], segments: [...segments] };
 }
 
-const usable = (path: string, cwd: string) => !SYSTEM.test(path) && path !== cwd && path !== "/";
+const usable = (path: string, cwd: string) => (inWorkspace(path, cwd) || !SYSTEM.test(path)) && path !== cwd && path !== "/";
 
 /** Absolute paths a literal in `file` (absolute) may name: as is, or relative to the cwd and to the file's directory; system trees dropped. */
 export function literalCandidates(literal: string, file: string, cwd: string): string[] {
