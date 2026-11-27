@@ -9,7 +9,7 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } fro
 import { createServer as createHttpServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test } from "node:test";
+import { describe, test } from "node:test";
 import type { FauxResponseStep, TranscriptContext } from "@earendil-works/pi-ai";
 import { LocalEnv } from "../src/env/local.ts";
 import { capListing, formatDuration } from "../src/levers.ts";
@@ -68,6 +68,7 @@ const policyEvents = (events: Record<string, any>[]) => events.filter((event) =>
 
 // ---------- loadout ----------
 
+describe("levers", { concurrency: 4 }, () => {
 test("levers are off by default: absent or false normalizes and hashes like a loadout without them", () => {
   for (const name of ["compact-v0", "compact-v0-plain", "exec-v0"]) {
     const plain = normalizeLoadout(base(name));
@@ -210,7 +211,7 @@ const scripts = (cwd: string) => {
   writeFileSync(join(cwd, "red.sh"), "echo '1 failed, 2 passed'\n");
   writeFileSync(join(cwd, "fail.sh"), "echo '1 failed'; exit 1\n");
   writeFileSync(join(cwd, "green.sh"), "echo '3 passed'\n");
-  writeFileSync(join(cwd, "slow.sh"), "sleep 1.5; echo '2 passed'\n");
+  writeFileSync(join(cwd, "slow.sh"), "sleep 0.5; echo '2 passed'\n");
 };
 
 test("P2: a green without a red before it carries nothing; a red summary under exit 0 is red", async () => {
@@ -225,7 +226,7 @@ test("P2: a check that yields resolves through wait; its outcome counts when the
   const loadout = withLevers((raw) => (raw.policy.first_green = true));
   const run = await fauxRun(loadout, [
     bash("sh fail.sh"),
-    { toolCalls: [{ name: "bash", arguments: { command: "sh slow.sh", timeout: 1 } }] },
+    { toolCalls: [{ name: "bash", arguments: { command: "sh slow.sh", timeout: 0.15 } }] },
     { toolCalls: [{ name: "wait", arguments: { handle: "p2" } }] },
     { text: "Done." },
   ], { setup: scripts });
@@ -390,7 +391,7 @@ test("D2 refuses Anthropic with effort as a top-level field (plain wire, budget 
 
 test("P1, P2 and D2 see an exec_command check that yielded and then finished through R2's wait(session_id, until)", async () => {
   const patch = "*** Begin Patch\n*** Add File: a.py\n+x = 1\n*** End Patch\n";
-  const start = (script: string): Step => ({ exec: `const r = await tools.exec_command({ cmd: "sleep 0.3; sh ${script}", yield_time_ms: 100 }); text(String(r.session_id));` });
+  const start = (script: string): Step => ({ exec: `const r = await tools.exec_command({ cmd: "sleep 0.6; sh ${script}", yield_time_ms: 100 }); text(String(r.session_id));` });
   const waitOn = (id: number): Step => ({ tool: "wait", args: { session_id: id, until: "exit" } });
   const loadout = withLevers((raw) => {
     raw.policy.evidence_gate = { probe: "tools" };
@@ -411,6 +412,7 @@ test("P1, P2 and D2 see an exec_command check that yielded and then finished thr
   const green = outputs(run.bodies[5]!).at(-1)!;
   assert.ok(green.endsWith(reminder(LEVER_TEXTS.first_green)), green);
   assert.deepEqual(run.bodies.map((body) => body.reasoning.effort), ["high", "high", "high", "xhigh", "high", "high"], "the request after the red wait runs escalated");
+});
 });
 
 // ---------- D3 wall notice ----------

@@ -143,7 +143,7 @@ test("taskkill: /pid <pid> /T /F by its full path under SystemRoot; its failure 
   const failed = run({ code: 128 });
   const missing = run({ error: true });
   const thrown = run({ throws: true });
-  await new Promise((done) => setTimeout(done, 20));
+  await new Promise((done) => setImmediate(done));
   assert.deepEqual(ok.calls, [{ file: "C:\\Windows\\System32\\taskkill.exe", args: ["/pid", "99", "/T", "/F"], options: { stdio: "ignore", windowsHide: true } }]);
   assert.deepEqual(ok.kills, [], "taskkill did it");
   assert.deepEqual(failed.kills, ["SIGKILL"]);

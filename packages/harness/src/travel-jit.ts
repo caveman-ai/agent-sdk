@@ -63,7 +63,7 @@ import { placeboFor } from "./prompts.ts";
 import type { LedgerEntry } from "./tools/exec/nested.ts";
 import type { Recorder } from "./trace.ts";
 import {
-  codeExtension, fileCandidates, inSystemTree, isCode, mentioned, normalizeDist, PACKAGES_COMMAND, parsePackages, preexisting, pythonImports, scratchFindings, scratchKind, testLayout,
+  codeExtension, fileCandidates, inSystemTree, inWorkspace, isCode, mentioned, normalizeDist, PACKAGES_COMMAND, parsePackages, preexisting, pythonImports, scratchFindings, scratchKind, testLayout,
   type TravelStart,
 } from "./travel.ts";
 
@@ -451,8 +451,8 @@ export class TravelJit {
       this.startFailed = true;
       this.recorder.policy("check", "travel_jit_failed", { error: "no start state" });
     }
-    // Code of the run's that the grader runs: named by the task or beside a code file it names; not in a system tree, a test layout or under a scratch name.
-    const code = written.filter((write) => !inSystemTree(write.path) && isCode(this.shown(write.path)) && !this.inTestLayout(this.shown(write.path)) && this.graded(write.path));
+    // Code of the run's that the grader runs: named by the task or beside a code file it names; not in a system tree outside the workspace, a test layout or under a scratch name.
+    const code = written.filter((write) => (inWorkspace(write.path, this.env.cwd) || !inSystemTree(write.path)) && isCode(this.shown(write.path)) && !this.inTestLayout(this.shown(write.path)) && this.graded(write.path));
     if (this.kinds.has("packages")) push(await this.packages(finished, code, start, name, request));
     if (start === null) return notes;
     if (this.kinds.has("scratch")) push(await this.scratch(written.map((write) => write.path), start, name, request));

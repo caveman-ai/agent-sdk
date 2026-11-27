@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { test } from "node:test";
+import { describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import type { FauxResponseStep, TranscriptContext } from "@earendil-works/pi-ai";
 import { LocalEnv } from "../src/env/local.ts";
@@ -46,6 +46,7 @@ const age = (cwd: string, paths: string[], secondsAgo: number) => {
 
 // ---------- loadout ----------
 
+describe("travel", { concurrency: 4 }, () => {
 test("clean_env, travel_check and unmet_target are off by default: absent or false normalizes and hashes like the built-in", () => {
   for (const name of ["exec-v0", "compact-v0-plain"]) {
     const plain = normalizeLoadout(base(name));
@@ -163,6 +164,9 @@ test("the vigenere case: os.path.join(DATA_DIR, 'words.txt') with DATA_DIR from 
   assert.ok(candidates.includes("/app/data/words.txt"), JSON.stringify(candidates));
   assert.ok(candidates.includes("/app/data/sample_ciphertext.txt"));
   assert.ok(!candidates.some((path) => path.startsWith("/usr/") || path.startsWith("/tmp/")));
+  const inTmp = fileCandidates(cracker, "/tmp/work/cracker.py", "/tmp/work");
+  assert.ok(inTmp.includes("/tmp/work/data/words.txt"), JSON.stringify(inTmp));
+  assert.ok(!inTmp.includes("/tmp/x.txt") && !inTmp.includes("/usr/share/dict/words"));
 });
 
 test("python imports: top-level modules of import, from-import and importlib by literal; relative imports are not packages", () => {
@@ -301,31 +305,33 @@ const TRAVEL_TEXT = LEVER_TEXTS.travel_check.replace("{items}", "- scratch or te
 
 test("travel_check in a run: one reminder at the finish attempt naming the files; the second finish ends the run; a clean workspace gets none", async () => {
   const loadout = withLevers((raw) => (raw.policy.travel_check = true));
-  const run = await fauxRun(loadout, [write("wal.py", "x = 1\n"), write("test_wal.py", "import wal\n"), { text: "Done." }, { text: "Removed it." }, { text: "never sent" }]);
+  const testsOnly = withLevers((raw) => (raw.policy.travel_check = { kinds: ["packages", "data", "scratch_tests"] }));
+  const [run, clean, logOnly, both] = await Promise.all([
+    fauxRun(loadout, [write("wal.py", "x = 1\n"), write("test_wal.py", "import wal\n"), { text: "Done." }, { text: "Removed it." }, { text: "never sent" }]),
+    fauxRun(loadout, [write("wal.py", "x = 1\n"), { text: "Done." }, { text: "never sent" }]),
+    fauxRun(testsOnly, [write("run.log", "x"), { text: "Done." }, { text: "never sent" }]),
+    fauxRun(testsOnly, [write("run.log", "x"), write("test_wal.py", "import wal\n"), { text: "Done." }, { text: "Done." }]),
+  ]);
   assert.equal(run.result.status, "finished");
   assert.equal(run.result.usage.requests, 4);
   assert.equal(textOf(lastUser(run.contexts[3]!)), TRAVEL_TEXT);
   assert.deepEqual(policyEvents(run.events), ["continue:travel_check"]);
   const fired = run.events.find((event) => event.action === "continue");
   assert.deepEqual({ scratch: fired?.scratch, placebo: fired?.placebo, findings: fired?.findings }, { scratch: ["test_wal.py"], placebo: false, findings: 1 });
-  const clean = await fauxRun(loadout, [write("wal.py", "x = 1\n"), { text: "Done." }, { text: "never sent" }]);
   assert.equal(clean.result.usage.requests, 2);
   assert.deepEqual(policyEvents(clean.events), ["check:travel_check"]);
-  const testsOnly = withLevers((raw) => (raw.policy.travel_check = { kinds: ["packages", "data", "scratch_tests"] }));
-  const logOnly = await fauxRun(testsOnly, [write("run.log", "x"), { text: "Done." }, { text: "never sent" }]);
   assert.equal(logOnly.result.usage.requests, 2, "a log does not trigger when scratch_other is not a kind");
   assert.deepEqual(policyEvents(logOnly.events), ["check:travel_check"]);
-  const both = await fauxRun(testsOnly, [write("run.log", "x"), write("test_wal.py", "import wal\n"), { text: "Done." }, { text: "Done." }]);
   assert.equal(textOf(lastUser(both.contexts[3]!)), TRAVEL_TEXT, "and is not named next to a test file that does");
 });
 
 test("travel_check's env commands are internal: the model's background handle is p1 with the lever on, as with it off", async () => {
-  for (const on of [false, true]) {
+  await Promise.all([false, true].map(async (on) => {
     const loadout = withLevers((raw) => (raw.policy.travel_check = on));
-    const run = await fauxRun(loadout, [bash("sleep 0.6; echo slow", 0.05), { toolCalls: [{ name: "wait", arguments: { handle: "p1" } }] }, { text: "Done." }, { text: "never sent" }]);
+    const run = await fauxRun(loadout, [bash("sleep 0.35; echo slow", 0.05), { toolCalls: [{ name: "wait", arguments: { handle: "p1" } }] }, { text: "Done." }, { text: "never sent" }]);
     assert.match(toolText(run.contexts[1]!), /\bp1\b/u, `lever ${on ? "on" : "off"}: first handle`);
     assert.match(toolText(run.contexts[2]!), /slow/u);
-  }
+  }));
 });
 
 test("travel_check placebo: the same trigger sends neutral text of the reminder's estimated token count", async () => {
@@ -387,4 +393,5 @@ test("order: test_isolation and evidence_bounce, then unmet_target, then travel_
   }), [write("test_wal.py", "x"), ...Array.from({ length: 7 }, (_, i) => bash(`echo ${i}`)), { text: LAYOUT_FINAL }, { text: "never sent" }], { prompt: LAYOUT_TASK, budgets: { requests: 10, wall_s: 3600 } });
   assert.equal(near.result.usage.requests, 9, "9 of 10 requests used: no continuation");
   assert.deepEqual(policyEvents(near.events), ["skip:unmet_target", "skip:travel_check"]);
+});
 });

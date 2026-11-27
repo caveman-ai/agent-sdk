@@ -11,7 +11,7 @@ import { randomUUID } from "node:crypto";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test } from "node:test";
+import { describe, test } from "node:test";
 import { endsOnWatchBanner, parseCommands, plainText, selfKillRefusal, type GuardedProcess } from "../src/env/hygiene.ts";
 import { LocalEnv } from "../src/env/local.ts";
 import { BUILTIN_LOADOUTS, loadoutHash, normalizeLoadout, readLoadout, shellSettingsOf, type Loadout } from "../src/loadout.ts";
@@ -34,6 +34,7 @@ const events = (path: string) => readFileSync(path, "utf8").trim().split("\n").m
 
 // ------------------------------------------------------------------ loadout flags
 
+describe("harden", { concurrency: 4 }, () => {
 test("every lever flag is off in the built-ins, and spelling one out as off hashes like omitting it", () => {
   for (const name of ["compact-v0", "compact-v0-plain", "exec-v0"]) {
     const { loadout, behaviorHash } = readLoadout(name);
@@ -189,7 +190,7 @@ test("watch banner matcher is linear: 4 MB of near-miss text is scanned in secon
 test("watch_stop: silent on a watch banner -> stopped, exit 124, a one-line remedy; other silence and the flag off are untouched", async () => {
   const banner = "printf ' Tests  3 passed (3)\\n\\n Waiting for file changes...\\n       press h to show help, press q to quit\\n'";
   const on = new LocalEnv({ cwd: workdir() });
-  on.configureShell({ watchStopMs: 300 });
+  on.configureShell({ watchStopMs: 200 });
   const off = new LocalEnv({ cwd: workdir() });
   try {
     const started = performance.now();
@@ -201,13 +202,15 @@ test("watch_stop: silent on a watch banner -> stopped, exit 124, a one-line reme
     assert.match(stopped.output, /Tests {2}3 passed/u, "the run's results stay");
     const note = stopped.output.trim().split("\n").at(-1)!;
     assert.match(note, /^\[harness: stopped after 0 s without output: .*CI=1.*--run.*\]$/u);
-    const quiet = await on.exec("echo working; sleep 1; echo finished", { yieldMs: 20_000 });
+    const [quiet, untouched] = await Promise.all([
+      on.exec("echo working; sleep 0.5; echo finished", { yieldMs: 20_000 }),
+      off.exec(`${banner}; sleep 0.5`, { yieldMs: 20_000 }),
+    ]);
     assert.equal(quiet.exitCode, 0, "silence without a banner is not a watcher");
     assert.equal(quiet.watchStopped, undefined);
-    const untouched = await off.exec(`${banner}; sleep 1`, { yieldMs: 20_000 });
     assert.equal(untouched.exitCode, 0, "off: the command runs to its end");
     // A yielded command is still watched while it runs in the background.
-    const yielded = await on.exec(`sleep 0.4; ${banner}; sleep 30`, { yieldMs: 100, timeoutMs: 60_000 });
+    const yielded = await on.exec(`sleep 0.25; ${banner}; sleep 30`, { yieldMs: 100, timeoutMs: 60_000 });
     assert.equal(yielded.running, true);
     const later = await on.wait(yielded.handle!, 10_000);
     assert.equal(later.exitCode, 124);
@@ -450,4 +453,5 @@ test("transcript: system, task, assistant (tool call input, reasoning tokens) an
   assert.deepEqual({ name: lines[3]!.name, content: lines[3]!.content, is_error: lines[3]!.is_error }, { name: "bash", content: [{ type: "text", text: "hi" }], is_error: false });
   assert.equal(lines[4]!.text, "Done.");
   assert.equal(lines[4]!.stop_reason, "stop");
+});
 });

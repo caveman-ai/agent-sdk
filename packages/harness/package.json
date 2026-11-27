@@ -15,7 +15,7 @@
     "build": "node scripts/bundle.mjs",
     "prepack": "node scripts/bundle.mjs",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "node scripts/bundle.mjs && node --experimental-strip-types --no-warnings --test tests/*.test.ts"
+    "test": "node scripts/bundle.mjs --if-stale && node --experimental-strip-types --no-warnings --test tests/*.test.ts"
   },
   "files": [
     "dist/harness.mjs",

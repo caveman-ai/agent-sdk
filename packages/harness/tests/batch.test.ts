@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test } from "node:test";
+import { describe, test } from "node:test";
 import { LocalEnv } from "../src/env/local.ts";
 import { BUILTIN_LOADOUTS, LoadoutError, normalizeLoadout } from "../src/loadout.ts";
 import { estimateTokens } from "../src/prompts.ts";
@@ -44,6 +44,7 @@ const exampleCell = (description: string) => {
   return /for example `([^`]+)`/u.exec(BATCH_LINES)![1]!;
 };
 
+describe("exec.batch", { concurrency: true }, () => {
 test("exec.batch off: the description is exactly the one before the flag, with and without aliases", async () => {
   const specs = Object.values(NESTED_SPECS);
   assert.equal(execToolDescription(specs, true, false, "off"), execToolDescription(specs, true, false));
@@ -128,4 +129,5 @@ test("exec.batch: nested calls awaited together overlap, and a session check rid
   } finally {
     await close();
   }
+});
 });

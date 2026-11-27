@@ -10,7 +10,7 @@ import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { test } from "node:test";
+import { describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { LocalEnv } from "../src/env/local.ts";
 import { loadLoadout } from "../src/loadout.ts";
@@ -35,6 +35,7 @@ function setup(files: Record<string, string> = {}) {
   return { root, env, surface, tools, call, async close() { await surface.dispose(); await env.close(); } };
 }
 
+describe("exec surface", { concurrency: 4 }, () => {
 test("pragma parsing and result framing follow Codex", () => {
   assert.deepEqual(parseExecSource('// @exec: {"yield_time_ms": 500, "max_output_tokens": 20}\ntext(1)'), { code: "text(1)", yieldTimeMs: 500, maxOutputTokens: 20 });
   assert.deepEqual(parseExecSource("text(1)"), { code: "text(1)" });
@@ -104,7 +105,7 @@ test("a cell runs commands, edits through nested apply_patch, and reports mutati
 test("a cell yields at yield_time_ms with its output so far; wait returns only the new output and the completion", async () => {
   const ctx = setup();
   try {
-    const first = await ctx.call("exec", { input: '// @exec: {"yield_time_ms": 300}\ntext("start ");\nconst r = await tools.exec_command({ cmd: "sleep 1; echo late", yield_time_ms: 5000 });\ntext(r.output);' });
+    const first = await ctx.call("exec", { input: '// @exec: {"yield_time_ms": 500}\ntext("start ");\nconst r = await tools.exec_command({ cmd: "sleep 1; echo late", yield_time_ms: 5000 });\ntext(r.output);' });
     assert.match(first.text, /^Script running with cell ID 1\nWall time 0\.\d seconds\nOutput:\nstart $/u);
     assert.equal(first.details.cell_id, 1);
     const second = await ctx.call("wait", { cell_id: "1", yield_time_ms: 10_000 });
@@ -138,7 +139,7 @@ test("exec_command yields a session_id; write_stdin polls it to the end and refu
   try {
     const out = await ctx.call("exec", {
       input: [
-        'const r = await tools.exec_command({ cmd: "echo begin; sleep 1; echo end", yield_time_ms: 250 });',
+        'const r = await tools.exec_command({ cmd: "echo begin; sleep 0.5; echo end", yield_time_ms: 250 });',
         "text(Object.keys(r).join(',') + '\\n');",
         "let refused = '';",
         "try { await tools.write_stdin({ session_id: r.session_id, chars: 'y\\n' }); } catch (error) { refused = error.message; }",
@@ -305,4 +306,5 @@ test("exec-v0 plus Codex's extra wire knobs against pi-ai's Responses provider: 
     server.close();
     await env.close();
   }
+});
 });

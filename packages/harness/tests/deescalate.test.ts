@@ -9,7 +9,7 @@ import { mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs"
 import { createServer as createHttpServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test } from "node:test";
+import { describe, test } from "node:test";
 import type { FauxResponseStep } from "@earendil-works/pi-ai";
 import { LocalEnv } from "../src/env/local.ts";
 import { readOnlyCommand } from "../src/evidence.ts";
@@ -56,6 +56,7 @@ const files = (cwd: string) => {
 
 // ---------- the read-only command test ----------
 
+describe("deescalate", { concurrency: 4 }, () => {
 test("readOnlyCommand: reads, listings, searches and git reads are read-only", () => {
   for (const command of [
     "ls -la", "cat a.txt", "rg -n 'def main' src", "grep -rn foo . | head -20", "git status", "git diff HEAD~1 -- src/a.py", "git log --oneline -5",
@@ -133,7 +134,7 @@ test("D4 on exec-v0: a read-only cell and a poll of a running cell go lowered; a
   const command = (cmd: string): Step => ({ exec: `const r = await tools.exec_command({ cmd: ${JSON.stringify(cmd)} }); text(JSON.stringify(r));` });
   const run = await runScripted(d4({ to: "low" }, "exec-v0"), [
     command("ls && cat a.txt"),
-    { exec: `// @exec: {"yield_time_ms": 200}\nawait tools.exec_command({ cmd: "sleep 1.5; echo slept", yield_time_ms: 20000 });\ntext("slept");` },
+    { exec: `// @exec: {"yield_time_ms": 200}\nawait tools.exec_command({ cmd: "sleep 0.65; echo slept", yield_time_ms: 20000 });\ntext("slept");` },
     { tool: "wait", args: { cell_id: "2", yield_time_ms: 100 } },
     { tool: "wait", args: { cell_id: "2", yield_time_ms: 10000 } },
     command("sh check.sh"),
@@ -230,17 +231,19 @@ test("D4: polls of a still-running bash job go lowered; the yield of a check and
   };
   const steps = [
     read(),
-    bash("sleep 1.5; sh green.sh", 1),
+    bash("sleep 0.6; sh green.sh", 0.2),
     { toolCalls: [{ name: "wait", arguments: { handle: "p1", timeout: 0.1 } }] },
     { toolCalls: [{ name: "wait", arguments: { handle: "p1" } }] },
-    bash("sleep 1; echo ok", 0.2),
+    bash("sleep 0.5; echo ok", 0.15),
     { toolCalls: [{ name: "wait", arguments: { handle: "p2" } }] },
     { text: "Ok." },
   ];
-  const run = await fauxRun(d4(), steps, { setup });
+  const [run, pollsOnly] = await Promise.all([
+    fauxRun(d4(), steps, { setup }),
+    fauxRun(d4({ on: ["poll"] }), steps, { setup }),
+  ]);
   assert.deepEqual(run.efforts, ["high", "medium", "high", "medium", "high", "medium", "medium"],
     "first; read; a yielded check; poll; the check ended; a yielded read-only job; its finished wait");
-  const pollsOnly = await fauxRun(d4({ on: ["poll"] }), steps, { setup });
   assert.deepEqual(pollsOnly.efforts, ["high", "high", "high", "medium", "high", "high", "high"]);
 });
 
@@ -299,4 +302,5 @@ test("D4 refuses Pi's per-turn effort items (OpenAI on compact-v0) and Anthropic
     server.close();
     await env.close();
   }
+});
 });

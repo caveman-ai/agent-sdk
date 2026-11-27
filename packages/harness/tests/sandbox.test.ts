@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after, test } from "node:test";
+import { after, describe, test } from "node:test";
 import { SandboxEnv, type SandboxEnvOptions, type SandboxEvent } from "../src/env/sandbox.ts";
 import { execEnvConformance } from "./env-conformance.ts";
 import { execSurfaceSuite } from "./exec-suite.ts";
@@ -267,31 +267,6 @@ test("SandboxEnv: a refused create says why in the command's output; the next ca
   }
 });
 
-test("SandboxEnv: a background command holds its stream as its handle; a backgrounded child keeps one open until close", async () => {
-  const env = await makeSandbox();
-  const settle = () => new Promise((done) => setTimeout(done, 150));
-  const streams = () => fake.state.computers.get(env.computerId!)!.streams;
-  try {
-    await env.exec("true");
-    await settle();
-    assert.equal(streams(), 0, "a finished command leaves no stream open");
-    const bg = await env.exec("sleep 30", { background: true });
-    assert.equal(bg.running, true);
-    assert.equal(streams(), 1, "the handle is its stream");
-    await env.kill(bg.handle!);
-    await settle();
-    assert.equal(streams(), 0, "kill ends the stream");
-    const run = await env.exec("sleep 30 & echo started");
-    assert.equal(run.output, "started\n");
-    await settle();
-    assert.equal(streams(), 1, "the child holds the stream");
-  } finally {
-    await env.close();
-  }
-  await settle();
-  assert.equal(streams(), 0, "close ends every stream");
-});
-
 test("SandboxEnv from the bundled library: a turn with no tool call makes no computer; a turn's first bash makes one and runs there", async () => {
   const lib = await import(new URL("../dist/lib.mjs", import.meta.url).href) as typeof import("../src/lib.ts");
   const { fauxStep, resolveModel } = await import("../src/models.ts");
@@ -323,6 +298,32 @@ test("SandboxEnv from the bundled library: a turn with no tool call makes no com
   assert.deepEqual(events.map((event) => event.action), ["made", "released"], "the session's close releases the computer");
 });
 
+describe("SandboxEnv repos and streams", { concurrency: 4 }, () => {
+test("SandboxEnv: a background command holds its stream as its handle; a backgrounded child keeps one open until close", async () => {
+  const env = await makeSandbox();
+  const settle = () => new Promise((done) => setTimeout(done, 150));
+  const streams = () => fake.state.computers.get(env.computerId!)!.streams;
+  try {
+    await env.exec("true");
+    await settle();
+    assert.equal(streams(), 0, "a finished command leaves no stream open");
+    const bg = await env.exec("sleep 30", { background: true });
+    assert.equal(bg.running, true);
+    assert.equal(streams(), 1, "the handle is its stream");
+    await env.kill(bg.handle!);
+    await settle();
+    assert.equal(streams(), 0, "kill ends the stream");
+    const run = await env.exec("sleep 30 & echo started");
+    assert.equal(run.output, "started\n");
+    await settle();
+    assert.equal(streams(), 1, "the child holds the stream");
+  } finally {
+    await env.close();
+  }
+  await settle();
+  assert.equal(streams(), 0, "close ends every stream");
+});
+
 test("SandboxEnv: a session's repository is cloned from its git URL (the host's git lane) on its base branch; fetch and push by the GitHub URL go there", async () => {
   await lane.makeRepository("acme", "shop", { "README.md": "# shop\n", "AGENT.md": "the repository's own\n" }, "develop");
   const events: SandboxEvent[] = [];
@@ -331,7 +332,7 @@ test("SandboxEnv: a session's repository is cloned from its git URL (the host's 
     files: async () => [{ path: "AGENT.md", data: "the build's\n" }, { path: ".caveman/skills/deploy.md", data: "deploy\n" }],
   });
   try {
-    const look = await env.exec("git rev-parse --abbrev-ref HEAD; cat BRANCH README.md AGENT.md; git config --get remote.origin.url; git config --get-regexp '^url\\.' ; git config --global --list 2>/dev/null | wc -l");
+    const look = await env.exec("git rev-parse --abbrev-ref HEAD; cat BRANCH README.md AGENT.md; git config --get remote.origin.url; git config --get-regexp '^url\\.' ; git config --global --list 2>/dev/null | wc -l | tr -d ' '");
     assert.equal(look.exitCode, 0, look.output);
     assert.equal(look.output, [
       "develop", "develop", "# shop", "the repository's own",
@@ -339,7 +340,7 @@ test("SandboxEnv: a session's repository is cloned from its git URL (the host's 
       // The host's lane (the fake's origin stands for http://172.16.0.1:47483 in what a command is given).
       `url.${lane.url}/git/v1/acme/shop.git.insteadof https://github.com/acme/shop.git`,
       "0", "",
-    ].join("\n").replace(/^0$/mu, (zero) => zero.padStart(8)), "the base branch, the repository's own AGENT.md, origin the GitHub URL, the clone's own config and no global one");
+    ].join("\n"), "the base branch, the repository's own AGENT.md, origin the GitHub URL, the clone's own config and no global one");
     // The build's file that is not the repository's is there, and git ignores every file of the build.
     assert.equal(Buffer.from(await env.readFile(".caveman/skills/deploy.md")).toString(), "deploy\n");
     assert.equal((await env.exec("git status --porcelain")).output, "");
@@ -399,4 +400,5 @@ test("SandboxEnv: a repository the lane does not serve fails the call that neede
       await bad.close();
     }
   }
+});
 });

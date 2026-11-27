@@ -66,12 +66,13 @@ test("a streamed Messages request is re-sent with max_tokens 0 and stream false 
 });
 
 test("a real request inside the interval resets the gap; pings repeat every interval up to maxPerGap", async () => {
-  const { keepalive, sent } = harness({ intervalMs: 40, maxPerGap: 2 });
+  const { keepalive, sent } = harness({ intervalMs: 100, maxPerGap: 2 });
   await post(keepalive);
-  await sleep(25);
+  await sleep(30);
   await post(keepalive, { ...REQUEST, messages: [...REQUEST.messages, { role: "assistant", content: [{ type: "text", text: "a" }] }] });
-  await sleep(25);
+  await sleep(30);
   assert.equal(sent.length, 2, "no ping while requests keep coming");
+  for (const started = Date.now(); sent.length < 4 && Date.now() - started < 3000;) await sleep(10);
   await sleep(150);
   keepalive.close();
   const pings = sent.slice(2);
@@ -95,7 +96,7 @@ test("non-streamed requests, other endpoints and non-POSTs never arm a ping; clo
 test("a refused ping is reported as an error and changes nothing else", async () => {
   const { keepalive, sent, pings } = harness({ intervalMs: 30, maxPerGap: 1, status: 400 });
   await post(keepalive);
-  await sleep(60);
+  for (const started = Date.now(); (sent.length < 2 || pings.length < 1) && Date.now() - started < 3000;) await sleep(5);
   keepalive.close();
   assert.equal(sent.length, 2);
   assert.equal(pings.length, 1);
@@ -142,7 +143,7 @@ test("through pi-ai's Anthropic client: the ping replays the exact body pi-ai se
   } as never);
   const message = await stream.result();
   assert.notEqual(message.stopReason, "error", message.errorMessage ?? "provider error");
-  await sleep(80);
+  for (const started = Date.now(); (seen.length < 2 || pings.length < 1) && Date.now() - started < 3000;) await sleep(5);
   keepalive.close();
   assert.equal(seen.length, 2, "one real request, one ping");
   const [real, ping] = seen as [typeof seen[0], typeof seen[0]];

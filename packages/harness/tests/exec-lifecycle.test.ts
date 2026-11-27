@@ -14,7 +14,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test } from "node:test";
+import { describe, test } from "node:test";
 import type { TranscriptContext } from "@earendil-works/pi-ai";
 import { LocalEnv } from "../src/env/local.ts";
 import { BUILTIN_LOADOUTS, loadLoadout, normalizeLoadout, type Loadout } from "../src/loadout.ts";
@@ -53,11 +53,12 @@ async function eventually(check: () => boolean, ms = 3000): Promise<boolean> {
   return check();
 }
 
+describe("exec lifecycle", { concurrency: 4 }, () => {
 test("terminate kills a nested exec_command still inside its yield window", async () => {
   const ctx = setup();
   const sleep = marker();
   try {
-    const first = await ctx.call("exec", { input: `// @exec: {"yield_time_ms": 500}\nawait tools.exec_command({ cmd: "${sleep}; echo done", yield_time_ms: 20000 });` });
+    const first = await ctx.call("exec", { input: `// @exec: {"yield_time_ms": 300}\nawait tools.exec_command({ cmd: "${sleep}; echo done", yield_time_ms: 20000 });` });
     assert.match(first.text, /^Script running with cell ID 1\n/u);
     assert.ok(alive(sleep), "the command runs while the cell does");
     const stopped = await ctx.call("wait", { cell_id: "1", terminate: true });
@@ -76,7 +77,7 @@ test("terminate stops the sessions the cell started and names them; a completed 
     const done = await ctx.call("exec", { input: `const r = await tools.exec_command({ cmd: "${kept}", yield_time_ms: 250 }); text(r.session_id);` });
     assert.match(done.text, /^Script completed\n[\s\S]*Output:\n1000$/u);
     const started = await ctx.call("exec", {
-      input: `// @exec: {"yield_time_ms": 1500}\nconst r = await tools.exec_command({ cmd: "${stoppedCmd}", yield_time_ms: 250 });\ntext("started");\nawait new Promise((wake) => setTimeout(wake, 20000));`,
+      input: `// @exec: {"yield_time_ms": 10000}\nconst r = await tools.exec_command({ cmd: "${stoppedCmd}", yield_time_ms: 250 });\ntext("started");\nyield_control();\nawait new Promise((wake) => setTimeout(wake, 20000));`,
     });
     assert.match(started.text, /^Script running with cell ID 2\n[\s\S]*Output:\nstarted$/u);
     const stopped = await ctx.call("wait", { cell_id: "2", terminate: true });
@@ -141,7 +142,7 @@ test("the same failing command rerun through exec is nudged and stopped like on 
   const env = new LocalEnv({ cwd: root });
   const loadout = loadLoadout("exec-v0");
   const { nudge_at, stop_at } = loadout.policy.loop;
-  const script = 'const r = await tools.exec_command({ cmd: "sleep 0.6; echo fail; exit 1" }); text(JSON.stringify(r));';
+  const script = 'const r = await tools.exec_command({ cmd: "sleep 0.05; echo fail; exit 1" }); text(JSON.stringify(r));';
   const trace = join(root, "trace.jsonl");
   const seen: string[] = [];
   try {
@@ -189,11 +190,10 @@ test("a new exec cell whose command fails is not progress; a new one that succee
       await env.close();
     }
   };
-  const failing = await run(1);
+  const [failing, passing] = await Promise.all([run(1), run(0)]);
   assert.equal(failing.result.stop_reason, "loop_repeat", JSON.stringify(failing.result));
   assert.deepEqual(failing.policy, [...Array.from({ length: stop_at - nudge_at }, (_, index) => `nudge:${nudge_at + index}`), `stop:${stop_at}`]);
   assert.equal(failing.result.tools.calls, 2 * stop_at - 1);
-  const passing = await run(0);
   assert.deepEqual(passing.policy, [], "a new cell that succeeds resets the counts");
 });
 
@@ -211,4 +211,5 @@ test("a nested apply_patch that changes nothing is not an edit", async () => {
   } finally {
     await ctx.close();
   }
+});
 });

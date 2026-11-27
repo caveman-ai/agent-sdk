@@ -10,7 +10,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test } from "node:test";
+import { describe, test } from "node:test";
 import { LocalEnv } from "../src/env/local.ts";
 import { BUILTIN_LOADOUTS, normalizeLoadout, readLoadout, type Loadout } from "../src/loadout.ts";
 import { fauxStep, type FauxStep } from "../src/models.ts";
@@ -49,6 +49,7 @@ const STOPPED = ["nudge:loop_repeat:3", "nudge:loop_repeat:4", "nudge:loop_repea
 const BASH = { toolCalls: [{ name: "bash", arguments: { command: "sh ci.sh" } }] };
 const EXEC = { toolCalls: [{ name: "exec", arguments: { input: 'const r = await tools.exec_command({ cmd: "sh ci.sh" }); text(r.output);' } }] };
 
+describe("loop-shaped", { concurrency: true }, () => {
 for (const [name, step] of [["compact-v0-plain-r1", BASH], ["exec-v0-r1", EXEC]] as const) {
   test(`B5 with R1 on (${name}): the same failing test run x8, each shaped and spilled to a new file, is nudged at 3 and stopped at 6`, async () => {
     const run = await loop(arm(name), step);
@@ -100,4 +101,5 @@ test("repeat keys: R1 full-log paths and R2 until times are taken out; everythin
   assert.notEqual(execRepeatKey(shaped("/s/cmd-1.log", "1.0")), execRepeatKey(shaped("/s/cmd-1.log", "1.0").replace("3 == 4", "3 == 5")), "a different failure is not a repeat");
   assert.equal(withoutUntilTimes("[wait until regex /after 3s/: not met after 300.0s]"), "[wait until regex /after 3s/: not met]");
   assert.equal(withoutUntilTimes("echo [wait until exit: met after 1.0s] later"), "echo [wait until exit: met after 1.0s] later", "only a whole until line");
+});
 });

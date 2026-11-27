@@ -17,7 +17,7 @@ import { existsSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } fr
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test } from "node:test";
+import { describe, test } from "node:test";
 import type { FauxResponseStep, SimpleStreamOptions, TranscriptContext } from "@earendil-works/pi-ai";
 import {
   CHECK_TAIL_CHARS, changeParts, checkTail, ClauseCheck, clauseRequest, fitParts, formatClauses, MAX_CLAUSES, parseClauses, verbatimCount,
@@ -46,6 +46,7 @@ const clauseOn = (settings: boolean | Record<string, unknown> = true, options: {
 
 // ---------- loadout ----------
 
+describe("clause_check", { concurrency: 4 }, () => {
 test("clause_check is off by default: absent or false normalizes and hashes like the built-ins", () => {
   for (const name of ["compact-v0", "compact-v0-plain", "exec-v0"]) {
     const plain = normalizeLoadout(base(name));
@@ -165,7 +166,10 @@ const scripts = (cwd: string) => {
   writeFileSync(join(cwd, "green.sh"), "echo '3 passed'\n");
 };
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const sleep = (ms: number) => new Promise<void>((resolve) => {
+  const timer = setTimeout(resolve, ms);
+  timer.unref();
+});
 const bash = (command: string): FauxStep => ({ toolCalls: [{ name: "bash", arguments: { command } }] });
 const write = (path: string, content: string): FauxStep => ({ toolCalls: [{ name: "write", arguments: { path, content } }] });
 const edit = (path: string, oldText: string, newText: string): FauxStep => ({ toolCalls: [{ name: "edit", arguments: { path, edits: [{ oldText, newText }] } }] });
@@ -297,12 +301,12 @@ test("the trigger: the side call starts at the first green after a red, never de
 });
 
 test("the side call runs at the run's own effort (its clamped thinking level), whatever it is", async () => {
-  for (const [effort, level] of [["low", "low"], ["medium", "medium"], ["xhigh", "high"]] as const) {
+  await Promise.all(([["low", "low"], ["medium", "medium"], ["xhigh", "high"]] as const).map(async ([effort, level]) => {
     const run = await fauxRun(clauseOn(), core([afterCall(bash("echo next")), { text: "Done." }]), [{ text: "NONE" }], { setup: scripts, effort });
     assert.equal(run.side.length, 1, effort);
     assert.equal(run.result.thinking_level, level, `${effort}: the faux model clamps to ${level}`);
     assert.equal(run.side[0]!.reasoning, run.result.thinking_level, effort);
-  }
+  }));
 });
 
 test("trigger rules: a green with no red before it, or a red-to-green with nothing changed, makes no call; no_change does not use up max", async () => {
@@ -326,19 +330,21 @@ test("trigger rules: a green with no red before it, or a red-to-green with nothi
 });
 
 test("max: one call per run by default; max 2 audits the next red-to-green too", async () => {
-  const steps = () => core([
+  const steps = (waitMs: number) => core([
     afterCall(bash("echo next")), edit("app.py", "name.strip()", "name.strip() or 'world'"), bash("sh fail.sh"), bash("sh green.sh"),
     async (_context: TranscriptContext, tracePath: string) => {
-      await traceHas(tracePath, (event) => isCall(event) && event.n === 2, 1_500);
+      await traceHas(tracePath, (event) => isCall(event) && event.n === 2, waitMs);
       return bash("echo last");
     },
     { text: "Done." },
   ]);
-  const once = await fauxRun(clauseOn(), steps(), [{ text: CLAUSES }, { text: CLAUSES }], { setup: scripts });
+  const [once, twice] = await Promise.all([
+    fauxRun(clauseOn(), steps(250), [{ text: CLAUSES }, { text: CLAUSES }], { setup: scripts }),
+    fauxRun(clauseOn({ max: 2 }), steps(5_000), [{ text: CLAUSES }, { text: "- \"returns 'Hello, <name>!'\"" }], { setup: scripts }),
+  ]);
   assert.equal(once.side.length, 1);
   assert.deepEqual(clauseEvents(once.events), ["check:trigger", "check:call", "remind:"]);
   assert.doesNotMatch(textOf(lastTool(once.contexts[8]!)), /\[harness\]/u);
-  const twice = await fauxRun(clauseOn({ max: 2 }), steps(), [{ text: CLAUSES }, { text: "- \"returns 'Hello, <name>!'\"" }], { setup: scripts });
   assert.equal(twice.side.length, 2);
   assert.deepEqual(clauseEvents(twice.events), ["check:trigger", "check:call", "remind:", "check:trigger", "check:call", "remind:"]);
   assert.equal(textOf(lastTool(twice.contexts[8]!)), `last${reminder(LEVER_TEXTS.clause_check.replace("{clauses}", "- \"returns 'Hello, <name>!'\""))}`);
@@ -458,13 +464,13 @@ test("NONE (or an answer that is not a list, or one the output cap cut before an
   const answers: [FauxStep, string][] = [
     [{ text: "NONE" }, "none"], [{ text: "Everything the task states is handled." }, "unparsed"], [{ thinking: "long reasoning", stopReason: "length" }, "cut"],
   ];
-  for (const [answer, result] of answers) {
+  await Promise.all(answers.map(async ([answer, result]) => {
     const run = await fauxRun(clauseOn(), core([afterCall(bash("echo next")), bash("echo more"), { text: "Done." }]), [answer], { setup: scripts });
     assert.equal(run.result.usage.requests, 6, result);
     assert.equal(run.events.find(isCall)?.result, result);
     assert.deepEqual(clauseEvents(run.events), ["check:trigger", "check:call"], result);
     for (const context of run.contexts) assert.ok(!JSON.stringify(context).includes("independent reading"), result);
-  }
+  }));
 });
 
 test("dropped: a note ready at a finish attempt, an answer that comes back after one, and a call still running when the run ends", async () => {
@@ -538,7 +544,8 @@ test("cost: the side call's tokens and USD are in usage and cost_usd and in side
   assert.equal(run.result.usage.input_tokens, sum("input", loop) + sum("input", side));
   const loopCost = loop.reduce((total, event) => total + event.cost_usd, 0);
   assert.ok(side[0]!.cost_usd > 0);
-  assert.ok(Math.abs(run.result.cost_usd! - (loopCost + side[0]!.cost_usd)) < 1e-6);
+  // Each event rounds cost_usd to 6 decimals (±5e-7), while result.cost_usd rounds the unrounded sum.
+  assert.ok(Math.abs(run.result.cost_usd! - (loopCost + side[0]!.cost_usd)) <= (loop.length + side.length + 1) * 5e-7 + 1e-12);
   assert.equal(run.result.side_requests?.clause_check?.requests, 1);
   const call = run.events.find(isCall)!;
   assert.equal(call.output_tokens, side[0]!.usage.output);
@@ -665,4 +672,5 @@ test("over the wire (exec-v0-clause): the side call goes to the run's own base U
     server.close();
     await env.close();
   }
+});
 });

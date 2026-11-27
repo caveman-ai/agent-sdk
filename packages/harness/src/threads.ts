@@ -93,7 +93,17 @@ export class AnthropicThreads {
     const send = (payload: Body) => this.#base(input, { ...init, headers, body: JSON.stringify(payload) });
 
     // The previous response's stream is read in parallel; wait for it to finish (it normally has) before deciding.
-    if (this.#previous?.done !== undefined) await Promise.race([this.#previous.done, new Promise((resolve) => setTimeout(resolve, 2000))]);
+    if (this.#previous?.done !== undefined) {
+      let timer: NodeJS.Timeout | undefined;
+      try {
+        await Promise.race([this.#previous.done, new Promise<void>((resolve) => {
+          timer = setTimeout(resolve, 2000);
+          timer.unref();
+        })]);
+      } finally {
+        clearTimeout(timer);
+      }
+    }
     const previous = this.#previous;
     const reason = this.#continueProblem(previous, body, betas);
     let mode: Mode = reason === undefined ? "continue" : "create";

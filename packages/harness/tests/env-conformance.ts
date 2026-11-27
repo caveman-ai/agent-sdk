@@ -5,10 +5,11 @@
  * (for a remote backend: a path inside the sandbox).
  */
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { describe, test } from "node:test";
 import type { ExecEnv } from "../src/env/types.ts";
 
 export function execEnvConformance(label: string, makeEnv: () => Promise<ExecEnv>): void {
+  describe(`${label} conformance`, { concurrency: true }, () => {
   const withEnv = (name: string, body: (env: ExecEnv) => Promise<void>) =>
     test(`${label}: ${name}`, async () => {
       const env = await makeEnv();
@@ -152,5 +153,6 @@ export function execEnvConformance(label: string, makeEnv: () => Promise<ExecEnv
     assert.equal(run.truncated, true);
     assert.equal(run.totalBytes, ceiling + 1000);
     assert.equal(run.output.length, ceiling);
+  });
   });
 }

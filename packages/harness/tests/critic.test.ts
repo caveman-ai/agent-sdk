@@ -17,7 +17,7 @@ import { createServer } from "node:http";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test } from "node:test";
+import { describe, test } from "node:test";
 import type { FauxResponseStep, SimpleStreamOptions, TranscriptContext } from "@earendil-works/pi-ai";
 import {
   criticLoadout, criticRequest, factsOf, formatFindings, guardAfterScript, guardBeforeScript, parseGuardAfter, parseSummary, parseVerdict, renderChanges,
@@ -48,6 +48,7 @@ const tmp = (prefix: string) => realpathSync(mkdtempSync(join(tmpdir(), prefix))
 
 // ---------- loadout ----------
 
+describe("critic", { concurrency: 4 }, () => {
 test("critic is off by default: absent or false normalizes and hashes like the built-ins", () => {
   for (const name of ["compact-v0", "compact-v0-plain", "exec-v0"]) {
     const plain = normalizeLoadout(base(name));
@@ -230,7 +231,7 @@ test("the guard leaves the env's scratch dir out when it sits inside the cwd", (
   assert.ok(existsSync(join(cwd, ".scratch", "spill.log")), "the scratch dir is not the project's");
 });
 
-test("the change summary on a real shell: created, modified and deleted files with sizes; in a git repo, the diff against the start commit", () => {
+test("the change summary on a real shell: created, modified and deleted files with sizes; in a git repo, the diff against the start commit", async () => {
   const cwd = tmp("harness-critic-summary-");
   const dir = join(tmp("harness-critic-scratch-"), "crit");
   writeFileSync(join(cwd, "keep.txt"), "keep\n");
@@ -239,7 +240,8 @@ test("the change summary on a real shell: created, modified and deleted files wi
   mkdirSync(join(cwd, "node_modules/pkg"), { recursive: true });
   const start = factsOf(sh(cwd, startScript(dir)), "critic_");
   assert.deepEqual(start, { files: "3" }, "no git, three files (node_modules pruned)");
-  sh(cwd, "sleep 1; echo two >> edit.txt; rm gone.txt; mkdir -p src && printf 'x = 1\\n' > src/new.py; echo y > node_modules/pkg/i.js");
+  await new Promise((done) => setTimeout(done, 1050));
+  sh(cwd, "echo two >> edit.txt; rm gone.txt; mkdir -p src && printf 'x = 1\\n' > src/new.py; echo y > node_modules/pkg/i.js");
   const summary = parseSummary(sh(cwd, summaryScript(dir, { diffBytes: 1000 })), 1000);
   assert.deepEqual(summary, {
     entries: [{ kind: "created", bytes: 6, path: "src/new.py" }, { kind: "modified", bytes: 8, path: "edit.txt" }, { kind: "deleted", path: "gone.txt" }],
@@ -254,7 +256,8 @@ test("the change summary on a real shell: created, modified and deleted files wi
   const repoDir = join(tmp("harness-critic-scratch-"), "crit");
   assert.match(factsOf(sh(repo, startScript(repoDir)), "critic_").git ?? "", /^[0-9a-f]{40}$/u);
   const startCommit = factsOf(sh(repo, startScript(join(repoDir, "..", "other"))), "critic_").git!;
-  sh(repo, "sleep 1; echo two >> edit.txt; rm gone.txt; echo new > untracked.txt");
+  await new Promise((done) => setTimeout(done, 1050));
+  sh(repo, "echo two >> edit.txt; rm gone.txt; echo new > untracked.txt");
   git("commit -qam agent");
   const inRepo = parseSummary(sh(repo, summaryScript(repoDir, { base: startCommit, diffBytes: 4000 })), 4000)!;
   assert.deepEqual(inRepo.counts, { created: 1, modified: 1, deleted: 1 });
@@ -467,12 +470,12 @@ test("PASS, no verdict, a bare FAIL, a provider error, max_turns and a timeout a
     ["provider error", criticOn(), [{ stopReason: "error", errorMessage: "400 bad request" }], "error", { error: "400 bad request" }],
     ["unscripted", criticOn(), [], "error", {}],
     ["max_turns", criticOn({ max_turns: 2 }), [run("true"), run("true"), { text: FAIL_VERDICT }], "max_turns", { turns: 2, tool_calls: 2 }],
-    ["timeout", criticOn({ wall_s: 2 }), [run("true"), (_context, signal) => new Promise<FauxStep>((resolve) => {
+    ["timeout", criticOn({ wall_s: 1 }), [run("true"), (_context, signal) => new Promise<FauxStep>((resolve) => {
       if (signal?.aborted === true) resolve({ text: FAIL_VERDICT });
       signal?.addEventListener("abort", () => resolve({ text: FAIL_VERDICT }), { once: true });
-    })], "timeout", { wall_cap_ms: 2000 }],
+    })], "timeout", { wall_cap_ms: 1000 }],
   ];
-  for (const [label, loadout, replies, stop, fields] of cases) {
+  await Promise.all(cases.map(async ([label, loadout, replies, stop, fields]) => {
     const run1 = await fauxRun(loadout, okayThenDone(), replies);
     assert.equal(run1.result.status, "finished", label);
     assert.equal(run1.result.usage.requests, 2, `${label}: the run ended at the first finish`);
@@ -487,7 +490,7 @@ test("PASS, no verdict, a bare FAIL, a provider error, max_turns and a timeout a
       assert.equal(textOf(lastUser(run1.critic[1]!)), "[harness] This is your last request: reply now with no tool call, ending with your VERDICT in the stated form.");
     }
     if (label === "timeout") assert.ok(check.wall_ms < 15_000, `cut at the cap (${check.wall_ms} ms)`);
-  }
+  }));
 });
 
 test("the placebo runs the same review and sends neutral text of the findings' estimated token count", async () => {
@@ -689,4 +692,5 @@ test("dry run on a tiny fake task: the critic runs the deliverable, its verdict 
   const check = criticCheck(run1.events);
   assert.deepEqual({ turns: check.turns, tool_calls: check.tool_calls, n_findings: check.n_findings, unchanged: check.workspace_unchanged, created: check.guard.created },
     { turns: 2, tool_calls: 1, n_findings: 1, unchanged: true, created: 0 });
+});
 });

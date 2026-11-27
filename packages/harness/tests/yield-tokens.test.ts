@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { test } from "node:test";
+import { describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { LocalEnv } from "../src/env/local.ts";
 import { BUILTIN_LOADOUTS, loadoutHash, normalizeLoadout, readLoadout } from "../src/loadout.ts";
@@ -57,6 +57,7 @@ const floored = (ms: number) => (raw: Raw) => {
 /** The exec_command record a cell printed with text(JSON.stringify(...)). */
 const recordOf = (text: string) => JSON.parse(text.slice(text.indexOf("Output:\n") + 8)) as Record<string, unknown>;
 
+describe("yield floor and token estimate", { concurrency: 4 }, () => {
 test("the yield floor is off in the built-ins: exec_command's 250 ms (Codex) and no floor on cells, waits or bash", () => {
   for (const name of ["exec-v0", "compact-v0", "compact-v0-plain"]) {
     const tools = readLoadout(name).loadout.tools;
@@ -70,9 +71,9 @@ test("the yield floor is off in the built-ins: exec_command's 250 ms (Codex) and
 
 test("exec_command: a yield below the floor holds until the command exits; a command still running at the floor yields there", async () => {
   const control = execSetup();
-  const lever = execSetup(floored(4_000));
+  const lever = execSetup(floored(1_500));
   try {
-    const cell = 'text(JSON.stringify(await tools.exec_command({cmd: "sleep 1.2; echo done", yield_time_ms: 100})))';
+    const cell = 'text(JSON.stringify(await tools.exec_command({cmd: "sleep 0.55; echo done", yield_time_ms: 100})))';
     const before = recordOf((await control.call("exec", cell)).text);
     assert.equal(before.exit_code, undefined, "without the floor the command is still running at 250 ms");
     assert.equal(typeof before.session_id, "number");
@@ -82,17 +83,17 @@ test("exec_command: a yield below the floor holds until the command exits; a com
     assert.equal(record.exit_code, 0);
     assert.equal(record.output, "done\n");
     assert.equal(record.session_id, undefined);
-    assert.ok(held.ms >= 1_100 && held.ms < 3_500, `held until the exit, not the floor (${held.ms} ms)`);
+    assert.ok(held.ms >= 450 && held.ms < 1_450, `held until the exit, not the floor (${held.ms} ms)`);
 
     const quick = await lever.call("exec", 'text(JSON.stringify(await tools.exec_command({cmd: "echo hi", yield_time_ms: 100})))');
     assert.equal(recordOf(quick.text).exit_code, 0);
-    assert.ok(quick.ms < 1_500, `a command that exits sooner returns at once (${quick.ms} ms)`);
+    assert.ok(quick.ms < 1_400, `a command that exits sooner returns at once (${quick.ms} ms)`);
 
     const long = await lever.call("exec", 'text(JSON.stringify(await tools.exec_command({cmd: "sleep 30", yield_time_ms: 100})))');
     const running = recordOf(long.text);
     assert.equal(typeof running.session_id, "number", "past the floor the command yields with a session");
-    assert.ok(long.ms >= 3_900 && long.ms < 6_000, `yielded at the floor (${long.ms} ms)`);
-    assert.ok((running.wall_time_seconds as number) >= 3.9);
+    assert.ok(long.ms >= 1_400 && long.ms < 4_500, `yielded at the floor (${long.ms} ms)`);
+    assert.ok((running.wall_time_seconds as number) >= 1.4);
   } finally {
     await control.close();
     await lever.close();
@@ -100,10 +101,10 @@ test("exec_command: a yield below the floor holds until the command exits; a com
 });
 
 test("write_stdin: a poll below the floor holds until the session ends", async () => {
-  const lever = execSetup(floored(3_000));
+  const lever = execSetup(floored(1_000));
   try {
-    // Start past the floor: the session yields at 3 s; the poll then waits up to 3 s more and returns at the exit.
-    const start = recordOf((await lever.call("exec", 'text(JSON.stringify(await tools.exec_command({cmd: "sleep 4.5; echo end", yield_time_ms: 100})))')).text);
+    // Start past the floor: the session yields at 1 s; the poll then waits up to 1 s more and returns at the exit.
+    const start = recordOf((await lever.call("exec", 'text(JSON.stringify(await tools.exec_command({cmd: "sleep 1.5; echo end", yield_time_ms: 100})))')).text);
     const session = start.session_id as number;
     assert.equal(typeof session, "number");
     const poll = await lever.call("exec", `text(JSON.stringify(await tools.write_stdin({session_id: ${session}, chars: "", yield_time_ms: 100})))`);
@@ -117,29 +118,29 @@ test("write_stdin: a poll below the floor holds until the session ends", async (
 
 test("exec cells: a pragma yield below the floor holds the cell; wait's yield and until's bound hold too, and until still returns at its condition", async () => {
   const control = execSetup((raw) => { raw.tools.wait.limits.until = true; });
-  const lever = execSetup((raw) => { floored(3_000)(raw); raw.tools.wait.limits.until = true; });
+  const lever = execSetup((raw) => { floored(1_200)(raw); raw.tools.wait.limits.until = true; });
   try {
-    const cell = '// @exec: {"yield_time_ms": 100}\nawait new Promise((resolve) => setTimeout(resolve, 900));\ntext("finished")';
+    const cell = '// @exec: {"yield_time_ms": 100}\nawait new Promise((resolve) => setTimeout(resolve, 400));\ntext("finished")';
     assert.match((await control.call("exec", cell)).text, /^Script running with cell ID \d+/u);
     const held = await lever.call("exec", cell);
     assert.match(held.text, /^Script completed\n[\s\S]*finished$/u);
-    assert.ok(held.ms < 2_500, `the cell returned at its end (${held.ms} ms)`);
+    assert.ok(held.ms < 1_150, `the cell returned at its end (${held.ms} ms)`);
 
     // A cell past the floor yields at the floor; wait with a short yield holds until the cell ends.
-    const slow = '// @exec: {"yield_time_ms": 100}\nawait new Promise((resolve) => setTimeout(resolve, 4000));\ntext("slow done")';
+    const slow = '// @exec: {"yield_time_ms": 100}\nawait new Promise((resolve) => setTimeout(resolve, 1600));\ntext("slow done")';
     const yielded = await lever.call("exec", slow);
     const cellId = /cell ID (\d+)/u.exec(yielded.text)![1]!;
-    assert.ok(yielded.ms >= 2_900, `yielded at the floor (${yielded.ms} ms)`);
+    assert.ok(yielded.ms >= 1_100, `yielded at the floor (${yielded.ms} ms)`);
     const waited = await lever.call("wait", { cell_id: cellId, yield_time_ms: 100 });
     assert.match(waited.text, /^Script completed[\s\S]*slow done$/u);
 
     // until: the model's 100 ms bound is lifted to the floor, but the wait returns as soon as the line appears.
-    for (const [setup, met] of [[control, false], [lever, true]] as const) {
-      const start = recordOf((await setup.call("exec", 'text(JSON.stringify(await tools.exec_command({cmd: "sleep 4.2; echo ready; sleep 30", yield_time_ms: 4000})))')).text);
+    await Promise.all(([[control, false], [lever, true]] as const).map(async ([setup, met]) => {
+      const start = recordOf((await setup.call("exec", 'text(JSON.stringify(await tools.exec_command({cmd: "sleep 1.5; echo ready; sleep 30", yield_time_ms: 1200})))')).text);
       const result = await setup.call("wait", { session_id: start.session_id, until: "regex:ready", yield_time_ms: 100 });
       assert.equal(/: met after/u.test(result.text), met, result.text);
-      assert.ok(result.ms < 2_500, `until returned at the condition or the bound (${result.ms} ms)`);
-    }
+      assert.ok(result.ms < 1_100, `until returned at the condition or the bound (${result.ms} ms)`);
+    }));
   } finally {
     await control.close();
     await lever.close();
@@ -148,7 +149,7 @@ test("exec cells: a pragma yield below the floor holds the cell; wait's yield an
 
 test("a floored cell waits for a nested exec_command inside its held window instead of yielding an empty running report", async () => {
   // Same floor on the cell and the command: the cell starts first, so its floor passes a moment before the command's.
-  const lever = execSetup(floored(2_000));
+  const lever = execSetup(floored(800));
   try {
     const result = await lever.call("exec", 'text(JSON.stringify(await tools.exec_command({cmd: "sleep 30", yield_time_ms: 100})))');
     assert.match(result.text, /^Script completed\n/u, "the cell ended with the record, not 'Script running' and nothing");
@@ -186,12 +187,12 @@ test("compact bash and wait: a timeout below min_yield_s / min_s holds until the
     (await tools[name].execute("t", args)).content.map((part: { type: string; text?: string }) => part.text ?? "").join("");
   try {
     const control = build(0);
-    assert.match(await text(control, "bash", { command: "sleep 1; echo done", timeout: 0.1 }), /Still running after/u);
-    const lever = build(3);
-    const held = await text(lever, "bash", { command: "sleep 1; echo done", timeout: 0.1 });
+    assert.match(await text(control, "bash", { command: "sleep 0.5; echo done", timeout: 0.1 }), /Still running after/u);
+    const lever = build(1.5);
+    const held = await text(lever, "bash", { command: "sleep 0.5; echo done", timeout: 0.1 });
     assert.match(held, /done/u);
     assert.doesNotMatch(held, /Still running/u);
-    const started = await text(lever, "bash", { command: "sleep 4; echo late", timeout: 0.1 });
+    const started = await text(lever, "bash", { command: "sleep 2.0; echo late", timeout: 0.1 });
     const handle = /handle "(p\d+)"/u.exec(started)![1]!;
     assert.match(await text(lever, "wait", { handle, timeout: 0.1 }), /late/u);
   } finally {
@@ -291,4 +292,5 @@ test("exec-v0-tok: limits.token_estimate dense reaches the cell budget; bytes4 n
     }
   }
   assert.ok(sizes[1]! < 0.7 * sizes[0]!, `dense ships fewer bytes of digits (${sizes.join(" vs ")})`);
+});
 });
