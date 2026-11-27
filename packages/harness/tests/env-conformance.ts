@@ -148,7 +148,7 @@ export function execEnvConformance(label: string, makeEnv: () => Promise<ExecEnv
 
   withEnv("output past the 32 MiB capture ceiling is counted, not kept", async (env) => {
     const ceiling = 32 * 1024 * 1024;
-    const run = await env.exec(`(yes aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 2>/dev/null || true) | head -c ${ceiling + 1000}`, { timeoutMs: 60_000 });
+    const run = await env.exec(`head -c ${ceiling + 1000} /dev/zero | tr '\\0' a`, { timeoutMs: 60_000 });
     assert.equal(run.exitCode, 0);
     assert.equal(run.truncated, true);
     assert.equal(run.totalBytes, ceiling + 1000);

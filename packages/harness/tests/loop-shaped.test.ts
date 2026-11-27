@@ -77,18 +77,17 @@ test("B5 with R2 on: the same wait until on a port that never opens, each with i
   await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
   const port = (server.address() as { port: number }).port;
   await new Promise<void>((done) => server.close(() => done()));
-  // Each wait's probe takes 120 ms longer than the last, so every result says a different "after N.Ns".
+  // Each wait's probe takes 150 ms longer than the last, so every result says a different "after N.Ns".
   let waits = 0;
   const slower = (env: LocalEnv) => {
     const wait = env.wait.bind(env);
     env.wait = async (handle, ms, signal) => {
       const run = await wait(handle, ms, signal);
-      const delay = 120 * waits++;
-      if (delay > 0) await new Promise((done) => setTimeout(done, delay));
+      await new Promise((done) => setTimeout(done, 150 * ++waits));
       return run;
     };
   };
-  const run = await loop(arm("compact-v0-plain-r23"), { toolCalls: [{ name: "wait", arguments: { until: `port:${port}`, timeout: 0.05 } }] }, () => {}, slower);
+  const run = await loop(arm("compact-v0-plain-r23"), { toolCalls: [{ name: "wait", arguments: { until: `port:${port}`, timeout: 0.2 } }] }, () => {}, slower);
   assert.deepEqual(run.policy, STOPPED);
   assert.ok(waits >= 6);
 });

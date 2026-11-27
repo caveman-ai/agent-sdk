@@ -391,7 +391,7 @@ test("D2 refuses Anthropic with effort as a top-level field (plain wire, budget 
 
 test("P1, P2 and D2 see an exec_command check that yielded and then finished through R2's wait(session_id, until)", async () => {
   const patch = "*** Begin Patch\n*** Add File: a.py\n+x = 1\n*** End Patch\n";
-  const start = (script: string): Step => ({ exec: `const r = await tools.exec_command({ cmd: "sleep 0.3; sh ${script}", yield_time_ms: 100 }); text(String(r.session_id));` });
+  const start = (script: string): Step => ({ exec: `const r = await tools.exec_command({ cmd: "sleep 0.6; sh ${script}", yield_time_ms: 100 }); text(String(r.session_id));` });
   const waitOn = (id: number): Step => ({ tool: "wait", args: { session_id: id, until: "exit" } });
   const loadout = withLevers((raw) => {
     raw.policy.evidence_gate = { probe: "tools" };
