@@ -13,7 +13,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { test } from "node:test";
+import { describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import type { FauxResponseStep, TranscriptContext } from "@earendil-works/pi-ai";
 import { LocalEnv } from "../src/env/local.ts";
@@ -61,6 +61,7 @@ const GO_MERGE = "package etree\n\nimport \"testing\"\n\nfunc TestMerge(t *testi
 
 // ---------- loadout ----------
 
+describe("finishcheck", { concurrency: 4 }, () => {
 test("the finish checks are off by default: absent or false normalizes and hashes like the built-in", () => {
   for (const name of ["compact-v0", "compact-v0-plain", "exec-v0"]) {
     const plain = normalizeLoadout(base(name));
@@ -431,4 +432,5 @@ test("the finish-check arms: exec-v0-iso, -isoplac, -eb, -ebplac, -ieb turn on e
   assert.equal(policy("eb").evidence_bounce?.text, LEVER_TEXTS.evidence_bounce);
   assert.equal(policy("ebplac").evidence_bounce_placebo, true);
   assert.ok(policy("ieb").test_isolation !== undefined && policy("ieb").evidence_bounce !== undefined && policy("ieb").test_isolation_placebo === undefined);
+});
 });

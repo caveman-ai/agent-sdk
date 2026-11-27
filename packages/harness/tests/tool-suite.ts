@@ -4,7 +4,7 @@
  * LocalEnv (tests/env.test.ts) and DockerEnv (tests/docker.test.ts).
  */
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { describe, test } from "node:test";
 import type { ExecEnv } from "../src/env/types.ts";
 import { BUILTIN_LOADOUTS, normalizeLoadout } from "../src/loadout.ts";
 import { compactTools } from "../src/tools/compact.ts";
@@ -43,6 +43,7 @@ export function countedEnv(env: ExecEnv): { env: ExecEnv; calls: string[] } {
 const text = async (env: ExecEnv, path: string) => Buffer.from(await env.readFile(path)).toString("utf8");
 
 export function toolSuite(label: string, makeEnv: () => Promise<ExecEnv>): void {
+  describe(`${label} tools`, { concurrency: true }, () => {
   const withTools = (name: string, body: (env: ExecEnv, call: Call) => Promise<void>, patch: Patch = () => {}) =>
     test(`${label} tools: ${name}`, async () => {
       const env = await makeEnv();
@@ -86,8 +87,8 @@ export function toolSuite(label: string, makeEnv: () => Promise<ExecEnv>): void 
 
   withTools("bash yields; wait resumes the command; wait kill stops one", async (env, call) => {
     const started = Date.now();
-    const first = await call("bash", { command: "echo begin; sleep 2; echo end", timeout: 0.3 });
-    assert.ok(Date.now() - started < 1800, "returned at the yield, not at exit");
+    const first = await call("bash", { command: "echo begin; sleep 1.0; echo end", timeout: 0.2 });
+    assert.ok(Date.now() - started < 900, "returned at the yield, not at exit");
     assert.match(first.text, /^begin\n\n\[Still running after 0s as process (p\d+)\./u);
     const handle = first.details.handle as string;
     const second = await call("wait", { handle, timeout: 10 });
@@ -105,7 +106,7 @@ export function toolSuite(label: string, makeEnv: () => Promise<ExecEnv>): void 
     assert.match(out.text, /hard timeout/u);
     const pid = (await text(env, "child.pid")).trim();
     assert.equal((await env.exec(`kill -0 ${pid} 2>/dev/null && echo alive || echo gone`)).output, "gone\n");
-  }, (loadout) => { loadout.tools.bash.limits.hard_timeout_s = 1; });
+  }, (loadout) => { loadout.tools.bash.limits.hard_timeout_s = 0.4; });
 
   withTools("commands never see the harness's secrets", async (_env, call) => {
     process.env.OPENAI_API_KEY = "sk-secret-test";
@@ -157,5 +158,6 @@ export function toolSuite(label: string, makeEnv: () => Promise<ExecEnv>): void 
     } finally {
       await inner.close();
     }
+  });
   });
 }

@@ -285,7 +285,15 @@ export class LocalEnv implements ExecEnv {
     if (!proc.finished) {
       proc.killed = true;
       this.killGroup(proc);
-      await Promise.race([proc.done, new Promise((done) => setTimeout(done, 2_000))]);
+      let timer: NodeJS.Timeout | undefined;
+      try {
+        await Promise.race([proc.done, new Promise<void>((done) => {
+          timer = setTimeout(done, 2_000);
+          timer.unref();
+        })]);
+      } finally {
+        clearTimeout(timer);
+      }
     }
     return this.snapshot(proc);
   }
@@ -366,7 +374,17 @@ export class LocalEnv implements ExecEnv {
       this.reaper.stdin?.end("\n"); // an empty list: the reaper exits without killing anything
       this.reaper = undefined;
     }
-    await Promise.race([Promise.all(live.map((proc) => proc.done)), new Promise((done) => setTimeout(done, 2_000))]);
+    if (live.length > 0) {
+      let timer: NodeJS.Timeout | undefined;
+      try {
+        await Promise.race([Promise.all(live.map((proc) => proc.done)), new Promise<void>((done) => {
+          timer = setTimeout(done, 2_000);
+          timer.unref();
+        })]);
+      } finally {
+        clearTimeout(timer);
+      }
+    }
     this.procs.clear();
     if (this.scratch !== undefined && !this.keepScratch) {
       const path = await this.scratch.catch(() => undefined);

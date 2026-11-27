@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { test } from "node:test";
+import { describe, test } from "node:test";
 import type { FauxResponseStep, TranscriptContext } from "@earendil-works/pi-ai";
 import { LocalEnv } from "../src/env/local.ts";
 import { BUILTIN_LOADOUTS, LoadoutError, loadoutHash, normalizeLoadout, type Loadout } from "../src/loadout.ts";
@@ -31,6 +31,7 @@ const withLevers = (patch: (raw: Record<string, any>) => void, name?: string) =>
 
 // ---------- loadout ----------
 
+describe("travel_jit", { concurrency: 4 }, () => {
 test("travel_jit is off by default: absent or false normalizes and hashes like the built-in; true turns on every kind once each", () => {
   for (const name of ["exec-v0", "compact-v0-plain"]) {
     const plain = normalizeLoadout(base(name));
@@ -305,12 +306,12 @@ test("data in a run: the note rides on the next tool result after the write; /us
 });
 
 test("travel_jit's env commands are internal: the model's background handle is p1 with the lever on, as with it off", async () => {
-  for (const on of [false, true]) {
+  await Promise.all([false, true].map(async (on) => {
     const loadout = withLevers((raw) => (raw.policy.travel_jit = on));
-    const run = await fauxRun(loadout, [write("test_x.py", "x"), bash("sleep 0.6; echo slow", 0.05), { toolCalls: [{ name: "wait", arguments: { handle: "p1" } }] }, { text: "Done." }]);
+    const run = await fauxRun(loadout, [write("test_x.py", "x"), bash("sleep 0.35; echo slow", 0.05), { toolCalls: [{ name: "wait", arguments: { handle: "p1" } }] }, { text: "Done." }]);
     assert.match(lastResult(run.contexts[2]!), /\bp1\b/u, `lever ${on ? "on" : "off"}: first handle`);
     assert.match(lastResult(run.contexts[3]!), /slow/u);
-  }
+  }));
 });
 
 test("travel_jit placebo: the same trigger appends neutral text of the note's estimated token count", async () => {
@@ -334,4 +335,5 @@ test("travel_jit beside travel_check: one shared start, the in-flight note, then
   const run = await fauxRun(loadout, [write("test_wal.py", "import wal\n"), { text: "Done." }, { text: "Done." }]);
   assert.ok(lastResult(run.contexts[1]!).endsWith(note(SCRATCH_TEXT)));
   assert.deepEqual(run.events.filter((event) => event.type === "policy").map((event) => `${event.action}:${event.reason}`), ["remind:travel_jit", "continue:travel_check"]);
+});
 });

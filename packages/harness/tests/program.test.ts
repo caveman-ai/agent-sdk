@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after, test } from "node:test";
+import { after, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { LocalEnv } from "../src/env/local.ts";
 import { normalizeLoadout } from "../src/loadout.ts";
@@ -19,8 +19,9 @@ import { appLoadouts } from "../src/app-loadouts.ts";
 
 const SERVER = fileURLToPath(new URL("./fixtures/mcp-items.mjs", import.meta.url));
 const sessions: McpSession[] = [];
+const envs: LocalEnv[] = [];
 after(async () => {
-  await Promise.all(sessions.map((session) => session.close()));
+  await Promise.all([...sessions.map((session) => session.close()), ...envs.map((e) => e.close())]);
 });
 
 async function connect(): Promise<McpSession> {
@@ -29,9 +30,14 @@ async function connect(): Promise<McpSession> {
   return session;
 }
 
-const env = () => new LocalEnv({ cwd: realpathSync(mkdtempSync(join(tmpdir(), "harness-program-"))) });
+const env = () => {
+  const e = new LocalEnv({ cwd: realpathSync(mkdtempSync(join(tmpdir(), "harness-program-"))) });
+  envs.push(e);
+  return e;
+};
 const textOf = (result: { content: { type: string; text?: string }[] }) => result.content.map((item) => item.text ?? "").join("");
 
+describe("program tool", { concurrency: 4 }, () => {
 test("MCP tools are listed once in name order as <server>__<tool>; direct tools return text and throw on MCP errors", async () => {
   const session = await connect();
   assert.deepEqual(session.tools.map((tool) => tool.qualified), ["items__boom", "items__get_item", "items__list_items", "items__update_item"]);
@@ -80,8 +86,8 @@ test("budgets: the call budget stops a runaway loop, concurrency caps parallel c
   const gated = programTool(workEnv, [], { ...DEFAULT_PROGRAM_LIMITS, concurrency: 2 });
   const code = `
     const started = Date.now();
-    const runs = await Promise.all([1, 2, 3, 4].map((i) => bash({ command: "sleep 0.4; echo " + i })));
-    print(runs.map((run) => run.output.trim()).join(","), Date.now() - started >= 750 ? "serialized-in-pairs" : "too-parallel");
+    const runs = await Promise.all([1, 2, 3, 4].map((i) => bash({ command: "sleep 0.25; echo " + i })));
+    print(runs.map((run) => run.output.trim()).join(","), Date.now() - started >= 450 ? "serialized-in-pairs" : "too-parallel");
   `;
   assert.match(textOf(await gated.execute("p3", { code } as never) as never), /1,2,3,4 serialized-in-pairs/u);
 
@@ -307,4 +313,5 @@ test("ask() in a run: the run's model and effort answer it, and its usage joins 
   assert.equal(result.side_requests?.program_ask?.requests, 2);
   assert.match(systems[0]!, /You answer one question/u);
   assert.equal(result.usage.requests, 2, "side calls are not agent-loop requests");
+});
 });

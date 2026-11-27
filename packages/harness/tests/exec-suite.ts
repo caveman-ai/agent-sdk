@@ -14,7 +14,7 @@
  * env read and one write per file, no stat.
  */
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { describe, test } from "node:test";
 import type { ExecEnv } from "../src/env/types.ts";
 import { loadLoadout } from "../src/loadout.ts";
 import { execSurface } from "../src/tools/exec/surface.ts";
@@ -60,6 +60,7 @@ async function goneWithin(env: ExecEnv, pid: string, ms = 5000): Promise<boolean
 const execCommand = (cmd: string, yieldMs = 20000) => `await tools.exec_command({ cmd: ${JSON.stringify(cmd)}, yield_time_ms: ${yieldMs} });`;
 
 export function execSurfaceSuite(label: string, makeEnv: () => Promise<ExecEnv>): void {
+  describe(`${label} exec`, { concurrency: true }, () => {
   const withSurface = (name: string, body: (env: ExecEnv, call: Call, dispose: () => Promise<void>) => Promise<void>) =>
     test(`${label} exec: ${name}`, { timeout: 60_000 }, async () => {
       const env = await makeEnv();
@@ -85,7 +86,7 @@ export function execSurfaceSuite(label: string, makeEnv: () => Promise<ExecEnv>)
   });
 
   withSurface("wait terminate kills a nested exec_command still inside its yield window", async (env, call) => {
-    const first = await call("exec", { input: `// @exec: {"yield_time_ms": 1500}\n${execCommand(sleeper("term.pid"))}` });
+    const first = await call("exec", { input: `// @exec: {"yield_time_ms": 500}\n${execCommand(sleeper("term.pid"))}` });
     assert.match(first.text, /^Script running with cell ID 1\n/u);
     const pid = await pidOf(env, "term.pid");
     assert.equal(await isAlive(env, pid), true);
@@ -95,10 +96,10 @@ export function execSurfaceSuite(label: string, makeEnv: () => Promise<ExecEnv>)
   });
 
   withSurface("a script that ends without awaiting its exec_command kills it; dispose kills an in-flight one", async (env, call, dispose) => {
-    const ended = await call("exec", { input: `tools.exec_command({ cmd: ${JSON.stringify(sleeper("unawaited.pid"))}, yield_time_ms: 20000 }).catch(() => {});\nawait new Promise((wake) => setTimeout(wake, 1500));\ntext("bye");` });
+    const ended = await call("exec", { input: `tools.exec_command({ cmd: ${JSON.stringify(sleeper("unawaited.pid"))}, yield_time_ms: 20000 }).catch(() => {});\nawait new Promise((wake) => setTimeout(wake, 500));\ntext("bye");` });
     assert.match(ended.text, /^Script completed\n[\s\S]*Output:\nbye$/u);
     assert.equal(await goneWithin(env, await pidOf(env, "unawaited.pid")), true, "the script ended; its unawaited command did not");
-    const running = await call("exec", { input: `// @exec: {"yield_time_ms": 1500}\n${execCommand(sleeper("dispose.pid"))}` });
+    const running = await call("exec", { input: `// @exec: {"yield_time_ms": 500}\n${execCommand(sleeper("dispose.pid"))}` });
     assert.match(running.text, /^Script running/u);
     const pid = await pidOf(env, "dispose.pid");
     await dispose();
@@ -106,7 +107,7 @@ export function execSurfaceSuite(label: string, makeEnv: () => Promise<ExecEnv>)
   });
 
   withSurface("a yielded command outlives its cell as a session; write_stdin \\u0003 stops it", async (env, call) => {
-    const done = await call("exec", { input: `const r = await tools.exec_command({ cmd: ${JSON.stringify(sleeper("session.pid"))}, yield_time_ms: 500 }); text(r.session_id);` });
+    const done = await call("exec", { input: `const r = await tools.exec_command({ cmd: ${JSON.stringify(sleeper("session.pid"))}, yield_time_ms: 300 }); text(r.session_id);` });
     assert.match(done.text, /^Script completed\n[\s\S]*Output:\n1000$/u);
     const pid = await pidOf(env, "session.pid");
     assert.equal(await isAlive(env, pid), true, "a session from a completed cell keeps running");
@@ -133,5 +134,6 @@ export function execSurfaceSuite(label: string, makeEnv: () => Promise<ExecEnv>)
       await surface.dispose();
       await inner.close();
     }
+  });
   });
 }

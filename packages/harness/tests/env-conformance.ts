@@ -5,10 +5,11 @@
  * (for a remote backend: a path inside the sandbox).
  */
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { describe, test } from "node:test";
 import type { ExecEnv } from "../src/env/types.ts";
 
 export function execEnvConformance(label: string, makeEnv: () => Promise<ExecEnv>): void {
+  describe(`${label} conformance`, { concurrency: true }, () => {
   const withEnv = (name: string, body: (env: ExecEnv) => Promise<void>) =>
     test(`${label}: ${name}`, async () => {
       const env = await makeEnv();
@@ -147,10 +148,11 @@ export function execEnvConformance(label: string, makeEnv: () => Promise<ExecEnv
 
   withEnv("output past the 32 MiB capture ceiling is counted, not kept", async (env) => {
     const ceiling = 32 * 1024 * 1024;
-    const run = await env.exec(`head -c ${ceiling + 1000} /dev/zero | tr '\\0' a`, { timeoutMs: 60_000 });
+    const run = await env.exec(`yes aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa | head -c ${ceiling + 1000}`, { timeoutMs: 60_000 });
     assert.equal(run.exitCode, 0);
     assert.equal(run.truncated, true);
     assert.equal(run.totalBytes, ceiling + 1000);
     assert.equal(run.output.length, ceiling);
+  });
   });
 }

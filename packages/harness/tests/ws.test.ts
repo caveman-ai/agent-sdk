@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test } from "node:test";
+import { describe, test } from "node:test";
 import { LocalEnv } from "../src/env/local.ts";
 import { BUILTIN_LOADOUTS, LoadoutError, loadoutHash, normalizeLoadout, readLoadout, type Loadout } from "../src/loadout.ts";
 import type { Budgets } from "../src/policy.ts";
@@ -69,7 +69,10 @@ const comparable = (body: Body, cwd: string) => {
 };
 const kinds = (trace: Body[], type: string, kind?: string) => trace.filter((event) => event.type === type && (kind === undefined || event.kind === kind));
 const usageOf = (trace: Body[]) => kinds(trace, "request_end").map((event) => ({ usage: event.usage, cache_read_share: event.cache_read_share, cost_usd: event.cost_usd, stop_reason: event.stop_reason }));
+/** The loopback scenarios with grep's missing-file message silenced: stdout and stderr interleave in no fixed order, and two runs are compared. */
+const quiet = (steps: Step[]): Step[] => JSON.parse(JSON.stringify(steps).replaceAll("grep -q ok a.txt", "grep -qs ok a.txt")) as Step[];
 
+describe("ws transport", { concurrency: 4 }, () => {
 test("wire.transport: http normalizes away, ws gets Codex's defaults, ws settings need ws, a prewarm needs the delta", () => {
   assert.equal(normalizeWire({ transport: "http" }, fail).transport, undefined);
   assert.deepEqual(normalizeWire({ transport: "http" }, fail), normalizeWire(undefined, fail));
@@ -127,9 +130,6 @@ test("handshakeHeaders: the caller's auth and identity, no body headers, the Web
   assert.equal(handshakeHeaders({ "openai-beta": "a=1" })["openai-beta"], `a=1,${OPENAI_BETA_WS}`);
   assert.equal(handshakeHeaders({ "openai-beta": OPENAI_BETA_WS })["openai-beta"], OPENAI_BETA_WS);
 });
-
-/** The loopback scenarios with grep's missing-file message silenced: stdout and stderr interleave in no fixed order, and two runs are compared. */
-const quiet = (steps: Step[]): Step[] => JSON.parse(JSON.stringify(steps).replaceAll("grep -q ok a.txt", "grep -qs ok a.txt")) as Step[];
 
 for (const [base, steps] of [["exec-v0", quiet(EXEC_SCENARIO)], ["compact-v0-plain", quiet(COMPACT_SCENARIO)]] as const) {
   test(`${base}-ws sends HTTP's bodies over one socket, chained after a generate:false prewarm, and traces HTTP's usage`, async () => {
@@ -196,6 +196,7 @@ test("response.completed re-encrypts reasoning: the chain follows the items pi-a
   const requests = kinds(run.trace, "ws", "request");
   assert.deepEqual(requests.map((event) => event.reason ?? event.mode), ["first_request", "incremental", "incremental", "incremental", "incremental"]);
 });
+});
 
 // ---------- a prewarm on a socket that takes the frame and goes silent (a stalled upstream or relay) ----------
 
@@ -260,6 +261,7 @@ for (const stall of ["silent", "after_created"] as const) {
   });
 }
 
+describe("ws transport runs", { concurrency: 4 }, () => {
 test("a whole exec-v0-ws run on a stalled prewarm: the wall budget's hard stop ends it on time; a short connect_timeout_ms lets it finish", { timeout: 30_000 }, async () => {
   const started = performance.now();
   const stopped = await runFake(readLoadout(join(LOADOUTS, "exec-v0-ws.json")).loadout, EXEC_SCENARIO, { stall_prewarm: "silent" }, { wall_s: 1 });
@@ -379,6 +381,7 @@ test("ws on a model that is not OpenAI Responses fails up front", async () => {
   } finally {
     await env.close();
   }
+});
 });
 
 test("the transport alone: a socket past max_age_s is replaced before the next request (connection_age); an aborted request never sends; a closed transport is HTTP", async () => {

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test } from "node:test";
+import { describe, test } from "node:test";
 import type { FauxResponseStep, TranscriptContext } from "@earendil-works/pi-ai";
 import { LocalEnv } from "../src/env/local.ts";
 import { BUILTIN_LOADOUTS, DEFAULT_NUDGES, normalizeLoadout } from "../src/loadout.ts";
@@ -45,6 +45,7 @@ const lastToolText = (context: TranscriptContext) => {
   return message === undefined ? "" : message.content.map((part) => (part.type === "text" ? part.text : "")).join("");
 };
 
+describe("policy", { concurrency: 4 }, () => {
 test("the same call with the same result is nudged at 3 and stopped at 6", async () => {
   const seen: string[] = [];
   const steps = Array.from({ length: 8 }, () => (context: TranscriptContext) => {
@@ -225,4 +226,5 @@ test("the wall budget cuts a retry backoff short", async () => {
   assert.ok(Date.now() - started < 5_000);
   assert.equal(result.status, "stopped");
   assert.equal(result.stop_reason, "budget_wall");
+});
 });

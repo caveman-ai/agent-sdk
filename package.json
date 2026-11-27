@@ -6,8 +6,8 @@
   "license": "Apache-2.0",
   "packageManager": "pnpm@10.14.0",
   "scripts": {
-    "build": "pnpm --filter @caveman-ai/protocol build && pnpm --filter @caveman-ai/harness build && pnpm --filter @caveman-ai/agent build && pnpm --filter @caveman-ai/evals build",
+    "build": "pnpm --filter @caveman-ai/protocol --filter @caveman-ai/harness --filter @caveman-ai/evals --filter @caveman-ai/agent build",
     "test:examples": "node --experimental-strip-types --no-warnings --test examples/basics/tests/*.test.ts",
-    "test": "pnpm --filter @caveman-ai/protocol test && pnpm --filter @caveman-ai/harness test && pnpm --filter @caveman-ai/agent test && pnpm --filter @caveman-ai/evals test && pnpm --filter @caveman-ai/react test && pnpm test:examples"
+    "test": "node scripts/run-tests.mjs"
   }
 }

@@ -16,7 +16,7 @@ import { createServer } from "node:http";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test } from "node:test";
+import { describe, test } from "node:test";
 import type { FauxResponseStep, SimpleStreamOptions, TranscriptContext } from "@earendil-works/pi-ai";
 import { LocalEnv } from "../src/env/local.ts";
 import { BUILTIN_LOADOUTS, LoadoutError, loadoutHash, normalizeLoadout, readLoadout, type Loadout } from "../src/loadout.ts";
@@ -41,6 +41,7 @@ const validatorOn = (settings: boolean | Record<string, unknown> = true, placebo
 
 // ---------- loadout ----------
 
+describe("validator", { concurrency: 4 }, () => {
 test("validator is off by default: absent or false normalizes and hashes like the built-ins", () => {
   for (const name of ["compact-v0", "compact-v0-plain", "exec-v0"]) {
     const plain = normalizeLoadout(base(name));
@@ -204,10 +205,11 @@ interface Run {
 }
 
 async function fauxRun(loadout: Loadout, steps: (FauxStep | ((context: TranscriptContext) => Promise<FauxStep>))[], validatorReplies: (FauxStep | FauxResponseStep)[], options: {
-  budgets?: Budgets; cwd?: string; prompt?: string; finishSnapshot?: RunOptions["finishSnapshot"]; resultPath?: string; tracePath?: string;
+  budgets?: Budgets; cwd?: string; prompt?: string; finishSnapshot?: RunOptions["finishSnapshot"]; resultPath?: string; tracePath?: string; wrapEnv?: (env: LocalEnv) => void;
 } = {}): Promise<Run> {
   const cwd = options.cwd ?? realpathSync(mkdtempSync(join(tmpdir(), "harness-val-run-")));
   const env = new LocalEnv({ cwd });
+  options.wrapEnv?.(env);
   const scratch = await env.scratchDir();
   const contexts: TranscriptContext[] = [];
   const leaks: string[] = [];
@@ -259,7 +261,10 @@ test("the generation starts beside the first request and never delays it; the pr
     { text: "Done." }, { text: "Fixed it." }, { text: "never sent" },
   ], [async () => {
     // The validator answers only once the agent loop's first request is out: a generation that blocked it would deadlock here.
-    sawFirst = await Promise.race([seen.then(() => true), new Promise<boolean>((done) => setTimeout(() => done(false), 5_000))]);
+    sawFirst = await Promise.race([seen.then(() => true), new Promise<boolean>((done) => {
+      const timer = setTimeout(() => done(false), 5_000);
+      timer.unref();
+    })]);
     return fauxStep({ text: FAILING });
   }]);
   assert.equal(sawFirst, true, "the first request went out while the validator's call was open");
@@ -326,8 +331,21 @@ test("PASS-only lets the run end; so do a program without END, a crashing one, a
 });
 
 test("a program that times out is recorded and retired; a bash program runs under bash", async () => {
+  let seenTimeoutMs: number | undefined;
   const slow = await fauxRun(validatorOn({ check_timeout_s: 10 }), [write("result.txt", "ok\n"), { text: "Done." }, { text: "never sent" }],
-    [{ text: "```python\nimport time\nprint('FAIL R1 x: y')\ntime.sleep(60)\nprint('END 0 1')\n```" }]);
+    [{ text: "```python\nimport time\nprint('FAIL R1 x: y')\ntime.sleep(60)\nprint('END 0 1')\n```" }], {
+      wrapEnv(env) {
+        const origExec = env.exec.bind(env);
+        env.exec = (command, opts) => {
+          if (opts?.timeoutMs === 10_000 && command.includes("python3")) {
+            seenTimeoutMs = opts.timeoutMs;
+            return origExec(command, { ...opts, timeoutMs: 250 });
+          }
+          return origExec(command, opts);
+        };
+      },
+    });
+  assert.equal(seenTimeoutMs, 10_000);
   assert.equal(slow.result.usage.requests, 2);
   assert.match(slow.events.find((event) => event.reason === "validator_failed")?.error ?? "", /timeout after 10 s/u);
   const bash = await fauxRun(validatorOn(), [write("result.txt", "okay\n"), { text: "Done." }, { text: "ok" }],
@@ -577,4 +595,5 @@ test("dry run on a tiny fake task: the validator's own program finds a stated ed
   ]);
   const checked = run.events.find((event) => event.reason === "validator" && event.stage === "run");
   assert.deepEqual({ n_pass: checked.n_pass, n_fail: checked.n_fail, clusters: checked.clusters }, { n_pass: 1, n_fail: 2, clusters: 1 });
+});
 });

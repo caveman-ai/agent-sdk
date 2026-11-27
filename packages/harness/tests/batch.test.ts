@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test } from "node:test";
+import { describe, test } from "node:test";
 import { LocalEnv } from "../src/env/local.ts";
 import { BUILTIN_LOADOUTS, LoadoutError, normalizeLoadout } from "../src/loadout.ts";
 import { estimateTokens } from "../src/prompts.ts";
@@ -44,6 +44,7 @@ const exampleCell = (description: string) => {
   return /for example `([^`]+)`/u.exec(BATCH_LINES)![1]!;
 };
 
+describe("exec.batch", { concurrency: true }, () => {
 test("exec.batch off: the description is exactly the one before the flag, with and without aliases", async () => {
   const specs = Object.values(NESTED_SPECS);
   assert.equal(execToolDescription(specs, true, false, "off"), execToolDescription(specs, true, false));
@@ -114,12 +115,12 @@ test("exec.batch: nested calls awaited together overlap, and a session check rid
   const { call, close } = exec({ batch: true }, { "notes.txt": "alpha\n" });
   try {
     const began = performance.now();
-    const both = await call("exec", "const r = await Promise.allSettled([tools.exec_command({cmd: \"sleep 1; echo one\"}), tools.exec_command({cmd: \"sleep 1; echo two\"})]); r.forEach((x) => text(x.value.output));");
+    const both = await call("exec", "const r = await Promise.allSettled([tools.exec_command({cmd: \"sleep 0.6; echo one\"}), tools.exec_command({cmd: \"sleep 0.6; echo two\"})]); r.forEach((x) => text(x.value.output));");
     const seconds = (performance.now() - began) / 1000;
     assert.match(both, /one\n[\s\S]*two\n/u, both);
-    assert.ok(seconds < 1.8, `two 1 s commands took ${seconds.toFixed(2)} s: not concurrent`);
+    assert.ok(seconds < 1.1, `two 0.6 s commands took ${seconds.toFixed(2)} s: not concurrent`);
     // A job that yields, then one cell that checks it and reads a file: one report carries both.
-    const launched = await call("exec", "text(await tools.exec_command({cmd: \"sleep 1; echo built\", yield_time_ms: 250}));");
+    const launched = await call("exec", "text(await tools.exec_command({cmd: \"sleep 0.5; echo built\", yield_time_ms: 250}));");
     const session = Number(/"session_id":(\d+)/u.exec(launched)![1]);
     const cell = `const r = await Promise.allSettled([tools.write_stdin({session_id: ${session}, chars: "", yield_time_ms: 5000}), tools.exec_command({cmd: "cat notes.txt"})]); r.forEach((x, i) => text({i, ...x}));`;
     const out = await call("exec", cell);
@@ -128,4 +129,5 @@ test("exec.batch: nested calls awaited together overlap, and a session check rid
   } finally {
     await close();
   }
+});
 });

@@ -11,7 +11,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { tmpdir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
-import { test } from "node:test";
+import { describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const BUNDLE = join(dirname(fileURLToPath(import.meta.url)), "..", "dist", "harness.mjs");
@@ -71,6 +71,7 @@ function assertContract(result: Record<string, any>, events: Record<string, any>
   assert.deepEqual([typeof toolEnd.duration_ms, typeof toolEnd.bytes_out, toolEnd.truncated, toolEnd.exit_code], ["number", "number", false, 0]);
 }
 
+describe("cli", { concurrency: 4 }, () => {
 test("run with a scripted faux model reads, edits, runs a command and finishes", async () => {
   const dirs = workspace();
   const { mkdirSync } = await import("node:fs");
@@ -376,4 +377,5 @@ test("bad invocations exit 2 with a clear message and an error result", async ()
   assert.equal(version.code, 0);
   assert.match(version.stdout, /^\d+\.\d+\.\d+/u);
   assert.ok(existsSync(`${BUNDLE}.sha256`));
+});
 });

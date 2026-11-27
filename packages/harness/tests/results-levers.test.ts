@@ -15,7 +15,7 @@ import { createServer } from "node:net";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test } from "node:test";
+import { describe, test } from "node:test";
 import { LocalEnv } from "../src/env/local.ts";
 import { BUILTIN_LOADOUTS, loadoutHash, normalizeLoadout, LoadoutError } from "../src/loadout.ts";
 import { fauxStep } from "../src/models.ts";
@@ -79,6 +79,7 @@ async function freePort(): Promise<number> {
   return port;
 }
 
+describe("results levers", { concurrency: 4 }, () => {
 test("results: off normalizes away (same behavior_hash as omitting it); on fills defaults; bad values are refused", () => {
   const base = builtin("compact-v0");
   assert.equal(base.results, undefined);
@@ -130,7 +131,7 @@ test("R1 on: bash shapes a test run, spills the raw log, and the trace detail na
 test("R1 on: a test run that outlives bash's timeout is shaped when wait sees it finish", async () => {
   const { env, call } = compact((raw) => { raw.results = { shaping: "tests" }; });
   try {
-    const started = await call("bash", { command: `sleep 1; ${PYTEST_SCRIPT}`, timeout: 0.2 });
+    const started = await call("bash", { command: `sleep 0.45; ${PYTEST_SCRIPT}`, timeout: 0.1 });
     assert.ok(started.details.handle !== undefined);
     const done = await call("wait", { handle: started.details.handle, timeout: 20 });
     assert.equal(done.details.shaped, "test:output", done.text);
@@ -165,7 +166,7 @@ test("R2 on: compact wait blocks until a regex, a file, a port or exit, and says
   try {
     assert.ok((tools.wait!.parameters as Raw).properties.until !== undefined);
     assert.equal((tools.wait!.parameters as Raw).required, undefined, "handle is optional for port:/file:");
-    const server = await call("bash", { command: `echo booting; sleep 0.5; echo "server ready"; sleep 30`, timeout: 0.1 });
+    const server = await call("bash", { command: `echo booting; sleep 0.25; echo "server ready"; sleep 30`, timeout: 0.05 });
     let began = performance.now();
     const ready = await call("wait", { handle: server.details.handle, until: "regex:server ready" });
     assert.ok(performance.now() - began < 5_000);
@@ -174,28 +175,28 @@ test("R2 on: compact wait blocks until a regex, a file, a port or exit, and says
     assert.equal(ready.details.loopExempt, true);
     await call("wait", { handle: server.details.handle, kill: true });
 
-    const writer = await call("bash", { command: "sleep 0.6; mkdir -p out; echo done > out/flag; sleep 30", timeout: 0.1 });
+    const writer = await call("bash", { command: "sleep 0.25; mkdir -p out; echo done > out/flag; sleep 30", timeout: 0.05 });
     const file = await call("wait", { handle: writer.details.handle, until: "file:out/flag" });
     assert.match(file.text, /^\[wait until file out\/flag: met after/u);
     await call("wait", { handle: writer.details.handle, kill: true });
-    writeFileSync(join(dir, "later.sh"), "sleep 0.5; touch made.txt\n");
+    writeFileSync(join(dir, "later.sh"), "sleep 0.25; touch made.txt\n");
     await call("bash", { command: "sh later.sh", timeout: 0.05 });
     assert.match((await call("wait", { until: "file:made.txt" })).text, /^\[wait until file made\.txt: met after \d+\.\ds\]$/u, "no handle: the condition alone");
 
-    const listener = `node -e "setTimeout(() => require('net').createServer().listen(${port}, '127.0.0.1'), 600); setTimeout(() => {}, 30000)"`;
-    const listen = await call("bash", { command: listener, timeout: 0.1 });
+    const listener = `node -e "setTimeout(() => require('net').createServer().listen(${port}, '127.0.0.1'), 250); setTimeout(() => {}, 30000)"`;
+    const listen = await call("bash", { command: listener, timeout: 0.05 });
     began = performance.now();
     const open = await call("wait", { handle: listen.details.handle, until: `port:${port}` });
     assert.match(open.text, new RegExp(`^\\[wait until port ${port}: met after`, "u"), open.text);
     assert.ok(performance.now() - began < 10_000);
     await call("wait", { handle: listen.details.handle, kill: true });
 
-    const quick = await call("bash", { command: "sleep 0.3; echo finished; exit 3", timeout: 0.05 });
+    const quick = await call("bash", { command: "sleep 0.2; echo finished; exit 3", timeout: 0.05 });
     const exited = await call("wait", { handle: quick.details.handle, until: "regex:never printed" });
     assert.match(exited.text, /^\[wait until regex \/never printed\/: not met; the process ended after/u);
     assert.ok(exited.text.includes("finished") && exited.text.includes("Command exited with code 3"));
     const slow = await call("bash", { command: "sleep 30", timeout: 0.05 });
-    const timedOut = await call("wait", { handle: slow.details.handle, until: "exit", timeout: 0.5 });
+    const timedOut = await call("wait", { handle: slow.details.handle, until: "exit", timeout: 0.3 });
     assert.match(timedOut.text, /^\[wait until exit: not met after 0\.\ds\]/u);
     await call("wait", { handle: slow.details.handle, kill: true });
     await assert.rejects(call("wait", { handle: slow.details.handle, until: "port:abc" }), /until must be/u);
@@ -214,7 +215,7 @@ test("R2 on: a run waits on a server with no model request while it waits (faux 
     const result = await runHarness({
       prompt: "Start the server and wait for it.", model: "faux/until", effort: "high", loadout, env, tracePath: trace,
       fauxSteps: [
-        fauxStep({ toolCalls: [{ name: "bash", arguments: { command: "sleep 1.5; echo listening; sleep 30", timeout: 0.1 } }] }),
+        fauxStep({ toolCalls: [{ name: "bash", arguments: { command: "sleep 0.6; echo listening; sleep 30", timeout: 0.1 } }] }),
         fauxStep({ toolCalls: [{ name: "wait", arguments: { handle: "p1", until: "regex:listening" } }] }),
         fauxStep({ text: "Server is up." }),
       ],
@@ -223,7 +224,7 @@ test("R2 on: a run waits on a server with no model request while it waits (faux 
     const events = readFileSync(trace, "utf8").trim().split("\n").map((line) => JSON.parse(line));
     assert.equal(events.filter((event) => event.type === "request_start").length, 3, "three requests: start, one wait, answer");
     const waitEnd = events.find((event) => event.type === "tool_end" && event.name === "wait");
-    assert.ok(waitEnd.duration_ms >= 1_000, `the wait blocked in the harness (${waitEnd.duration_ms} ms)`);
+    assert.ok(waitEnd.duration_ms >= 350, `the wait blocked in the harness (${waitEnd.duration_ms} ms)`);
   } finally {
     await env.close();
   }
@@ -249,7 +250,7 @@ test("R2 on: exec's wait blocks on a cell or an exec_command session until its c
     assert.match(capped.text, /not met after 0\.\ds/u);
     await assert.rejects(call("wait", { session_id: 99, until: "exit" }), /session 99 not found/u);
 
-    const cell = await call("exec", "// @exec: {\"yield_time_ms\": 100}\nawait tools.exec_command({ cmd: \"sleep 0.8\", yield_time_ms: 30000 });\ntext(\"cell finished\");");
+    const cell = await call("exec", "// @exec: {\"yield_time_ms\": 100}\nawait tools.exec_command({ cmd: \"sleep 0.4\", yield_time_ms: 30000 });\ntext(\"cell finished\");");
     assert.match(cell.text, /^Script running with cell ID (\d+)/u);
     const id = /cell ID (\d+)/u.exec(cell.text)![1]!;
     const finished = await call("wait", { cell_id: id, until: "exit" });
@@ -334,4 +335,5 @@ test("R1 on: nested exec_command shapes a finished test run; the cell's details 
   } finally {
     await close();
   }
+});
 });

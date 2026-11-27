@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { test } from "node:test";
+import { describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, FauxResponseStep, Model, TranscriptContext } from "@earendil-works/pi-ai";
@@ -65,6 +65,7 @@ const firstUserText = (body: Body) => body.input.find((item: any) => item.role =
 
 // ---------- loadout ----------
 
+describe("audit levers", { concurrency: 4 }, () => {
 test("P4 and P6 are off by default: absent or false normalizes and hashes like the built-in", () => {
   for (const name of ["compact-v0", "compact-v0-plain", "exec-v0"]) {
     const plain = normalizeLoadout(base(name));
@@ -286,4 +287,5 @@ test("exec-v0-p46: the time line opens the run and the audit closes it, append-o
   assert.ok(firstUserText(run.bodies[0]!).endsWith(LEVER_TEXTS.time_budget.replace("{minutes}", "10")));
   assert.deepEqual(run.bodies[1]!.input.at(-1), { role: "user", content: [{ type: "input_text", text: LEVER_TEXTS.finish_audit }] });
   assert.ok(isPrefix(run.bodies[0]!, run.bodies[1]!));
+});
 });
