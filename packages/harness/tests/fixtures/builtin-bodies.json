@@ -158,7 +158,7 @@
       "content": [
        {
         "type": "input_text",
-        "text": "<env>\ncwd: <cwd>\nos: darwin\n</env>\n\nMake check.sh pass."
+        "text": "<env>\ncwd: <cwd>\nos: <os>\n</env>\n\nMake check.sh pass."
        }
       ]
      },
@@ -336,7 +336,7 @@
       "content": [
        {
         "type": "input_text",
-        "text": "<env>\ncwd: <cwd>\nos: darwin\n</env>\n\nMake check.sh pass."
+        "text": "<env>\ncwd: <cwd>\nos: <os>\n</env>\n\nMake check.sh pass."
        }
       ]
      },
@@ -538,7 +538,7 @@
       "content": [
        {
         "type": "input_text",
-        "text": "<env>\ncwd: <cwd>\nos: darwin\n</env>\n\nMake check.sh pass."
+        "text": "<env>\ncwd: <cwd>\nos: <os>\n</env>\n\nMake check.sh pass."
        }
       ]
      },
@@ -764,7 +764,7 @@
       "content": [
        {
         "type": "input_text",
-        "text": "<env>\ncwd: <cwd>\nos: darwin\n</env>\n\nMake check.sh pass."
+        "text": "<env>\ncwd: <cwd>\nos: <os>\n</env>\n\nMake check.sh pass."
        }
       ]
      },
@@ -1014,7 +1014,7 @@
       "content": [
        {
         "type": "input_text",
-        "text": "<env>\ncwd: <cwd>\nos: darwin\n</env>\n\nMake check.sh pass."
+        "text": "<env>\ncwd: <cwd>\nos: <os>\n</env>\n\nMake check.sh pass."
        }
       ]
      },
@@ -1294,7 +1294,7 @@
       "content": [
        {
         "type": "input_text",
-        "text": "<env>\ncwd: <cwd>\nos: darwin\n</env>\n\nMake check.sh pass."
+        "text": "<env>\ncwd: <cwd>\nos: <os>\n</env>\n\nMake check.sh pass."
        }
       ]
      }
@@ -1466,7 +1466,7 @@
       "content": [
        {
         "type": "input_text",
-        "text": "<env>\ncwd: <cwd>\nos: darwin\n</env>\n\nMake check.sh pass."
+        "text": "<env>\ncwd: <cwd>\nos: <os>\n</env>\n\nMake check.sh pass."
        }
       ]
      },
@@ -1656,7 +1656,7 @@
       "content": [
        {
         "type": "input_text",
-        "text": "<env>\ncwd: <cwd>\nos: darwin\n</env>\n\nMake check.sh pass."
+        "text": "<env>\ncwd: <cwd>\nos: <os>\n</env>\n\nMake check.sh pass."
        }
       ]
      },
@@ -1864,7 +1864,7 @@
       "content": [
        {
         "type": "input_text",
-        "text": "<env>\ncwd: <cwd>\nos: darwin\n</env>\n\nMake check.sh pass."
+        "text": "<env>\ncwd: <cwd>\nos: <os>\n</env>\n\nMake check.sh pass."
        }
       ]
      },
@@ -2090,7 +2090,7 @@
       "content": [
        {
         "type": "input_text",
-        "text": "<env>\ncwd: <cwd>\nos: darwin\n</env>\n\nMake check.sh pass."
+        "text": "<env>\ncwd: <cwd>\nos: <os>\n</env>\n\nMake check.sh pass."
        }
       ]
      },
@@ -2244,7 +2244,7 @@
       "content": [
        {
         "type": "input_text",
-        "text": "<env>\ncwd: <cwd>\nos: darwin\n</env>\n\nMake check.sh pass."
+        "text": "<env>\ncwd: <cwd>\nos: <os>\n</env>\n\nMake check.sh pass."
        }
       ]
      }
@@ -2320,7 +2320,7 @@
       "content": [
        {
         "type": "input_text",
-        "text": "<env>\ncwd: <cwd>\nos: darwin\n</env>\n\nMake check.sh pass."
+        "text": "<env>\ncwd: <cwd>\nos: <os>\n</env>\n\nMake check.sh pass."
        }
       ]
      },
@@ -2414,7 +2414,7 @@
       "content": [
        {
         "type": "input_text",
-        "text": "<env>\ncwd: <cwd>\nos: darwin\n</env>\n\nMake check.sh pass."
+        "text": "<env>\ncwd: <cwd>\nos: <os>\n</env>\n\nMake check.sh pass."
        }
       ]
      },
@@ -2526,7 +2526,7 @@
       "content": [
        {
         "type": "input_text",
-        "text": "<env>\ncwd: <cwd>\nos: darwin\n</env>\n\nMake check.sh pass."
+        "text": "<env>\ncwd: <cwd>\nos: <os>\n</env>\n\nMake check.sh pass."
        }
       ]
      },
@@ -2656,7 +2656,7 @@
       "content": [
        {
         "type": "input_text",
-        "text": "<env>\ncwd: <cwd>\nos: darwin\n</env>\n\nMake check.sh pass."
+        "text": "<env>\ncwd: <cwd>\nos: <os>\n</env>\n\nMake check.sh pass."
        }
       ]
      },

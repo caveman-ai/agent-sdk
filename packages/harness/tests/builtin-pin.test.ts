@@ -5,7 +5,9 @@
  * from v3 a0ebd78 (before any lever landed): the loadout_hash and
  * behavior_hash of each built-in, and the request bodies of one two-request
  * run (a tool call, then an answer) against a loopback Responses server, with
- * the per-run prompt_cache_key, the per-run cwd and timings masked.
+ * the per-run prompt_cache_key, the per-run cwd, the host OS and timings
+ * masked (the env block names the host platform, so a pin captured on one OS
+ * must still hold on another).
  * Regenerate only on purpose: PIN_WRITE=1.
  */
 import assert from "node:assert/strict";
@@ -93,6 +95,7 @@ function maskBody(raw: string, cwd: string): string {
   body.prompt_cache_key = "<session>";
   return JSON.stringify(body)
     .replaceAll(cwd, "<cwd>")
+    .replaceAll(`\\nos: ${process.platform}\\n`, "\\nos: <os>\\n")
     .replace(/(Wall time:? )[0-9.]+( seconds?)/gu, "$1<t>$2")
     .replace(/(wall_time_seconds\\?":)[0-9.]+/gu, "$1<t>");
 }

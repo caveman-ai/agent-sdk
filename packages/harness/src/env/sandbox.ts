@@ -47,7 +47,7 @@ import {
   type SandboxFileInfo,
 } from "@caveman-ai/sdk/sandboxes";
 import { fileError } from "./docker.ts";
-import { ENV_DEFAULTS, utf8End } from "./local.ts";
+import { ENV_DEFAULTS, keptPrefix, utf8End } from "./local.ts";
 import type { DirEntry, ExecEnv, ExecOptions, ExecResult, FileStat, ReadRange } from "./types.ts";
 
 const CAPTURE_MAX_BYTES = 32 * 1024 * 1024;
@@ -881,12 +881,12 @@ export class SandboxEnv implements ExecEnv {
   #record(proc: Proc, chunk: Buffer): void {
     if (chunk.length === 0 || proc.finished) return;
     proc.totalBytes += chunk.length;
-    if (proc.keptBytes + chunk.length <= CAPTURE_MAX_BYTES) {
-      proc.kept.push(Buffer.from(chunk));
-      proc.keptBytes += chunk.length;
-    } else {
-      proc.truncated = true;
+    const keep = proc.truncated ? 0 : keptPrefix(chunk, CAPTURE_MAX_BYTES - proc.keptBytes);
+    if (keep > 0) {
+      proc.kept.push(Buffer.from(chunk.subarray(0, keep)));
+      proc.keptBytes += keep;
     }
+    if (keep < chunk.length) proc.truncated = true;
     proc.onOutput?.(chunk.toString("utf8"));
   }
 
