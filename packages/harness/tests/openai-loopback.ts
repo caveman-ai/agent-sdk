@@ -103,6 +103,8 @@ export async function runScripted(loadout: Loadout, steps: Step[], options: {
 export function stableBody(body: Body, cwd: string): Body {
   const text = JSON.stringify({ ...body, prompt_cache_key: body.prompt_cache_key === undefined ? undefined : "<key>" })
     .replaceAll(cwd, "<cwd>")
+    // The env block names the host platform; fixtures must hold on every OS.
+    .replaceAll(`\\nos: ${process.platform}\\n`, "\\nos: <os>\\n")
     .replace(/harness-run-[A-Za-z0-9]+/gu, "harness-run-<id>")
     .replace(/Wall time \d+(?:\.\d+)? seconds/gu, "Wall time <s> seconds")
     .replace(/(\\*"wall_time_seconds\\*":\s*)-?\d+(?:\.\d+)?/gu, "$1<s>");
