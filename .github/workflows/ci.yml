@@ -8,20 +8,72 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same PR makes the older run worthless; main keeps every run.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  typescript:
-    name: Build & Test
-    runs-on: ubuntu-latest
+  hygiene:
+    name: Public hygiene
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          version: 10.14.0
-      - uses: actions/setup-node@v4
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      # Dependency-free script: no install needed.
       - run: node scripts/check-public-hygiene.mjs
+      - run: node scripts/ci-test.mjs verify
+
+  packages:
+    # Build every package (the old single job's `pnpm build`), then run every
+    # root `test` suite except the harness, which is sharded below.
+    name: Build & test packages
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
       - run: pnpm build
-      - run: pnpm test
+      - run: node scripts/ci-test.mjs packages
+
+  harness:
+    # The harness suite is the critical path. Shards are computed from the
+    # live tests/*.test.ts list; the script fails unless their union is the
+    # whole list, so a new file can never be skipped.
+    name: Harness tests (${{ matrix.shard }}/4)
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - run: node scripts/ci-test.mjs harness --shard ${{ matrix.shard }}/4
+
+  # Keeps the historical check name; green only when every job above passed.
+  gate:
+    name: Build & Test
+    if: always()
+    needs: [hygiene, packages, harness]
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
+    steps:
+      - name: All CI jobs passed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "results: $RESULTS"
+          for r in $RESULTS; do
+            if [ "$r" != "success" ]; then echo "a CI job ended $r"; exit 1; fi
+          done
