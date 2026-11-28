@@ -21,17 +21,17 @@ const PINNED: Record<string, { loadout_hash: string; behavior_hash: string; bodi
   "compact-v0": {
     loadout_hash: "742b0fb4250a8fcb3b295920ae1ce05cf256693f7ae5f43f2e25280dbacf3f83",
     behavior_hash: "490f09b0cfbc1c288432b1a4454c50fc46802c0c797a39b2f88aa90eb153f1e8",
-    bodies: "d66d0e6cf90be90e114c45cf3f281d43a1c74647bc9e78b6a5d14a078212d4fc",
+    bodies: "566e15c93b33637ab4e6e14b7d861cd8c02aec00ca496f1a22604ee31228f0c0",
   },
   "compact-v0-plain": {
     loadout_hash: "0d66e1dfe22e455d05290d5f62d01badf2f4bd682e1a0b467b107a09ef9557fc",
     behavior_hash: "7dd130b7d0a82dff128102c88bff15ca5dd65e4da4f6c770a56b602c701dc692",
-    bodies: "3273c246d5032b7b4b2e2c1dc0192938f05731c60855721985f114367e099a42",
+    bodies: "6bd740493faa786e0f822af43cb24d2158b5de2201687f502d85f5070bfe3e99",
   },
   "exec-v0": {
     loadout_hash: "6e1aa5b36f1b3d15d725394276415eaa946635d8ddc0b093ceb3dacb91708baa",
     behavior_hash: "22a50493036fb9faf9d706b05b146f86ba60820995310d6a30d2ed11864a8c02",
-    bodies: "8f2dbf5ebc5c05c23f2425ac826a2570fbcb41946b1e688d9991f8db6e0f291f",
+    bodies: "8603ca09feebb7adc7510338b4e344a795a39f74b7e844512bfcae4b1a34ffd2",
   },
 };
 
@@ -95,8 +95,8 @@ async function bodiesOf(name: string): Promise<Record<string, any>[]> {
     });
     assert.equal(result.status, "finished", JSON.stringify(result));
     assert.equal(bodies.length, 2);
-    // The exec cell's result carries its wall time; mask it with the workdir and the per-run cache key.
-    return JSON.parse(JSON.stringify(bodies).replaceAll(root, "<cwd>").replace(/Wall time [\d.]+ seconds/gu, "Wall time <s> seconds"))
+    // The exec cell's result carries its wall time; mask it with the workdir, the host OS and the per-run cache key.
+    return JSON.parse(JSON.stringify(bodies).replaceAll(root, "<cwd>").replaceAll(`\\nos: ${process.platform}\\n`, "\\nos: <os>\\n").replace(/Wall time [\d.]+ seconds/gu, "Wall time <s> seconds"))
       .map(({ prompt_cache_key: _key, ...body }: Record<string, any>) => body);
   } finally {
     server.closeAllConnections();
