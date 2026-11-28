@@ -167,6 +167,18 @@ export function utf8End(buffer: Buffer): number {
   return back + 1 < need ? lead : end;
 }
 
+/**
+ * How many leading bytes of `chunk` fit in `room` bytes of capture. A chunk that
+ * crosses the ceiling keeps its head (pipe chunk sizes vary by host, so dropping
+ * it whole made the kept size depend on the machine), cut back to a whole UTF-8
+ * character.
+ */
+export function keptPrefix(chunk: Buffer, room: number): number {
+  if (chunk.length <= room) return chunk.length;
+  if (room <= 0) return 0;
+  return utf8End(chunk.subarray(0, room));
+}
+
 export function currentUser(): string | undefined {
   try {
     return userInfo().username;
@@ -457,12 +469,12 @@ export class LocalEnv implements ExecEnv {
     const onData = (chunk: Buffer) => {
       proc.watch?.feed(chunk);
       proc.totalBytes += chunk.length;
-      if (proc.keptBytes + chunk.length <= CAPTURE_MAX_BYTES) {
-        proc.kept.push(chunk);
-        proc.keptBytes += chunk.length;
-      } else {
-        proc.truncated = true;
+      const keep = proc.truncated ? 0 : keptPrefix(chunk, CAPTURE_MAX_BYTES - proc.keptBytes);
+      if (keep > 0) {
+        proc.kept.push(keep === chunk.length ? chunk : chunk.subarray(0, keep));
+        proc.keptBytes += keep;
       }
+      if (keep < chunk.length) proc.truncated = true;
       options.onOutput?.(chunk.toString("utf8"));
     };
     child.stdout!.on("data", onData);
